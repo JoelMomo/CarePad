@@ -1,0 +1,146 @@
+<resources>
+
+    <string name="app_name">DocThor</string>
+    <string name="app_subtitle">Diagnóstico para AYN Thor</string>
+    <string name="app_description">Herramienta de diagnóstico para AYN Thor.</string>
+
+    <string name="initial_setup">Configuración inicial</string>
+    <string name="permission_intro">DocThor necesita algunos permisos para detectar los emuladores y generar los diagnósticos.</string>
+
+    <string name="permission_usage_title">Acceso de uso</string>
+    <string name="permission_usage_description">Permite detectar cuándo se abre y se cierra un emulador.</string>
+    <string name="permission_files_title">Acceso a archivos</string>
+    <string name="permission_files_description">Permite leer las configuraciones de los emuladores y guardar los diagnósticos.</string>
+    <string name="permission_notifications_title">Notificaciones</string>
+    <string name="permission_notifications_description">Permite mostrar el estado de la monitorización mientras juegas.</string>
+
+    <string name="permission_granted">Concedido</string>
+    <string name="permission_pending">Pendiente</string>
+    <string name="permission_required">Obligatorio</string>
+    <string name="permission_optional">Opcional</string>
+    <string name="grant_access">Conceder acceso</string>
+    <string name="allow_notifications">Permitir notificaciones</string>
+    <string name="continue_button">Continuar</string>
+    <string name="continue_without_notifications">Continuar sin notificaciones</string>
+
+    <string name="storage_setup_title">Carpeta de diagnósticos</string>
+    <string name="storage_setup_intro">Elige o crea la carpeta donde DocThor guardará los diagnósticos. Solo tendrás que hacerlo una vez.</string>
+    <string name="storage_folder_required">Selecciona o crea una carpeta para continuar.</string>
+    <string name="storage_folder_selected">Carpeta seleccionada</string>
+    <string name="select_diagnostic_folder">Seleccionar o crear carpeta</string>
+
+    <string name="game_library">Biblioteca de juegos</string>
+    <string name="game_library_setup_title">Carpeta de juegos</string>
+    <string name="game_library_setup_intro">Selecciona la carpeta raíz donde guardas tus juegos. DocThor también buscará dentro de sus subcarpetas.</string>
+    <string name="game_library_optional">Este paso es opcional. Puedes configurarlo más tarde desde Opciones.</string>
+    <string name="game_folder">Carpeta de juegos</string>
+    <string name="game_folder_not_selected">Sin carpeta seleccionada</string>
+    <string name="select_game_folder">Seleccionar carpeta de juegos</string>
+    <string name="change_game_folder">Cambiar carpeta de juegos</string>
+    <string name="scan_games">Escanear juegos</string>
+    <string name="games_found">Juegos encontrados</string>
+    <string name="games">Juegos</string>
+    <string name="skip_for_now">Omitir por ahora</string>
+    <string name="game_library_note">Se escanean archivos de juego compatibles dentro de la carpeta y sus subcarpetas. No se leen ROMs, partidas ni claves.</string>
+
+    <string name="start_diagnostic">Iniciar diagnóstico</string>
+    <string name="new_diagnostic">Nuevo diagnóstico</string>
+    <string name="stop_diagnostic">Detener diagnóstico</string>
+    <string name="share_diagnostic">Compartir diagnóstico</string>
+
+    <string name="diagnostic_info_button_description">Información sobre el diagnóstico</string>
+    <string name="diagnostic_info_title">¿Para qué sirve?</string>
+    <string name="diagnostic_info_intro">Puedes compartir este archivo para que otra persona o herramienta entienda mejor qué ha ocurrido en tu Thor.</string>
+    <string name="diagnostic_info_ai">Pasarlo a una IA para que interprete las métricas, configuraciones y posibles problemas.</string>
+    <string name="diagnostic_info_drive">Subirlo a Drive y automatizar una IA para que revise nuevos diagnósticos de forma periódica.</string>
+    <string name="diagnostic_info_technician">Enviarlo a un técnico para darle datos concretos de la consola y de la sesión.</string>
+    <string name="diagnostic_info_compare">Comparar sesiones antes y después de cambiar ajustes, actualizar un emulador o preparar un reporte de errores.</string>
+    <string name="diagnostic_info_privacy">Incluye métricas y metadatos técnicos. No incluye el contenido de ROMs, partidas ni claves.</string>
+
+    <string name="status_title">Estado</string>
+    <string name="session_time">Tiempo de sesión</string>
+    <string name="live_metrics">Métricas en vivo</string>
+    <string name="cpu">CPU</string>
+    <string name="gpu">GPU</string>
+    <string name="ram">RAM</string>
+    <string name="temperature">Temperatura</string>
+    <string name="temperature_short">Temp.</string>
+    <string name="average_cpu">CPU media</string>
+    <string name="average_gpu">GPU media</string>
+    <string name="average_ram">RAM media</string>
+    <string name="maximum_temperature">Temp. máx.</string>
+
+    <string name="journey_waiting">Esperando</string>
+    <string name="journey_monitoring">Monitorizando</string>
+    <string name="journey_preparing">Preparando</string>
+    <string name="journey_completed_detected">Detectado</string>
+    <string name="journey_completed_analyzed">Analizado</string>
+    <string name="journey_completed_ready">Completado</string>
+
+    <string name="diagnostic_completed_title">Todo listo</string>
+    <string name="diagnostic_completed_description">El diagnóstico está preparado para compartir.</string>
+
+    <string name="last_session">Última sesión</string>
+    <string name="duration">Duración</string>
+    <string name="samples">Muestras</string>
+    <plurals name="session_seconds">
+        <item quantity="one">%1$d segundo</item>
+        <item quantity="other">%1$d segundos</item>
+    </plurals>
+    <plurals name="session_samples">
+        <item quantity="one">%1$d muestra</item>
+        <item quantity="other">%1$d muestras</item>
+    </plurals>
+
+    <string name="device">Dispositivo</string>
+    <string name="model">Modelo</string>
+    <string name="android">Android</string>
+    <string name="emulators">Emuladores</string>
+    <string name="readable_configs">Configs legibles</string>
+
+    <string name="status_ready">Preparado</string>
+    <string name="status_waiting_emulator">Esperando a que abras un emulador</string>
+    <string name="status_monitoring">Monitorizando %1$s</string>
+    <string name="status_monitoring_generic">Monitorizando</string>
+    <string name="status_finishing_background">Emulador en segundo plano · finalizando en %1$d s</string>
+    <string name="status_finishing">Finalizando diagnóstico</string>
+    <string name="status_generating">Generando diagnóstico</string>
+    <string name="status_completed">Diagnóstico listo</string>
+    <string name="status_error">Error</string>
+    <string name="error_save_session">Error al guardar sesión</string>
+    <string name="error_generate_diagnostic">Error al generar diagnóstico</string>
+
+    <string name="duration_hours">%1$d h %2$02d min %3$02d s</string>
+    <string name="duration_minutes">%1$d min %2$02d s</string>
+    <string name="duration_seconds">%1$d s</string>
+
+    <string name="notification_channel_name">Monitor de diagnóstico</string>
+    <string name="notification_channel_description">Monitorización activa de una sesión de emulación</string>
+    <string name="notification_waiting_emulator">Esperando emulador…</string>
+    <string name="notification_monitoring">Monitorizando %1$s</string>
+    <string name="notification_background">Emulador en segundo plano · finalizando en %1$d s</string>
+    <string name="notification_generating">Generando diagnóstico…</string>
+    <string name="notification_finishing">Finalizando sesión…</string>
+
+    <string name="settings">Opciones</string>
+    <string name="back">Atrás</string>
+
+    <string name="appearance">Apariencia</string>
+    <string name="theme">Tema</string>
+    <string name="theme_system">Sistema</string>
+    <string name="theme_light">Claro</string>
+    <string name="theme_dark">Oscuro</string>
+
+    <string name="diagnostics">Diagnósticos</string>
+    <string name="current_folder">Carpeta actual</string>
+    <string name="change_folder">Cambiar carpeta</string>
+    <string name="diagnostic_folder_note">Los nuevos diagnósticos se guardarán en esta carpeta. Los archivos existentes no se mueven.</string>
+
+    <string name="permissions">Permisos</string>
+    <string name="manage_permission">Gestionar</string>
+
+    <string name="information">Información</string>
+    <string name="version">Versión</string>
+    <string name="app">Aplicación</string>
+
+</resources>

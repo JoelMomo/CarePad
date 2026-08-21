@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <uses-permission
+        android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <queries>
+
+        <intent>
+            <action android:name="dev.carepad.action.MODULE" />
+        </intent>
+
+        <package
+            android:name="com.retroarch.aarch64" />
+
+        <package
+            android:name="com.fastemulator.gba" />
+
+        <package
+            android:name="com.fastemulator.gbafree" />
+
+        <package
+            android:name="com.github.stenzek.duckstation" />
+
+        <package
+            android:name="xyz.aethersx2.android" />
+
+        <package
+            android:name="org.ppsspp.ppsspp" />
+
+        <package
+            android:name="me.magnum.melondualds" />
+
+        <package
+            android:name="org.dolphinemu.dolphinemu" />
+
+        <package
+            android:name="org.azahar_emu.azahar" />
+
+        <package
+            android:name="io.github.azaharplus.android" />
+
+        <package
+            android:name="org.vita3k.emulator" />
+
+        <package
+            android:name="dev.eden.eden_emulator" />
+
+        <package
+            android:name="info.cemu.cemu" />
+
+        <package
+            android:name="net.rpcsx" />
+
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ThorDoctor">
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+
+        </provider>
+
+        <activity
+            android:name=".MainActivity"
+            android:enabled="${docThorMainEnabled}"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.ThorDoctor">
+
+            <intent-filter>
+
+                <action
+                    android:name="android.intent.action.MAIN" />
+
+                <category
+                    android:name="android.intent.category.LAUNCHER" />
+
+            </intent-filter>
+
+        </activity>
+
+        <service
+            android:name=".SessionMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-initiated emulator performance diagnostic session" />
+
+        </service>
+
+    </application>
+
+</manifest>

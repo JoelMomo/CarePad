@@ -1,0 +1,32 @@
+*.iml
+.gradle
+/local.properties
+local.properties
+/.idea/
+.DS_Store
+/build
+**/build/
+/captures
+.externalNativeBuild
+.cxx
+
+# Local build and release artifacts
+*.apk
+*.aab
+
+# Signing material and local secrets
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.key
+keystore.properties
+signing.properties
+.env
+.env.*
+
+# Local diagnostic exports
+/Diagnostics/
+/diagnostics/
+diagnostic.json
+session.json
