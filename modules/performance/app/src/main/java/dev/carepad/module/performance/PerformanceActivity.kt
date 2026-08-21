@@ -44,7 +44,12 @@ class PerformanceActivity : Activity() {
         setContentView(buildContent())
 
         primaryButton.setOnClickListener {
-            if (!ForegroundEmulatorDetector.hasUsageAccess(this)) {
+            if (
+                PerformanceMonitorService.currentError == PerformanceMonitorError.SESSION_SAVE_FAILED &&
+                PerformanceMonitorService.hasPendingSave(this)
+            ) {
+                resumeSession()
+            } else if (!ForegroundEmulatorDetector.hasUsageAccess(this)) {
                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             } else {
                 startSessionWithNotificationCheck()
@@ -62,16 +67,14 @@ class PerformanceActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        if (
-            ForegroundEmulatorDetector.hasUsageAccess(this) &&
-            PerformanceMonitorService.hasRecoverableSession(this) &&
-            !PerformanceMonitorService.isRunning
-        ) {
-            ContextCompat.startForegroundService(
-                this,
-                Intent(this, PerformanceMonitorService::class.java)
-                    .setAction(PerformanceMonitorService.ACTION_RESUME)
-            )
+        val hasRecovery = PerformanceMonitorService.hasRecoverableSession(this)
+        val pendingSave = PerformanceMonitorService.hasPendingSave(this)
+        val mayAutoResume =
+            PerformanceMonitorService.currentError != PerformanceMonitorError.SESSION_SAVE_FAILED &&
+                (pendingSave || ForegroundEmulatorDetector.hasUsageAccess(this))
+
+        if (hasRecovery && mayAutoResume && !PerformanceMonitorService.isRunning) {
+            resumeSession()
         }
         handler.post(refreshRunnable)
     }
@@ -148,8 +151,19 @@ class PerformanceActivity : Activity() {
             PerformanceMonitorState.FINISHING,
             PerformanceMonitorState.SAVING
         )
+        val saveRetryPending =
+            state == PerformanceMonitorState.ERROR &&
+                PerformanceMonitorService.currentError == PerformanceMonitorError.SESSION_SAVE_FAILED &&
+                PerformanceMonitorService.hasPendingSave(this)
 
-        if (!hasUsageAccess && !active) {
+        if (saveRetryPending) {
+            statusText.text = stateLabel(state)
+            sessionText.text = getString(R.string.save_failed)
+            metricsText.text = liveMetrics(PerformanceMonitorService.latestSnapshotForUi())
+            primaryButton.text = getString(R.string.retry_save)
+            primaryButton.visibility = View.VISIBLE
+            stopButton.visibility = View.GONE
+        } else if (!hasUsageAccess && !active) {
             statusText.text = getString(R.string.usage_access_required)
             sessionText.text = getString(R.string.usage_access_explanation)
             metricsText.text = ""
@@ -311,6 +325,14 @@ class PerformanceActivity : Activity() {
             this,
             Intent(this, PerformanceMonitorService::class.java)
                 .setAction(PerformanceMonitorService.ACTION_START)
+        )
+    }
+
+    private fun resumeSession() {
+        ContextCompat.startForegroundService(
+            this,
+            Intent(this, PerformanceMonitorService::class.java)
+                .setAction(PerformanceMonitorService.ACTION_RESUME)
         )
     }
 
