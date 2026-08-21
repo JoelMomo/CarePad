@@ -13,6 +13,8 @@ import com.joel.thordoctor.core.emulator.ForegroundEmulatorDetector
 import com.joel.thordoctor.modules.performance.PerformanceMetrics
 import com.joel.thordoctor.modules.performance.PerformanceMonitoringPhase
 import com.joel.thordoctor.modules.performance.PerformanceMonitoringPolicy
+import com.joel.thordoctor.modules.performance.PerformanceRecoveryAction
+import com.joel.thordoctor.modules.performance.PerformanceRecoveryPolicy
 import com.joel.thordoctor.modules.performance.PerformanceRecoveryState
 import com.joel.thordoctor.modules.performance.PerformanceSessionRecoveryStore
 import com.joel.thordoctor.modules.performance.PerformanceSessionSerializer
@@ -73,29 +75,41 @@ class PerformanceMonitorService : Service() {
         fun hasRecoverableSession(context: Context): Boolean =
             PerformanceSessionRecoveryStore.hasRecoverableSession(context)
 
+        fun hasPendingSave(context: Context): Boolean =
+            PerformanceSessionRecoveryStore.load(context) is PerformanceRecoveryState.Saving
+
         fun stateForUi(context: Context): PerformanceMonitorState {
+            if (currentError != null) return PerformanceMonitorState.ERROR
             if (isRunning) return currentState
 
             return when (PerformanceSessionRecoveryStore.load(context)) {
                 PerformanceRecoveryState.WaitingEmulator -> PerformanceMonitorState.WAITING_EMULATOR
                 is PerformanceRecoveryState.Monitoring -> PerformanceMonitorState.MONITORING
+                is PerformanceRecoveryState.Saving -> PerformanceMonitorState.SAVING
                 null -> currentState
             }
         }
 
         fun emulatorNameForUi(context: Context): String? {
             if (isRunning) return currentEmulatorName
-            return (PerformanceSessionRecoveryStore.load(context) as? PerformanceRecoveryState.Monitoring)
-                ?.emulatorName
+            return when (val recovery = PerformanceSessionRecoveryStore.load(context)) {
+                is PerformanceRecoveryState.Monitoring -> recovery.emulatorName
+                is PerformanceRecoveryState.Saving -> recovery.emulatorName
+                PerformanceRecoveryState.WaitingEmulator,
+                null -> null
+            }
         }
 
         fun elapsedSecondsForUi(context: Context): Long {
             if (isRunning) return currentSessionElapsedSeconds
-            val startedAt =
-                (PerformanceSessionRecoveryStore.load(context) as? PerformanceRecoveryState.Monitoring)
-                    ?.startedAt
-                    ?: return 0L
-            return (System.currentTimeMillis() - startedAt).coerceAtLeast(0L) / 1_000L
+            return when (val recovery = PerformanceSessionRecoveryStore.load(context)) {
+                is PerformanceRecoveryState.Monitoring ->
+                    (System.currentTimeMillis() - recovery.startedAt).coerceAtLeast(0L) / 1_000L
+                is PerformanceRecoveryState.Saving ->
+                    (recovery.endedAt - recovery.startedAt).coerceAtLeast(0L) / 1_000L
+                PerformanceRecoveryState.WaitingEmulator,
+                null -> 0L
+            }
         }
 
         fun latestSnapshotForUi(): PerformanceMetrics.Snapshot? = latestSnapshot
@@ -168,7 +182,11 @@ class PerformanceMonitorService : Service() {
             return
         }
 
-        if (!ForegroundEmulatorDetector.hasUsageAccess(this)) {
+        val action = PerformanceRecoveryPolicy.actionFor(recovery)
+        if (
+            action != PerformanceRecoveryAction.RETRY_SAVE &&
+            !ForegroundEmulatorDetector.hasUsageAccess(this)
+        ) {
             currentError = PerformanceMonitorError.USAGE_ACCESS_REQUIRED
             currentState = PerformanceMonitorState.ERROR
             stopSelf()
@@ -181,8 +199,8 @@ class PerformanceMonitorService : Service() {
         currentError = null
         latestSnapshot = null
 
-        when (recovery) {
-            PerformanceRecoveryState.WaitingEmulator -> {
+        when (action) {
+            PerformanceRecoveryAction.WAIT_FOR_EMULATOR -> {
                 currentEmulatorName = null
                 currentSessionStartedAt = 0L
                 currentSessionElapsedSeconds = 0L
@@ -194,34 +212,67 @@ class PerformanceMonitorService : Service() {
                 Thread(::monitorLoop, "CarePadPerformanceMonitor").start()
             }
 
-            is PerformanceRecoveryState.Monitoring -> {
-                currentEmulatorName = recovery.emulatorName
-                currentSessionStartedAt = recovery.startedAt
+            PerformanceRecoveryAction.MONITOR_EMULATOR -> {
+                val monitoring = recovery as PerformanceRecoveryState.Monitoring
+                currentEmulatorName = monitoring.emulatorName
+                currentSessionStartedAt = monitoring.startedAt
                 currentSessionElapsedSeconds =
-                    (System.currentTimeMillis() - recovery.startedAt).coerceAtLeast(0L) / 1_000L
+                    (System.currentTimeMillis() - monitoring.startedAt).coerceAtLeast(0L) / 1_000L
                 currentState = PerformanceMonitorState.MONITORING
                 startForeground(
                     NOTIFICATION_ID,
                     buildNotification(
-                        getString(R.string.notification_monitoring, recovery.emulatorName)
+                        getString(R.string.notification_monitoring, monitoring.emulatorName)
                     )
                 )
 
                 val emulator = ForegroundEmulatorDetector.DetectedEmulator(
-                    name = recovery.emulatorName,
-                    packageName = recovery.emulatorPackage
+                    name = monitoring.emulatorName,
+                    packageName = monitoring.emulatorPackage
                 )
                 val samples = PerformanceSessionRecoveryStore.readSamples(this)
                 Thread(
                     {
                         monitorEmulator(
                             emulator = emulator,
-                            sessionId = recovery.sessionId,
-                            sessionStartedAt = recovery.startedAt,
+                            sessionId = monitoring.sessionId,
+                            sessionStartedAt = monitoring.startedAt,
                             samples = samples
                         )
                     },
                     "CarePadPerformanceMonitor"
+                ).start()
+            }
+
+            PerformanceRecoveryAction.RETRY_SAVE -> {
+                val saving = recovery as PerformanceRecoveryState.Saving
+                currentEmulatorName = saving.emulatorName
+                currentSessionStartedAt = saving.startedAt
+                currentSessionElapsedSeconds =
+                    (saving.endedAt - saving.startedAt).coerceAtLeast(0L) / 1_000L
+                currentState = PerformanceMonitorState.SAVING
+                startForeground(
+                    NOTIFICATION_ID,
+                    buildNotification(getString(R.string.notification_saving))
+                )
+
+                val emulator = ForegroundEmulatorDetector.DetectedEmulator(
+                    name = saving.emulatorName,
+                    packageName = saving.emulatorPackage
+                )
+                val samples = PerformanceSessionRecoveryStore.readSamples(this)
+                Thread(
+                    {
+                        finishSession(
+                            sessionId = saving.sessionId,
+                            emulator = emulator,
+                            startedAt = saving.startedAt,
+                            endedAt = saving.endedAt,
+                            endReason = saving.endReason,
+                            samples = samples
+                        )
+                    },
+                    "CarePadPerformanceSaveRetry"
                 ).start()
             }
         }
@@ -380,6 +431,15 @@ class PerformanceMonitorService : Service() {
         endReason: String,
         samples: JSONArray
     ) {
+        PerformanceSessionRecoveryStore.markSaving(
+            context = this,
+            sessionId = sessionId,
+            emulatorName = emulator.name,
+            emulatorPackage = emulator.packageName,
+            startedAt = startedAt,
+            endedAt = endedAt,
+            endReason = endReason
+        )
         currentState = PerformanceMonitorState.SAVING
         updateNotification(getString(R.string.notification_saving))
 
@@ -397,7 +457,8 @@ class PerformanceMonitorService : Service() {
         } catch (_: Exception) {
             currentError = PerformanceMonitorError.SESSION_SAVE_FAILED
             currentState = PerformanceMonitorState.ERROR
-            // Keep recovery state and samples so a later resume can retry instead of losing the session.
+            // Keep SAVING recovery and samples. A retry finalizes this same session;
+            // it never re-enters emulator monitoring after the session already ended.
             finishService()
             return
         }
