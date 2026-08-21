@@ -363,14 +363,15 @@ wait_for_last_session
 assert_session_json "manual_stop" "$minimum_permission_recovery_samples"
 assert_recovery_cleared
 
-# Session 5 / BUG-4: after a force-stop, keep PPSSPP continuously foreground for
-# longer than the old 60 s lookback, then resume the service directly. The service
-# must reconstruct foreground from the persisted session window without relaunching
-# the emulator fixture and append a new sample instead of timing out incorrectly.
+# Session 5 / BUG-4: interrupt monitoring without force-stopping the package,
+# keep PPSSPP continuously foreground for longer than the old 60 s lookback, then
+# resume the service directly. This simulates recoverable process/service loss
+# without putting the app into Android's user-requested stopped state.
 clear_last_session
 start_session_with_fixture
 samples_before_late_recovery="$(sample_count)"
-adb shell am force-stop "$PERFORMANCE_PACKAGE" >/dev/null
+adb shell am stopservice -n "$PERFORMANCE_SERVICE_COMPONENT" >/dev/null
+adb shell am kill "$PERFORMANCE_PACKAGE" >/dev/null || true
 if ! adb shell run-as "$PERFORMANCE_PACKAGE" test -s files/active_session_samples.jsonl; then
     echo "Late recovery scenario lost persisted samples before restart" >&2
     exit 1
