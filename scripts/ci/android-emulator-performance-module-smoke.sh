@@ -286,7 +286,7 @@ assert_recovery_cleared
 clear_last_session
 start_session_with_fixture
 open_performance
-tap_ui_button "Stop session" "Detener sesión"
+tap_ui_button "Finish session" "Terminar sesión"
 wait_for_last_session
 assert_session_json "manual_stop" 1
 assert_recovery_cleared
@@ -314,7 +314,7 @@ launch_emulator_fixture
 wait_for_sample_count_greater_than "$samples_before_restart"
 minimum_recovered_samples=$((samples_before_restart + 1))
 open_performance
-tap_ui_button "Stop session" "Detener sesión"
+tap_ui_button "Finish session" "Terminar sesión"
 wait_for_last_session
 assert_session_json "manual_stop" "$minimum_recovered_samples"
 assert_recovery_cleared
