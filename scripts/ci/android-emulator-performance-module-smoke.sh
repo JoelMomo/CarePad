@@ -197,7 +197,7 @@ adb shell pm grant "$PERFORMANCE_PACKAGE" android.permission.POST_NOTIFICATIONS 
 
 # Reopen after the app-op grant and initiate the session through the real UI.
 open_performance
-if ! grep -Eq "Start session|Iniciar sesión" "$UI_DUMP_LOCAL"; then
+if ! grep -Eiq "Start session|Iniciar sesión" "$UI_DUMP_LOCAL"; then
     echo "Performance module did not expose the session start action after Usage Access was granted" >&2
     cat "$UI_DUMP_LOCAL" >&2 || true
     exit 1
@@ -233,7 +233,7 @@ assert_session_json
 
 if ! dump_ui ||
     ! grep -Fq "PPSSPP" "$UI_DUMP_LOCAL" ||
-    ! grep -Eq "Samples: [1-9]|Muestras: [1-9]" "$UI_DUMP_LOCAL"; then
+    ! grep -Eiq "Samples: [1-9]|Muestras: [1-9]" "$UI_DUMP_LOCAL"; then
     echo "Performance UI did not render the completed session summary" >&2
     cat "$UI_DUMP_LOCAL" >&2 || true
     exit 1
