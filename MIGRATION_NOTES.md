@@ -20,10 +20,12 @@ This migration intentionally starts a new public repository without ThorDoctor G
 - local/private artifacts covered by the hardened `.gitignore`
 - a project license, pending an explicit product/legal decision
 
-## Migration-only CI adjustment
+## Reproducible migration adaptations
 
-The source `gradle-wrapper.jar` is a binary blob that could not be copied byte-identically through the connected GitHub migration path. Until it is restored, CI installs Gradle `9.5.0` explicitly through `gradle/actions/setup-gradle` and invokes `gradle` directly. `gradle-wrapper.properties`, `gradlew` and `gradlew.bat` remain preserved.
+The private source `gradle-wrapper.jar` could not be copied byte-identically through the connected migration path. The wrapper was regenerated in GitHub Actions using official Gradle `9.5.0`, while the existing `gradle-wrapper.properties` was kept unchanged. CI uses the regenerated `./gradlew` wrapper and must pass before this snapshot can be integrated.
 
-The legacy raster launcher icon fallbacks are also not included in this draft snapshot; the adaptive vector resources used on current Android versions are preserved. This must be resolved before the migration is considered complete if compatibility with pre-API-26 launcher resources is required.
+The private legacy raster launcher fallbacks were not copied. Because the app still supports API 24+, the public snapshot provides unqualified XML launcher fallbacks composed from the same existing launcher vector resources; API 26+ continues to use the preserved adaptive icons.
+
+Three large source files had to be reconstructed through chunked connector reads and therefore are not asserted byte-identical to the private Git blobs. Their buildability and the existing module behavior are validated by public CI; this is not treated as evidence for OEM-specific behavior.
 
 No architectural refactor or SAF behavior change belongs in this migration PR.
