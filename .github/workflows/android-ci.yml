@@ -28,13 +28,14 @@ jobs:
       - name: Install Android 16 SDK
         run: sdkmanager "platforms;android-36"
 
-      - name: Set up Gradle 9.5.0
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.5.0"
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
 
       - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -53,7 +54,7 @@ jobs:
           retention-days: 14
 
       - name: Build update module lab APK
-        run: gradle :module-lab:clean :module-lab:assembleDebug -PcarepadModuleLabVersionCode=2 -PcarepadModuleLabVersionName=0.2-lab --stacktrace
+        run: ./gradlew :module-lab:clean :module-lab:assembleDebug -PcarepadModuleLabVersionCode=2 -PcarepadModuleLabVersionName=0.2-lab --stacktrace
 
       - name: Upload update module lab APK
         uses: actions/upload-artifact@v4
@@ -64,7 +65,7 @@ jobs:
           retention-days: 14
 
       - name: Build incompatible-protocol module lab APK
-        run: gradle :module-lab:clean :module-lab:assembleDebug -PcarepadModuleLabVersionCode=3 -PcarepadModuleLabVersionName=0.3-incompatible -PcarepadModuleLabProtocolMin=2 -PcarepadModuleLabProtocolMax=2 --stacktrace
+        run: ./gradlew :module-lab:clean :module-lab:assembleDebug -PcarepadModuleLabVersionCode=3 -PcarepadModuleLabVersionName=0.3-incompatible -PcarepadModuleLabProtocolMin=2 -PcarepadModuleLabProtocolMax=2 --stacktrace
 
       - name: Upload incompatible-protocol module lab APK
         uses: actions/upload-artifact@v4
@@ -75,7 +76,7 @@ jobs:
           retention-days: 14
 
       - name: Build wrong-signature module lab APK
-        run: gradle :module-lab:clean :module-lab:assembleRelease -PcarepadModuleLabVersionCode=4 -PcarepadModuleLabVersionName=0.4-wrong-signature --stacktrace
+        run: ./gradlew :module-lab:clean :module-lab:assembleRelease -PcarepadModuleLabVersionCode=4 -PcarepadModuleLabVersionName=0.4-wrong-signature --stacktrace
 
       - name: Sign module lab APK with unrelated CI key
         run: |
@@ -107,7 +108,7 @@ jobs:
           retention-days: 14
 
       - name: Build defective update module lab APK
-        run: gradle :module-lab:clean :module-lab:assembleDebug -PcarepadModuleLabVersionCode=5 -PcarepadModuleLabVersionName=0.5-broken -PcarepadModuleLabAlwaysCrash=true --stacktrace
+        run: ./gradlew :module-lab:clean :module-lab:assembleDebug -PcarepadModuleLabVersionCode=5 -PcarepadModuleLabVersionName=0.5-broken -PcarepadModuleLabAlwaysCrash=true --stacktrace
 
       - name: Upload defective update module lab APK
         uses: actions/upload-artifact@v4
@@ -118,7 +119,7 @@ jobs:
           retention-days: 14
 
       - name: Build parallel CarePad lab host
-        run: gradle :app:assembleDebug -PcarepadLabHost=true --stacktrace
+        run: ./gradlew :app:assembleDebug -PcarepadLabHost=true --stacktrace
 
       - name: Upload parallel CarePad lab host
         uses: actions/upload-artifact@v4
