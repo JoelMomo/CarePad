@@ -151,6 +151,18 @@ sample_count() {
     wc -l < "$SAMPLES_LOCAL" | tr -d ' '
 }
 
+performance_service_running() {
+    adb shell dumpsys activity services "$PERFORMANCE_PACKAGE" 2>/dev/null |
+        grep -Fq "PerformanceMonitorService"
+}
+
+dump_recovery_diagnostics() {
+    adb shell dumpsys activity services "$PERFORMANCE_PACKAGE" >&2 || true
+    adb shell dumpsys appops "$PERFORMANCE_PACKAGE" >&2 || true
+    adb shell run-as "$PERFORMANCE_PACKAGE" \
+        cat shared_prefs/thor_doctor_session_recovery.xml >&2 2>/dev/null || true
+}
+
 wait_for_samples() {
     for _ in $(seq 1 30); do
         if (( $(sample_count) >= 1 )); then
@@ -177,6 +189,7 @@ wait_for_sample_count_greater_than() {
 
     echo "Performance module did not append samples after recovery; previous=$previous_count current=$(sample_count)" >&2
     adb shell dumpsys activity activities >&2 || true
+    dump_recovery_diagnostics
     return 1
 }
 
@@ -385,6 +398,12 @@ sleep 65
 adb shell am start-foreground-service \
     -n "$PERFORMANCE_SERVICE_COMPONENT" \
     -a "$PERFORMANCE_RESUME_ACTION" >/dev/null
+sleep 2
+if ! performance_service_running; then
+    echo "Performance service did not start for late recovery" >&2
+    dump_recovery_diagnostics
+    exit 1
+fi
 wait_for_sample_count_greater_than "$samples_before_late_recovery"
 minimum_late_recovery_samples=$((samples_before_late_recovery + 1))
 open_performance
