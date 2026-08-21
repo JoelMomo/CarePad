@@ -335,7 +335,18 @@ class PerformanceMonitorService : Service() {
         val initialUsageCursor = PerformanceMonitoringPolicy.usageCursorFor(sessionStartedAt)
         val initialForegroundEvent =
             ForegroundEmulatorDetector.latestForegroundEvent(this, initialUsageCursor)
-        var lastForegroundPackage = initialForegroundEvent?.packageName ?: packageName
+        val emulatorRemainsForeground =
+            ForegroundEmulatorDetector.packageRemainsForeground(
+                this,
+                emulator.packageName,
+                initialUsageCursor
+            )
+        var lastForegroundPackage =
+            if (emulatorRemainsForeground) {
+                emulator.packageName
+            } else {
+                initialForegroundEvent?.packageName ?: packageName
+            }
         var lastForegroundEventTime = initialForegroundEvent?.timestamp ?: initialUsageCursor
         var usageCursor = PerformanceMonitoringPolicy.usageCursorFor(System.currentTimeMillis())
         var awaySince: Long? = null
