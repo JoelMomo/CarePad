@@ -47,16 +47,38 @@ data class RomClassification(
 }
 
 /**
- * Conservative first-pass ROM platform classifier for Juegos y BIOS.
+ * Conservative ROM platform classifier for Juegos y BIOS.
  *
- * This class deliberately performs no file IO and makes no storage decisions. It only evaluates
- * filename evidence. Ambiguous container formats return multiple low-confidence candidates instead
- * of guessing a destination. Header/magic-byte inspection can be layered on later without changing
- * callers of [classify].
+ * This class performs no file IO and makes no storage decisions. Callers may optionally provide an
+ * already-read header prefix. Recognized binary signatures take precedence over filename evidence;
+ * otherwise ambiguous extensions remain unresolved instead of guessing a destination.
  */
 object RomPlatformClassifier {
-    fun classify(fileName: String): RomClassification {
+    /** Covers every header offset currently inspected, including the Game Boy header checksum. */
+    const val RECOMMENDED_HEADER_PREFIX_BYTES = 0x150
+
+    private val GAME_BOY_NINTENDO_LOGO = intArrayOf(
+        0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B,
+        0x03, 0x73, 0x00, 0x83, 0x00, 0x0C, 0x00, 0x0D,
+        0x00, 0x08, 0x11, 0x1F, 0x88, 0x89, 0x00, 0x0E,
+        0xDC, 0xCC, 0x6E, 0xE6, 0xDD, 0xDD, 0xD9, 0x99,
+        0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E, 0xEC, 0xCC,
+        0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E,
+    )
+
+    fun classify(fileName: String): RomClassification =
+        classify(fileName, headerPrefix = null)
+
+    fun classify(fileName: String, headerPrefix: ByteArray?): RomClassification {
+        detectByHeader(headerPrefix)?.let { headerCandidate ->
+            return RomClassification(
+                fileName = fileName,
+                candidates = listOf(headerCandidate),
+            )
+        }
+
         val extension = fileName.substringAfterLast('.', missingDelimiterValue = "")
+            .trim()
             .lowercase(Locale.ROOT)
 
         val candidates = when (extension) {
@@ -78,43 +100,118 @@ object RomPlatformClassifier {
                 RomPlatform.SEGA_GENESIS,
                 "Common Sega Genesis / Mega Drive ROM extension .$extension",
             )
-            "gdi" -> single(RomPlatform.DREAMCAST, "Extension .gdi is strongly associated with Dreamcast")
-            "iso" -> ambiguous(
-                listOf(RomPlatform.PLAYSTATION_2, RomPlatform.PSP, RomPlatform.GAMECUBE, RomPlatform.WII),
-                "Extension .iso is shared by several disc-based platforms; header inspection is required",
+            "gdi" -> single(
+                RomPlatform.DREAMCAST,
+                "Extension .gdi is strongly associated with Dreamcast",
             )
-            "bin", "cue" -> ambiguous(
-                listOf(RomPlatform.PLAYSTATION, RomPlatform.SEGA_CD),
-                "Extension .$extension is shared by multiple CD-based platforms; companion files or disc metadata are required",
-            )
-            "chd" -> ambiguous(
-                listOf(
-                    RomPlatform.PLAYSTATION,
-                    RomPlatform.PLAYSTATION_2,
-                    RomPlatform.SEGA_CD,
-                    RomPlatform.DREAMCAST,
-                ),
-                "CHD is a multi-platform container; internal metadata is required",
-            )
+            "iso", "bin", "cue", "chd" -> emptyList()
             else -> emptyList()
         }
 
         return RomClassification(fileName = fileName, candidates = candidates)
     }
 
+    private fun detectByHeader(header: ByteArray?): RomPlatformCandidate? {
+        if (header == null) return null
+
+        if (header.matches(0, 0x4E, 0x45, 0x53, 0x1A)) {
+            return candidate(
+                RomPlatform.NES,
+                ClassificationConfidence.HIGH,
+                "iNES header signature",
+            )
+        }
+
+        if (
+            header.matches(0, 0x80, 0x37, 0x12, 0x40) ||
+            header.matches(0, 0x37, 0x80, 0x40, 0x12) ||
+            header.matches(0, 0x12, 0x40, 0x80, 0x37) ||
+            header.matches(0, 0x40, 0x12, 0x37, 0x80)
+        ) {
+            return candidate(
+                RomPlatform.NINTENDO_64,
+                ClassificationConfidence.HIGH,
+                "Nintendo 64 byte-order header signature",
+            )
+        }
+
+        if (header.matches(4, 0x24, 0xFF, 0xAE, 0x51, 0x69, 0x9A, 0xA2, 0x21)) {
+            return candidate(
+                RomPlatform.GAME_BOY_ADVANCE,
+                ClassificationConfidence.MEDIUM,
+                "Partial Game Boy Advance Nintendo logo signature",
+            )
+        }
+
+        if (header.matches(0xC0, 0x24, 0xFF, 0xAE, 0x51, 0x69, 0x9A, 0xA2, 0x21)) {
+            return candidate(
+                RomPlatform.NINTENDO_DS,
+                ClassificationConfidence.MEDIUM,
+                "Partial Nintendo DS Nintendo logo signature",
+            )
+        }
+
+        val colorFlag = header.getOrNull(0x143)
+        if (colorFlag != null && header.matches(0x104, *GAME_BOY_NINTENDO_LOGO)) {
+            val isColor = colorFlag.toInt() and 0x80 == 0x80
+            val checksumIsValid = header.hasValidGameBoyHeaderChecksum()
+            return candidate(
+                if (isColor) RomPlatform.GAME_BOY_COLOR else RomPlatform.GAME_BOY,
+                if (checksumIsValid) ClassificationConfidence.HIGH else ClassificationConfidence.MEDIUM,
+                if (checksumIsValid) {
+                    "Game Boy Nintendo logo and header checksum"
+                } else {
+                    "Game Boy Nintendo logo; header checksum unavailable or invalid"
+                },
+            )
+        }
+
+        if (
+            colorFlag != null &&
+            header.matches(0x104, 0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B)
+        ) {
+            val isColor = colorFlag.toInt() and 0x80 == 0x80
+            return candidate(
+                if (isColor) RomPlatform.GAME_BOY_COLOR else RomPlatform.GAME_BOY,
+                ClassificationConfidence.MEDIUM,
+                "Partial Game Boy cartridge Nintendo logo signature plus color flag",
+            )
+        }
+
+        return null
+    }
+
+    private fun ByteArray.hasValidGameBoyHeaderChecksum(): Boolean {
+        val expected = getOrNull(0x14D)?.toInt()?.and(0xFF) ?: return false
+        var calculated = 0
+        for (offset in 0x134..0x14C) {
+            calculated = (calculated - (this[offset].toInt() and 0xFF) - 1) and 0xFF
+        }
+        return calculated == expected
+    }
+
+    private fun ByteArray.matches(offset: Int, vararg expected: Int): Boolean {
+        if (offset < 0 || size < offset + expected.size) return false
+        return expected.indices.all { index ->
+            (this[offset + index].toInt() and 0xFF) == expected[index]
+        }
+    }
+
+    private fun candidate(
+        platform: RomPlatform,
+        confidence: ClassificationConfidence,
+        reason: String,
+    ) = RomPlatformCandidate(
+        platform = platform,
+        confidence = confidence,
+        reason = reason,
+    )
+
     private fun single(platform: RomPlatform, reason: String) = listOf(
-        RomPlatformCandidate(
+        candidate(
             platform = platform,
             confidence = ClassificationConfidence.MEDIUM,
             reason = reason,
         ),
     )
-
-    private fun ambiguous(platforms: List<RomPlatform>, reason: String) = platforms.map { platform ->
-        RomPlatformCandidate(
-            platform = platform,
-            confidence = ClassificationConfidence.LOW,
-            reason = reason,
-        )
-    }
 }
