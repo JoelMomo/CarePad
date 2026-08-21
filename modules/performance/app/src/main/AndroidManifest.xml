@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <queries>
+        <package android:name="com.retroarch.aarch64" />
+        <package android:name="com.fastemulator.gba" />
+        <package android:name="com.fastemulator.gbafree" />
+        <package android:name="com.github.stenzek.duckstation" />
+        <package android:name="xyz.aethersx2.android" />
+        <package android:name="org.ppsspp.ppsspp" />
+        <package android:name="me.magnum.melondualds" />
+        <package android:name="org.dolphinemu.dolphinemu" />
+        <package android:name="org.azahar_emu.azahar" />
+        <package android:name="io.github.azaharplus.android" />
+        <package android:name="org.vita3k.emulator" />
+        <package android:name="dev.eden.eden_emulator" />
+        <package android:name="info.cemu.cemu" />
+        <package android:name="net.rpcsx" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <activity
+            android:name=".PerformanceActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+
+            <meta-data
+                android:name="dev.carepad.meta.MODULE_ID"
+                android:value="performance" />
+            <meta-data
+                android:name="dev.carepad.meta.PROTOCOL_MIN"
+                android:value="1" />
+            <meta-data
+                android:name="dev.carepad.meta.PROTOCOL_MAX"
+                android:value="1" />
+            <meta-data
+                android:name="dev.carepad.meta.CAPABILITIES"
+                android:value="performance_session" />
+
+            <intent-filter>
+                <action android:name="dev.carepad.action.MODULE" />
+                <action android:name="dev.carepad.action.OPEN_MODULE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+        </activity>
+
+        <service
+            android:name=".PerformanceMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-initiated emulator performance monitoring session" />
+
+        </service>
+
+    </application>
+
+</manifest>
