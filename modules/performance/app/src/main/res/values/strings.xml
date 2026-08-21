@@ -7,6 +7,7 @@
     <string name="usage_access_explanation">CarePad necesita saber qué emulador está en primer plano para iniciar y cerrar la sesión correctamente.</string>
     <string name="open_usage_access">Conceder acceso de uso</string>
     <string name="start_session">Iniciar sesión</string>
+    <string name="retry_save">Reintentar guardado</string>
     <string name="stop_session">Terminar sesión</string>
     <string name="last_session">Última sesión</string>
     <string name="state_ready">Listo</string>
@@ -34,7 +35,7 @@
     <string name="summary_ram">RAM media: %1$s</string>
     <string name="summary_temperature">Temperatura máxima fiable: %1$s</string>
     <string name="summary_battery">Batería: %1$s</string>
-    <string name="save_failed">No se pudo guardar el resumen. La sesión recuperable se conserva para reintentar.</string>
+    <string name="save_failed">No se pudo guardar el resumen. La sesión se conserva y puedes reintentar el guardado sin volver a monitorizarla.</string>
     <string name="generic_error">Se produjo un error. Puedes volver a iniciar una sesión.</string>
     <string name="notification_channel_name">Sesiones de rendimiento</string>
     <string name="notification_channel_description">Monitorización iniciada explícitamente por el usuario durante una sesión de emulación.</string>
