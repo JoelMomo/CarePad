@@ -293,6 +293,7 @@ class PerformanceMonitorService : Service() {
 
     private fun waitForEmulator(): ForegroundEmulatorDetector.DetectedEmulator? {
         while (shouldRun) {
+            if (stopForMissingUsageAccess()) return null
             ForegroundEmulatorDetector.currentEmulator(this)?.let { return it }
             sleepSafely(PerformanceMonitoringPolicy.CHECK_INTERVAL_MS)
         }
@@ -331,19 +332,18 @@ class PerformanceMonitorService : Service() {
         updateNotification(getString(R.string.notification_monitoring, emulator.name))
 
         var nextSampleAt = 0L
-        val monitorStartedAt = System.currentTimeMillis()
-        var lastForegroundPackage =
-            if (ForegroundEmulatorDetector.currentEmulator(this)?.packageName == emulator.packageName) {
-                emulator.packageName
-            } else {
-                packageName
-            }
-        var lastForegroundEventTime = PerformanceMonitoringPolicy.usageCursorFor(monitorStartedAt)
-        var usageCursor = PerformanceMonitoringPolicy.usageCursorFor(monitorStartedAt)
+        val initialUsageCursor = PerformanceMonitoringPolicy.usageCursorFor(sessionStartedAt)
+        val initialForegroundEvent =
+            ForegroundEmulatorDetector.latestForegroundEvent(this, initialUsageCursor)
+        var lastForegroundPackage = initialForegroundEvent?.packageName ?: packageName
+        var lastForegroundEventTime = initialForegroundEvent?.timestamp ?: initialUsageCursor
+        var usageCursor = PerformanceMonitoringPolicy.usageCursorFor(System.currentTimeMillis())
         var awaySince: Long? = null
         var endReason = "unknown"
 
         while (shouldRun) {
+            if (stopForMissingUsageAccess()) return
+
             val now = System.currentTimeMillis()
             val foregroundEvent = ForegroundEmulatorDetector.latestForegroundEvent(this, usageCursor)
             usageCursor = PerformanceMonitoringPolicy.usageCursorFor(now)
@@ -409,6 +409,15 @@ class PerformanceMonitorService : Service() {
             endReason = endReason,
             samples = samples
         )
+    }
+
+    private fun stopForMissingUsageAccess(): Boolean {
+        if (ForegroundEmulatorDetector.hasUsageAccess(this)) return false
+
+        currentError = PerformanceMonitorError.USAGE_ACCESS_REQUIRED
+        currentState = PerformanceMonitorState.ERROR
+        finishService()
+        return true
     }
 
     private fun captureSample(samples: JSONArray, timestamp: Long) {
