@@ -19,22 +19,19 @@ import java.io.File
 import java.security.MessageDigest
 
 /**
- * Host-side recovery mechanism for an exact catalog-selected RecoveryTarget.
+ * Executes recovery for an exact catalog-selected [RecoveryTarget].
  *
- * It never selects a version, never requests privileged downgrade, and never escalates from a safe
- * route to a destructive route. Android is allowed to require user confirmation for both removal
- * and installation. Success is persisted only after the installed package is verified.
+ * This layer never chooses a version and never requests a privileged downgrade. Removal is an
+ * explicit Android system action; installation uses PackageInstaller with user action required.
  */
 object AndroidModuleRecovery {
     internal const val ACTION_RECOVERY_STATUS = "com.joel.thordoctor.carepad.RECOVERY_STATUS"
     internal const val EXTRA_ARTIFACT_ID = "artifact_id"
-    internal const val EXTRA_STEP = "step"
-    internal const val STEP_UNINSTALL = "uninstall"
-    internal const val STEP_INSTALL = "install"
 
     fun currentState(context: Context): RecoveryOperationSnapshot? =
         RecoveryOperationStore.current(context)?.snapshot()
 
+    @Synchronized
     fun prepare(
         context: Context,
         target: RecoveryTarget,
@@ -54,12 +51,16 @@ object AndroidModuleRecovery {
             RecoveryOperationStore.clear(context)
         }
 
-        val route = when (val authorizationResult =
-            RecoveryAuthorizationPolicy.authorize(target, authorization)) {
-            is RecoveryAuthorizationResult.Allowed -> authorizationResult.route
+        val route = when (
+            val result = RecoveryAuthorizationPolicy.authorize(target, authorization)
+        ) {
+            is RecoveryAuthorizationResult.Allowed -> result.route
             is RecoveryAuthorizationResult.Blocked -> {
-                val code = when (authorizationResult.reason) {
-                    RecoveryAuthorizationFailure.BACKUP_REQUIRED -> RecoveryErrorCode.BACKUP_REQUIRED
+                val code = when (result.reason) {
+                    RecoveryAuthorizationFailure.BACKUP_REQUIRED ->
+                        RecoveryErrorCode.BACKUP_REQUIRED
+                    RecoveryAuthorizationFailure.RISKY_REINSTALL_NOT_PERMITTED ->
+                        RecoveryErrorCode.RISKY_REINSTALL_NOT_PERMITTED
                     RecoveryAuthorizationFailure.DATA_LOSS_ACKNOWLEDGEMENT_REQUIRED ->
                         RecoveryErrorCode.DATA_LOSS_ACKNOWLEDGEMENT_REQUIRED
                 }
@@ -81,7 +82,6 @@ object AndroidModuleRecovery {
                     "Unable to retain the verified recovery APK: ${error.message ?: error::class.java.simpleName}"
                 )
             }
-
         if (sha256(preparedFile) != target.normalizedApkSha256) {
             preparedFile.delete()
             return RecoveryActionResult.Rejected(
@@ -90,16 +90,20 @@ object AndroidModuleRecovery {
             )
         }
 
-        val stored = RecoveryOperationStore.savePrepared(
-            context = context,
-            target = target,
-            apkPath = preparedFile.absolutePath,
-            route = route
+        return RecoveryActionResult.Accepted(
+            RecoveryOperationStore.savePrepared(
+                context = context,
+                target = target,
+                apkPath = preparedFile.absolutePath,
+                route = route
+            ).snapshot()
         )
-        return RecoveryActionResult.Accepted(stored.snapshot())
     }
 
-    /** Starts Android's normal uninstall flow for the single prepared module. */
+    /**
+     * Opens Android's normal package-removal confirmation. The host must call
+     * [continueAfterUninstallConfirmation] when it returns from the system UI.
+     */
     fun requestUninstall(context: Context): RecoveryActionResult {
         val operation = RecoveryOperationStore.current(context)
             ?: return rejectedState("There is no prepared module recovery.")
@@ -112,11 +116,15 @@ object AndroidModuleRecovery {
             RecoveryPhase.WAITING_FOR_UNINSTALL_CONFIRMATION
         ) ?: return rejectedState("Recovery state could not be persisted.")
 
+        val intent = Intent(
+            Intent.ACTION_DELETE,
+            Uri.parse("package:${operation.target.packageName}")
+        ).apply {
+            if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
         return runCatching {
-            context.packageManager.packageInstaller.uninstall(
-                operation.target.packageName,
-                statusIntentSender(context, operation.target, STEP_UNINSTALL)
-            )
+            context.startActivity(intent)
             RecoveryActionResult.Accepted(waiting.snapshot())
         }.getOrElse { error ->
             val failed = RecoveryOperationStore.update(
@@ -129,10 +137,43 @@ object AndroidModuleRecovery {
         }
     }
 
-    /** Opens Android's install-source settings only when the current recovery is waiting for it. */
+    /** Revalidates the real package state after Android's uninstall confirmation UI returns. */
+    fun continueAfterUninstallConfirmation(context: Context): RecoveryActionResult {
+        val operation = RecoveryOperationStore.current(context)
+            ?: return rejectedState("There is no recovery waiting for removal confirmation.")
+        if (operation.phase != RecoveryPhase.WAITING_FOR_UNINSTALL_CONFIRMATION) {
+            return rejectedState("Recovery is not waiting for removal confirmation.", operation)
+        }
+
+        if (installedPackageInfo(context.packageManager, operation.target.packageName) != null) {
+            val cancelled = RecoveryOperationStore.update(
+                context,
+                RecoveryPhase.CANCELLED,
+                detail = "The module is still installed after Android's removal confirmation."
+            )
+            deletePreparedApk(operation)
+            return RecoveryActionResult.Accepted(requireNotNull(cancelled).snapshot())
+        }
+
+        RecoveryOperationStore.update(context, RecoveryPhase.READY_TO_INSTALL)
+        return submitInstall(context)
+    }
+
+    fun cancelPrepared(context: Context): RecoveryActionResult {
+        val operation = RecoveryOperationStore.current(context)
+            ?: return rejectedState("There is no prepared recovery to cancel.")
+        if (operation.phase != RecoveryPhase.PREPARED) {
+            return rejectedState("Recovery can no longer be cancelled before installation changes.", operation)
+        }
+        val cancelled = RecoveryOperationStore.update(context, RecoveryPhase.CANCELLED)
+        deletePreparedApk(operation)
+        return RecoveryActionResult.Accepted(requireNotNull(cancelled).snapshot())
+    }
+
+    /** Opens Android's install-source setting only when the recovery is waiting for it. */
     fun requestInstallPermission(context: Context): RecoveryActionResult {
         val operation = RecoveryOperationStore.current(context)
-            ?: return rejectedState("There is no module recovery waiting for install permission.")
+            ?: return rejectedState("There is no recovery waiting for install permission.")
         if (operation.phase != RecoveryPhase.WAITING_FOR_INSTALL_PERMISSION) {
             return rejectedState("Recovery is not waiting for install permission.", operation)
         }
@@ -143,7 +184,6 @@ object AndroidModuleRecovery {
         ).apply {
             if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-
         return runCatching {
             context.startActivity(intent)
             RecoveryActionResult.Accepted(operation.snapshot())
@@ -158,13 +198,12 @@ object AndroidModuleRecovery {
         }
     }
 
-    /** Re-attempts installation after Android install-source permission has been granted. */
     fun continueAfterInstallPermission(context: Context): RecoveryActionResult =
         submitInstall(context, allowWaitingForPermission = true)
 
     /**
-     * Marks backup restoration as verified before final package verification. No backup or restore
-     * policy is invented here; a module-specific data adapter must perform that work separately.
+     * The module-specific data layer owns backup/restore. This method only accepts its verified
+     * result and deliberately cannot invent or bypass that policy.
      */
     fun completeDataRestore(
         context: Context,
@@ -188,23 +227,22 @@ object AndroidModuleRecovery {
         return verifyAndFinish(context)
     }
 
-    /** Retry is limited to an incomplete install after the old package has already been removed. */
+    /** Retry is limited to installation failures after the defective package is already absent. */
     fun retryInstall(context: Context): RecoveryActionResult {
         val operation = RecoveryOperationStore.current(context)
             ?: return rejectedState("There is no failed recovery to retry.")
-        if (operation.phase != RecoveryPhase.FAILED ||
-            operation.errorCode !in setOf(
-                RecoveryErrorCode.INSTALL_SESSION_FAILED,
-                RecoveryErrorCode.INSTALL_FAILED,
-                RecoveryErrorCode.ANDROID_CONFIRMATION_MISSING,
-                RecoveryErrorCode.INSTALL_PERMISSION_REQUEST_FAILED
-            )
-        ) {
-            return rejectedState("This recovery failure cannot be retried as an install-only step.", operation)
+        val retryable = setOf(
+            RecoveryErrorCode.INSTALL_SESSION_FAILED,
+            RecoveryErrorCode.INSTALL_FAILED,
+            RecoveryErrorCode.ANDROID_CONFIRMATION_MISSING,
+            RecoveryErrorCode.INSTALL_PERMISSION_REQUEST_FAILED
+        )
+        if (operation.phase != RecoveryPhase.FAILED || operation.errorCode !in retryable) {
+            return rejectedState("This failure cannot be retried as an install-only step.", operation)
         }
         if (installedPackageInfo(context.packageManager, operation.target.packageName) != null) {
             return rejectedState(
-                "The module package is installed; CarePad will not silently remove it during retry.",
+                "The module is installed; CarePad will not remove it silently during retry.",
                 operation
             )
         }
@@ -220,45 +258,6 @@ object AndroidModuleRecovery {
         return true
     }
 
-    internal fun handleUninstallStatus(
-        context: Context,
-        status: Int,
-        detail: String?
-    ): RecoveryActionResult {
-        val operation = RecoveryOperationStore.current(context)
-            ?: return rejectedState("Recovery status arrived without an active operation.")
-        if (operation.phase != RecoveryPhase.WAITING_FOR_UNINSTALL_CONFIRMATION) {
-            return rejectedState("Unexpected uninstall status for current recovery phase.", operation)
-        }
-
-        return when (status) {
-            PackageInstaller.STATUS_SUCCESS -> {
-                RecoveryOperationStore.update(context, RecoveryPhase.READY_TO_INSTALL)
-                submitInstall(context)
-            }
-
-            PackageInstaller.STATUS_FAILURE_ABORTED -> {
-                val cancelled = RecoveryOperationStore.update(
-                    context,
-                    RecoveryPhase.CANCELLED,
-                    detail = detail ?: "Android removal was cancelled before the installation changed."
-                )
-                deletePreparedApk(operation)
-                RecoveryActionResult.Accepted(requireNotNull(cancelled).snapshot())
-            }
-
-            else -> {
-                val failed = RecoveryOperationStore.update(
-                    context,
-                    RecoveryPhase.FAILED,
-                    RecoveryErrorCode.UNINSTALL_FAILED,
-                    detail ?: "Android could not remove the defective module (status $status)."
-                )
-                RecoveryActionResult.Accepted(requireNotNull(failed).snapshot())
-            }
-        }
-    }
-
     internal fun handleInstallSuccess(context: Context): RecoveryActionResult {
         val operation = RecoveryOperationStore.current(context)
             ?: return rejectedState("Install success arrived without an active recovery.")
@@ -270,6 +269,11 @@ object AndroidModuleRecovery {
             return rejectedState("Unexpected install success for current recovery phase.", operation)
         }
 
+        RecoveryOperationStore.update(context, RecoveryPhase.VERIFYING)
+        verifyInstalledTarget(context, operation.target)?.let { invalid ->
+            return fail(context, invalid.code, invalid.detail)
+        }
+
         return if (operation.target.recoverySafety == RecoverySafety.BACKUP_RESTORE_REQUIRED) {
             val waiting = RecoveryOperationStore.update(
                 context,
@@ -277,7 +281,7 @@ object AndroidModuleRecovery {
             )
             RecoveryActionResult.Accepted(requireNotNull(waiting).snapshot())
         } else {
-            verifyAndFinish(context)
+            finishVerified(context, operation)
         }
     }
 
@@ -285,15 +289,11 @@ object AndroidModuleRecovery {
         context: Context,
         status: Int,
         detail: String?
-    ): RecoveryActionResult {
-        val failed = RecoveryOperationStore.update(
-            context,
-            RecoveryPhase.FAILED,
-            RecoveryErrorCode.INSTALL_FAILED,
-            detail ?: "Android could not install the recovery target (status $status)."
-        ) ?: return rejectedState("Install failure arrived without an active recovery.")
-        return RecoveryActionResult.Accepted(failed.snapshot())
-    }
+    ): RecoveryActionResult = fail(
+        context,
+        RecoveryErrorCode.INSTALL_FAILED,
+        detail ?: "Android could not install the recovery target (status $status)."
+    )
 
     internal fun markWaitingForInstallConfirmation(context: Context): RecoveryActionResult {
         val operation = RecoveryOperationStore.current(context)
@@ -308,15 +308,14 @@ object AndroidModuleRecovery {
         return RecoveryActionResult.Accepted(requireNotNull(waiting).snapshot())
     }
 
-    internal fun failMissingAndroidConfirmation(context: Context): RecoveryActionResult {
-        val failed = RecoveryOperationStore.update(
-            context,
-            RecoveryPhase.FAILED,
-            RecoveryErrorCode.ANDROID_CONFIRMATION_MISSING,
-            "Android requested user action but supplied no confirmation Intent."
-        ) ?: return rejectedState("Recovery state is missing.")
-        return RecoveryActionResult.Accepted(failed.snapshot())
-    }
+    internal fun failAndroidConfirmation(
+        context: Context,
+        detail: String
+    ): RecoveryActionResult = fail(
+        context,
+        RecoveryErrorCode.ANDROID_CONFIRMATION_MISSING,
+        detail
+    )
 
     private fun submitInstall(
         context: Context,
@@ -335,13 +334,11 @@ object AndroidModuleRecovery {
 
         val apkFile = File(operation.apkPath)
         if (!apkFile.isFile || sha256(apkFile) != operation.target.normalizedApkSha256) {
-            val failed = RecoveryOperationStore.update(
+            return fail(
                 context,
-                RecoveryPhase.FAILED,
                 RecoveryErrorCode.APK_CHANGED_AFTER_PREPARATION,
-                "The prepared recovery APK is missing or no longer matches its catalog hash."
+                "The prepared APK is missing or no longer matches its catalog SHA-256."
             )
-            return RecoveryActionResult.Accepted(requireNotNull(failed).snapshot())
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
@@ -364,15 +361,12 @@ object AndroidModuleRecovery {
                 setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
             }
         }
-
         val sessionId = runCatching { installer.createSession(params) }.getOrElse { error ->
-            val failed = RecoveryOperationStore.update(
+            return fail(
                 context,
-                RecoveryPhase.FAILED,
                 RecoveryErrorCode.INSTALL_SESSION_FAILED,
                 error.message ?: error::class.java.simpleName
             )
-            return RecoveryActionResult.Accepted(requireNotNull(failed).snapshot())
         }
 
         return try {
@@ -385,18 +379,16 @@ object AndroidModuleRecovery {
                 }
                 val installing = RecoveryOperationStore.update(context, RecoveryPhase.INSTALLING)
                     ?: return rejectedState("Recovery state disappeared before install commit.")
-                session.commit(statusIntentSender(context, operation.target, STEP_INSTALL))
+                session.commit(statusIntentSender(context, operation.target))
                 RecoveryActionResult.Accepted(installing.snapshot())
             }
         } catch (error: Throwable) {
             runCatching { installer.abandonSession(sessionId) }
-            val failed = RecoveryOperationStore.update(
+            fail(
                 context,
-                RecoveryPhase.FAILED,
                 RecoveryErrorCode.INSTALL_SESSION_FAILED,
                 error.message ?: error::class.java.simpleName
             )
-            RecoveryActionResult.Accepted(requireNotNull(failed).snapshot())
         }
     }
 
@@ -404,17 +396,16 @@ object AndroidModuleRecovery {
         val operation = RecoveryOperationStore.current(context)
             ?: return rejectedState("There is no recovery installation to verify.")
         RecoveryOperationStore.update(context, RecoveryPhase.VERIFYING)
-
         verifyInstalledTarget(context, operation.target)?.let { invalid ->
-            val failed = RecoveryOperationStore.update(
-                context,
-                RecoveryPhase.FAILED,
-                invalid.code,
-                invalid.detail
-            )
-            return RecoveryActionResult.Accepted(requireNotNull(failed).snapshot())
+            return fail(context, invalid.code, invalid.detail)
         }
+        return finishVerified(context, operation)
+    }
 
+    private fun finishVerified(
+        context: Context,
+        operation: StoredRecoveryOperation
+    ): RecoveryActionResult {
         val verified = RecoveryOperationStore.update(context, RecoveryPhase.VERIFIED)
             ?: return rejectedState("Recovery verification state could not be persisted.")
         deletePreparedApk(operation)
@@ -427,45 +418,47 @@ object AndroidModuleRecovery {
         apkFile: File
     ): InvalidRecoveryArtifact? {
         if (!apkFile.isFile || apkFile.length() <= 0L) {
-            return InvalidRecoveryArtifact(RecoveryErrorCode.APK_MISSING, "Recovery APK is missing or empty.")
+            return InvalidRecoveryArtifact(
+                RecoveryErrorCode.APK_MISSING,
+                "Recovery APK is missing or empty."
+            )
         }
         if (sha256(apkFile) != target.normalizedApkSha256) {
             return InvalidRecoveryArtifact(
                 RecoveryErrorCode.APK_HASH_MISMATCH,
-                "Recovery APK SHA-256 does not match the catalog target."
+                "Recovery APK SHA-256 does not match RecoveryTarget."
             )
         }
 
         val archive = archivePackageInfo(context.packageManager, apkFile)
             ?: return InvalidRecoveryArtifact(
                 RecoveryErrorCode.APK_METADATA_UNREADABLE,
-                "Android could not read package metadata from the recovery APK."
+                "Android could not read recovery APK metadata."
             )
         validatePackageIdentity(archive, target, verification = false)?.let { return it }
 
         val installed = installedPackageInfo(context.packageManager, target.packageName)
             ?: return InvalidRecoveryArtifact(
                 RecoveryErrorCode.INSTALLED_MODULE_MISSING,
-                "The defective module is no longer installed."
+                "The defective module is not installed."
             )
         val installedMetadata = moduleMetadata(installed)
             ?: return InvalidRecoveryArtifact(
                 RecoveryErrorCode.INSTALLED_MODULE_MISMATCH,
                 "The installed package is not a readable CarePad module."
             )
-        val installedSigners = signingDigests(installed)
         if (installedMetadata.moduleId != target.moduleId ||
-            target.normalizedSigningCertificateSha256 !in installedSigners
+            signingDigests(installed) != setOf(target.normalizedSigningCertificateSha256)
         ) {
             return InvalidRecoveryArtifact(
                 RecoveryErrorCode.INSTALLED_MODULE_MISMATCH,
-                "The installed module identity does not match the recovery target."
+                "Installed module identity does not match RecoveryTarget."
             )
         }
         if (versionCode(installed) <= target.versionCode) {
             return InvalidRecoveryArtifact(
                 RecoveryErrorCode.INSTALLED_VERSION_NOT_NEWER,
-                "Recovery target is not older than the installed defective version."
+                "RecoveryTarget is not older than the installed defective version."
             )
         }
         return null
@@ -478,7 +471,7 @@ object AndroidModuleRecovery {
         val installed = installedPackageInfo(context.packageManager, target.packageName)
             ?: return InvalidRecoveryArtifact(
                 RecoveryErrorCode.VERIFICATION_PACKAGE_MISSING,
-                "The target package is not installed after Android reported success."
+                "Target package is missing after Android reported install success."
             )
         return validatePackageIdentity(installed, target, verification = true)
     }
@@ -488,28 +481,26 @@ object AndroidModuleRecovery {
         target: RecoveryTarget,
         verification: Boolean
     ): InvalidRecoveryArtifact? {
-        val prefix = if (verification) "Installed package" else "Recovery APK"
+        val label = if (verification) "Installed package" else "Recovery APK"
         if (packageInfo.packageName != target.packageName) {
             return InvalidRecoveryArtifact(
                 if (verification) RecoveryErrorCode.VERIFICATION_MODULE_MISMATCH
                 else RecoveryErrorCode.APK_PACKAGE_MISMATCH,
-                "$prefix packageName does not match RecoveryTarget."
+                "$label packageName does not match RecoveryTarget."
             )
         }
         if (versionCode(packageInfo) != target.versionCode) {
             return InvalidRecoveryArtifact(
                 if (verification) RecoveryErrorCode.VERIFICATION_VERSION_MISMATCH
                 else RecoveryErrorCode.APK_VERSION_MISMATCH,
-                "$prefix versionCode does not match RecoveryTarget."
+                "$label versionCode does not match RecoveryTarget."
             )
         }
-
-        val signers = signingDigests(packageInfo)
-        if (target.normalizedSigningCertificateSha256 !in signers) {
+        if (signingDigests(packageInfo) != setOf(target.normalizedSigningCertificateSha256)) {
             return InvalidRecoveryArtifact(
                 if (verification) RecoveryErrorCode.VERIFICATION_SIGNING_MISMATCH
                 else RecoveryErrorCode.APK_SIGNING_MISMATCH,
-                "$prefix signing certificate does not match RecoveryTarget."
+                "$label signing certificate does not match RecoveryTarget."
             )
         }
 
@@ -517,13 +508,13 @@ object AndroidModuleRecovery {
             ?: return InvalidRecoveryArtifact(
                 if (verification) RecoveryErrorCode.VERIFICATION_MODULE_MISMATCH
                 else RecoveryErrorCode.APK_MODULE_MISMATCH,
-                "$prefix does not contain readable CarePad module metadata."
+                "$label does not contain readable CarePad module metadata."
             )
         if (metadata.moduleId != target.moduleId) {
             return InvalidRecoveryArtifact(
                 if (verification) RecoveryErrorCode.VERIFICATION_MODULE_MISMATCH
                 else RecoveryErrorCode.APK_MODULE_MISMATCH,
-                "$prefix moduleId does not match RecoveryTarget."
+                "$label moduleId does not match RecoveryTarget."
             )
         }
         if (metadata.protocolMin != target.protocol.min ||
@@ -533,7 +524,7 @@ object AndroidModuleRecovery {
             return InvalidRecoveryArtifact(
                 if (verification) RecoveryErrorCode.VERIFICATION_PROTOCOL_MISMATCH
                 else RecoveryErrorCode.APK_PROTOCOL_MISMATCH,
-                "$prefix protocol range does not match the compatible catalog target."
+                "$label protocol range does not match the compatible RecoveryTarget."
             )
         }
         return null
@@ -557,18 +548,16 @@ object AndroidModuleRecovery {
 
     private fun statusIntentSender(
         context: Context,
-        target: RecoveryTarget,
-        step: String
+        target: RecoveryTarget
     ): android.content.IntentSender {
         val statusIntent = Intent(context, ModuleRecoveryStatusReceiver::class.java)
             .setAction(ACTION_RECOVERY_STATUS)
             .putExtra(EXTRA_ARTIFACT_ID, target.artifactId)
-            .putExtra(EXTRA_STEP, step)
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
         return PendingIntent.getBroadcast(
             context,
-            (target.artifactId + step).hashCode(),
+            target.artifactId.hashCode(),
             statusIntent,
             flags
         ).intentSender
@@ -665,9 +654,23 @@ object AndroidModuleRecovery {
             .digest(bytes)
             .joinToString(separator = "") { byte -> "%02x".format(byte) }
 
+    private fun fail(
+        context: Context,
+        code: RecoveryErrorCode,
+        detail: String
+    ): RecoveryActionResult {
+        val failed = RecoveryOperationStore.update(
+            context,
+            RecoveryPhase.FAILED,
+            code,
+            detail
+        ) ?: return rejectedState("Recovery state is missing while recording failure.")
+        return RecoveryActionResult.Accepted(failed.snapshot())
+    }
+
     private fun rejectedState(
         detail: String,
-        operation: StoredRecoveryOperation? = RecoveryOperationStore.currentOrNullFallback()
+        operation: StoredRecoveryOperation? = null
     ): RecoveryActionResult.Rejected = RecoveryActionResult.Rejected(
         RecoveryErrorCode.OPERATION_STATE_INVALID,
         detail,
@@ -689,5 +692,3 @@ object AndroidModuleRecovery {
         val protocolMax: Int
     )
 }
-
-private fun RecoveryOperationStore.currentOrNullFallback(): StoredRecoveryOperation? = null

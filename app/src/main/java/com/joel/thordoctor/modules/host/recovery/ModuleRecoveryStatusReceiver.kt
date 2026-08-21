@@ -6,7 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
 
-/** Receives Android package lifecycle results for the persisted single-module recovery operation. */
+/** Receives PackageInstaller status for the persisted single-module recovery operation. */
 class ModuleRecoveryStatusReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != AndroidModuleRecovery.ACTION_RECOVERY_STATUS) return
@@ -15,7 +15,6 @@ class ModuleRecoveryStatusReceiver : BroadcastReceiver() {
         val artifactId = intent.getStringExtra(AndroidModuleRecovery.EXTRA_ARTIFACT_ID) ?: return
         if (artifactId != operation.target.artifactId) return
 
-        val step = intent.getStringExtra(AndroidModuleRecovery.EXTRA_STEP) ?: return
         val status = intent.getIntExtra(
             PackageInstaller.EXTRA_STATUS,
             PackageInstaller.STATUS_FAILURE
@@ -23,30 +22,30 @@ class ModuleRecoveryStatusReceiver : BroadcastReceiver() {
         val detail = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
 
         if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-            if (step == AndroidModuleRecovery.STEP_INSTALL) {
-                AndroidModuleRecovery.markWaitingForInstallConfirmation(context)
-            }
+            AndroidModuleRecovery.markWaitingForInstallConfirmation(context)
             val confirmationIntent = pendingUserActionIntent(intent)
             if (confirmationIntent == null) {
-                AndroidModuleRecovery.failMissingAndroidConfirmation(context)
+                AndroidModuleRecovery.failAndroidConfirmation(
+                    context,
+                    "Android requested install confirmation but supplied no confirmation Intent."
+                )
                 return
             }
             confirmationIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             runCatching { context.startActivity(confirmationIntent) }
-                .onFailure { AndroidModuleRecovery.failMissingAndroidConfirmation(context) }
+                .onFailure { error ->
+                    AndroidModuleRecovery.failAndroidConfirmation(
+                        context,
+                        "Unable to open Android install confirmation: ${error.message ?: error::class.java.simpleName}"
+                    )
+                }
             return
         }
 
-        when (step) {
-            AndroidModuleRecovery.STEP_UNINSTALL ->
-                AndroidModuleRecovery.handleUninstallStatus(context, status, detail)
-
-            AndroidModuleRecovery.STEP_INSTALL ->
-                if (status == PackageInstaller.STATUS_SUCCESS) {
-                    AndroidModuleRecovery.handleInstallSuccess(context)
-                } else {
-                    AndroidModuleRecovery.handleInstallFailure(context, status, detail)
-                }
+        if (status == PackageInstaller.STATUS_SUCCESS) {
+            AndroidModuleRecovery.handleInstallSuccess(context)
+        } else {
+            AndroidModuleRecovery.handleInstallFailure(context, status, detail)
         }
     }
 

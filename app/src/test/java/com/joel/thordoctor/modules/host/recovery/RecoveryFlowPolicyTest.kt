@@ -44,19 +44,31 @@ class RecoveryFlowPolicyTest {
     }
 
     @Test
-    fun possibleDataLossNeverEscalatesWithoutExplicitAcknowledgement() {
-        val blocked = RecoveryAuthorizationPolicy.authorize(
+    fun possibleDataLossRequiresProductPermissionAndExplicitAcknowledgement() {
+        val policyBlocked = RecoveryAuthorizationPolicy.authorize(
             target(RecoverySafety.DATA_LOSS_POSSIBLE),
-            RecoveryAuthorization(backupVerified = true)
+            RecoveryAuthorization(dataLossAcknowledged = true)
+        )
+        assertEquals(
+            RecoveryAuthorizationFailure.RISKY_REINSTALL_NOT_PERMITTED,
+            (policyBlocked as RecoveryAuthorizationResult.Blocked).reason
+        )
+
+        val consentBlocked = RecoveryAuthorizationPolicy.authorize(
+            target(RecoverySafety.DATA_LOSS_POSSIBLE),
+            RecoveryAuthorization(riskyReinstallPermitted = true)
         )
         assertEquals(
             RecoveryAuthorizationFailure.DATA_LOSS_ACKNOWLEDGEMENT_REQUIRED,
-            (blocked as RecoveryAuthorizationResult.Blocked).reason
+            (consentBlocked as RecoveryAuthorizationResult.Blocked).reason
         )
 
         val allowed = RecoveryAuthorizationPolicy.authorize(
             target(RecoverySafety.DATA_LOSS_POSSIBLE),
-            RecoveryAuthorization(dataLossAcknowledged = true)
+            RecoveryAuthorization(
+                riskyReinstallPermitted = true,
+                dataLossAcknowledged = true
+            )
         )
         assertEquals(
             RecoveryExecutionRoute.REINSTALL_WITH_POSSIBLE_LOSS,
@@ -65,14 +77,14 @@ class RecoveryFlowPolicyTest {
     }
 
     @Test
-    fun uninstallAbortReturnsToCancelledInsteadOfStartingInstall() {
+    fun installedPackageAfterSystemRemovalDialogDoesNotStartInstall() {
         assertEquals(
             RecoveryPhase.CANCELLED,
-            RecoveryFlowPolicy.afterUninstallStatus(success = false, userAborted = true)
+            RecoveryFlowPolicy.afterUninstallObservation(packageStillInstalled = true)
         )
         assertEquals(
             RecoveryPhase.READY_TO_INSTALL,
-            RecoveryFlowPolicy.afterUninstallStatus(success = true, userAborted = false)
+            RecoveryFlowPolicy.afterUninstallObservation(packageStillInstalled = false)
         )
     }
 

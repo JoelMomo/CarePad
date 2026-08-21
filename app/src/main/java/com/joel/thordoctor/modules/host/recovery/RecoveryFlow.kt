@@ -10,11 +10,13 @@ enum class RecoveryExecutionRoute {
 
 data class RecoveryAuthorization(
     val backupVerified: Boolean = false,
+    val riskyReinstallPermitted: Boolean = false,
     val dataLossAcknowledged: Boolean = false
 )
 
 enum class RecoveryAuthorizationFailure {
     BACKUP_REQUIRED,
+    RISKY_REINSTALL_NOT_PERMITTED,
     DATA_LOSS_ACKNOWLEDGEMENT_REQUIRED
 }
 
@@ -38,14 +40,22 @@ object RecoveryAuthorizationPolicy {
                 RecoveryAuthorizationResult.Blocked(RecoveryAuthorizationFailure.BACKUP_REQUIRED)
             }
 
-        RecoverySafety.DATA_LOSS_POSSIBLE ->
-            if (authorization.dataLossAcknowledged) {
-                RecoveryAuthorizationResult.Allowed(RecoveryExecutionRoute.REINSTALL_WITH_POSSIBLE_LOSS)
-            } else {
+        RecoverySafety.DATA_LOSS_POSSIBLE -> when {
+            !authorization.riskyReinstallPermitted ->
+                RecoveryAuthorizationResult.Blocked(
+                    RecoveryAuthorizationFailure.RISKY_REINSTALL_NOT_PERMITTED
+                )
+
+            !authorization.dataLossAcknowledged ->
                 RecoveryAuthorizationResult.Blocked(
                     RecoveryAuthorizationFailure.DATA_LOSS_ACKNOWLEDGEMENT_REQUIRED
                 )
-            }
+
+            else ->
+                RecoveryAuthorizationResult.Allowed(
+                    RecoveryExecutionRoute.REINSTALL_WITH_POSSIBLE_LOSS
+                )
+        }
     }
 }
 
@@ -69,6 +79,7 @@ enum class RecoveryPhase {
 enum class RecoveryErrorCode {
     OPERATION_ALREADY_ACTIVE,
     BACKUP_REQUIRED,
+    RISKY_REINSTALL_NOT_PERMITTED,
     DATA_LOSS_ACKNOWLEDGEMENT_REQUIRED,
     APK_MISSING,
     APK_HASH_MISMATCH,
@@ -82,7 +93,7 @@ enum class RecoveryErrorCode {
     INSTALLED_MODULE_MISMATCH,
     INSTALLED_VERSION_NOT_NEWER,
     UNINSTALL_REQUEST_FAILED,
-    UNINSTALL_FAILED,
+    UNINSTALL_NOT_COMPLETED,
     APK_CHANGED_AFTER_PREPARATION,
     INSTALL_PERMISSION_REQUEST_FAILED,
     INSTALL_SESSION_FAILED,
@@ -120,11 +131,8 @@ sealed class RecoveryActionResult {
 
 /** Pure transition rules used by the Android mechanism and JVM tests. */
 object RecoveryFlowPolicy {
-    fun afterUninstallStatus(success: Boolean, userAborted: Boolean): RecoveryPhase = when {
-        success -> RecoveryPhase.READY_TO_INSTALL
-        userAborted -> RecoveryPhase.CANCELLED
-        else -> RecoveryPhase.FAILED
-    }
+    fun afterUninstallObservation(packageStillInstalled: Boolean): RecoveryPhase =
+        if (packageStillInstalled) RecoveryPhase.CANCELLED else RecoveryPhase.READY_TO_INSTALL
 
     fun afterInstallStatus(success: Boolean): RecoveryPhase =
         if (success) RecoveryPhase.VERIFYING else RecoveryPhase.FAILED
