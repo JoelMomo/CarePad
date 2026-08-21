@@ -1,0 +1,49 @@
+name: Restore Gradle wrapper
+
+on:
+  push:
+    branches:
+      - migration/clean-snapshot
+    paths:
+      - ".github/workflows/restore-wrapper.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  restore-wrapper:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: migration/clean-snapshot
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 9.5.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Regenerate canonical wrapper files
+        run: |
+          gradle wrapper --gradle-version 9.5.0 --distribution-type bin
+          git checkout -- gradle/wrapper/gradle-wrapper.properties
+
+      - name: Commit regenerated wrapper files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- gradle/wrapper/gradle-wrapper.jar gradlew gradlew.bat
+          if git diff --cached --quiet; then
+            echo "Wrapper files are already canonical."
+            exit 0
+          fi
+          git commit -m "Restore canonical Gradle wrapper"
+          git push origin HEAD:migration/clean-snapshot
