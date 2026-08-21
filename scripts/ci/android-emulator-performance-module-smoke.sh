@@ -7,6 +7,8 @@ EMULATOR_FIXTURE_APK="${3:?performance emulator fixture APK path required}"
 
 HOST_PACKAGE="com.joel.thordoctor.carepadlabhost"
 PERFORMANCE_PACKAGE="dev.carepad.module.performance"
+PERFORMANCE_SERVICE_COMPONENT="${PERFORMANCE_PACKAGE}/.PerformanceMonitorService"
+PERFORMANCE_RESUME_ACTION="dev.carepad.module.performance.action.RESUME"
 EMULATOR_FIXTURE_PACKAGE="org.ppsspp.ppsspp"
 EMULATOR_FIXTURE_COMPONENT="${EMULATOR_FIXTURE_PACKAGE}/dev.carepad.fixture.emulator.FakeEmulatorActivity"
 HARNESS_COMPONENT="${HOST_PACKAGE}/com.joel.thordoctor.modules.host.ModuleLabHarnessActivity"
@@ -178,6 +180,17 @@ wait_for_sample_count_greater_than() {
     return 1
 }
 
+assert_sample_count_stable() {
+    local expected_count="$1"
+    local wait_seconds="${2:-6}"
+    sleep "$wait_seconds"
+    current_count="$(sample_count)"
+    if (( current_count != expected_count )); then
+        echo "Performance module kept sampling without Usage Access; expected=$expected_count current=$current_count" >&2
+        return 1
+    fi
+}
+
 clear_last_session() {
     adb shell run-as "$PERFORMANCE_PACKAGE" rm -f files/last_session.json >/dev/null 2>&1 || true
     rm -f "$SESSION_LOCAL"
@@ -319,9 +332,69 @@ wait_for_last_session
 assert_session_json "manual_stop" "$minimum_recovered_samples"
 assert_recovery_cleared
 
+# Session 4 / BUG-3: revoking Usage Access while PPSSPP remains foreground must
+# stop sampling immediately, keep recoverable state and expose the permission error.
+# Regranting the permission resumes the same session rather than starting over.
+clear_last_session
+start_session_with_fixture
+samples_before_revoke="$(sample_count)"
+adb shell appops set "$PERFORMANCE_PACKAGE" GET_USAGE_STATS ignore
+sleep 3
+open_performance
+if ! grep -Eq "Usage access required|Falta acceso de uso" "$UI_DUMP_LOCAL"; then
+    echo "Performance module did not surface Usage Access removal during a session" >&2
+    cat "$UI_DUMP_LOCAL" >&2 || true
+    exit 1
+fi
+assert_sample_count_stable "$samples_before_revoke" 6
+if ! adb shell run-as "$PERFORMANCE_PACKAGE" test -s files/active_session_samples.jsonl; then
+    echo "Performance module lost recovery state when Usage Access was revoked" >&2
+    exit 1
+fi
+
+adb shell appops set "$PERFORMANCE_PACKAGE" GET_USAGE_STATS allow
+open_performance
+launch_emulator_fixture
+wait_for_sample_count_greater_than "$samples_before_revoke"
+minimum_permission_recovery_samples=$((samples_before_revoke + 1))
+open_performance
+tap_ui_button "Finish session" "Terminar sesión"
+wait_for_last_session
+assert_session_json "manual_stop" "$minimum_permission_recovery_samples"
+assert_recovery_cleared
+
+# Session 5 / BUG-4: after a force-stop, keep PPSSPP continuously foreground for
+# longer than the old 60 s lookback, then resume the service directly. The service
+# must reconstruct foreground from the persisted session window without relaunching
+# the emulator fixture and append a new sample instead of timing out incorrectly.
+clear_last_session
+start_session_with_fixture
+samples_before_late_recovery="$(sample_count)"
+adb shell am force-stop "$PERFORMANCE_PACKAGE" >/dev/null
+if ! adb shell run-as "$PERFORMANCE_PACKAGE" test -s files/active_session_samples.jsonl; then
+    echo "Late recovery scenario lost persisted samples before restart" >&2
+    exit 1
+fi
+if ! grep -Fq "$EMULATOR_FIXTURE_PACKAGE" <<<"$(current_resumed_activity)"; then
+    echo "Emulator fixture did not remain foreground during late recovery setup" >&2
+    echo "$(current_resumed_activity)" >&2
+    exit 1
+fi
+sleep 65
+adb shell am start-foreground-service \
+    -n "$PERFORMANCE_SERVICE_COMPONENT" \
+    -a "$PERFORMANCE_RESUME_ACTION" >/dev/null
+wait_for_sample_count_greater_than "$samples_before_late_recovery"
+minimum_late_recovery_samples=$((samples_before_late_recovery + 1))
+open_performance
+tap_ui_button "Finish session" "Terminar sesión"
+wait_for_last_session
+assert_session_json "manual_stop" "$minimum_late_recovery_samples"
+assert_recovery_cleared
+
 # Removing the real module must return the host to a healthy no-module state.
 adb uninstall "$PERFORMANCE_PACKAGE"
 adb uninstall "$EMULATOR_FIXTURE_PACKAGE"
 assert_harness_contains "No compatible trusted modules discovered."
 
-echo "CarePad Performance module timeout, manual-stop and recovery emulator smoke tests passed."
+echo "CarePad Performance timeout, manual-stop, process-recovery, Usage-Access and late-recovery emulator smoke tests passed."
