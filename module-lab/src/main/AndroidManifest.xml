@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="false"
+        android:label="CarePad Module Lab"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <activity
+            android:name=".LabModuleActivity"
+            android:exported="true">
+
+            <meta-data
+                android:name="dev.carepad.meta.MODULE_ID"
+                android:value="lab" />
+            <meta-data
+                android:name="dev.carepad.meta.PROTOCOL_MIN"
+                android:value="${carepadModuleLabProtocolMin}" />
+            <meta-data
+                android:name="dev.carepad.meta.PROTOCOL_MAX"
+                android:value="${carepadModuleLabProtocolMax}" />
+            <meta-data
+                android:name="dev.carepad.meta.CAPABILITIES"
+                android:value="lab" />
+            <meta-data
+                android:name="carepad.lab.ALWAYS_CRASH"
+                android:value="${carepadModuleLabAlwaysCrash}" />
+
+            <intent-filter>
+                <action android:name="dev.carepad.action.MODULE" />
+                <action android:name="dev.carepad.action.OPEN_MODULE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+        </activity>
+
+    </application>
+
+</manifest>

@@ -1,0 +1,146 @@
+<resources>
+
+    <string name="app_name">DocThor</string>
+    <string name="app_subtitle">Diagnostics for AYN Thor</string>
+    <string name="app_description">Diagnostic tool for AYN Thor.</string>
+
+    <string name="initial_setup">Initial setup</string>
+    <string name="permission_intro">DocThor needs a few permissions to detect emulators and generate diagnostics.</string>
+
+    <string name="permission_usage_title">Usage access</string>
+    <string name="permission_usage_description">Allows DocThor to detect when an emulator is opened and closed.</string>
+    <string name="permission_files_title">File access</string>
+    <string name="permission_files_description">Allows DocThor to read emulator configurations and save diagnostics.</string>
+    <string name="permission_notifications_title">Notifications</string>
+    <string name="permission_notifications_description">Allows DocThor to show monitoring status while you play.</string>
+
+    <string name="permission_granted">Granted</string>
+    <string name="permission_pending">Pending</string>
+    <string name="permission_required">Required</string>
+    <string name="permission_optional">Optional</string>
+    <string name="grant_access">Grant access</string>
+    <string name="allow_notifications">Allow notifications</string>
+    <string name="continue_button">Continue</string>
+    <string name="continue_without_notifications">Continue without notifications</string>
+
+    <string name="storage_setup_title">Diagnostic folder</string>
+    <string name="storage_setup_intro">Choose or create the folder where DocThor will save diagnostics. You only need to do this once.</string>
+    <string name="storage_folder_required">Choose or create a folder to continue.</string>
+    <string name="storage_folder_selected">Selected folder</string>
+    <string name="select_diagnostic_folder">Choose or create folder</string>
+
+    <string name="game_library">Game library</string>
+    <string name="game_library_setup_title">Game folder</string>
+    <string name="game_library_setup_intro">Choose the root folder where you keep your games. DocThor will also search inside its subfolders.</string>
+    <string name="game_library_optional">This step is optional. You can configure it later from Settings.</string>
+    <string name="game_folder">Game folder</string>
+    <string name="game_folder_not_selected">No folder selected</string>
+    <string name="select_game_folder">Choose game folder</string>
+    <string name="change_game_folder">Change game folder</string>
+    <string name="scan_games">Scan games</string>
+    <string name="games_found">Games found</string>
+    <string name="games">Games</string>
+    <string name="skip_for_now">Skip for now</string>
+    <string name="game_library_note">Compatible game files are scanned inside the folder and its subfolders. ROM contents, saves and keys are never read.</string>
+
+    <string name="start_diagnostic">Start diagnostic</string>
+    <string name="new_diagnostic">New diagnostic</string>
+    <string name="stop_diagnostic">Stop diagnostic</string>
+    <string name="share_diagnostic">Share diagnostic</string>
+
+    <string name="diagnostic_info_button_description">About this diagnostic</string>
+    <string name="diagnostic_info_title">What can you use it for?</string>
+    <string name="diagnostic_info_intro">You can share this file so another person or tool can understand what happened on your Thor without starting from scratch.</string>
+    <string name="diagnostic_info_ai">Give it to an AI to interpret the metrics, emulator settings and possible problems.</string>
+    <string name="diagnostic_info_drive">Upload it to Drive and automate an AI to review new diagnostics on a schedule.</string>
+    <string name="diagnostic_info_technician">Send it to a technician so they have concrete data about the device and the session.</string>
+    <string name="diagnostic_info_compare">Compare sessions before and after changing settings, updating an emulator or preparing a bug report.</string>
+    <string name="diagnostic_info_privacy">It contains technical metrics and metadata. It does not contain ROM contents, saves or keys.</string>
+
+    <string name="status_title">Status</string>
+    <string name="session_time">Session time</string>
+    <string name="live_metrics">Live metrics</string>
+    <string name="cpu">CPU</string>
+    <string name="gpu">GPU</string>
+    <string name="ram">RAM</string>
+    <string name="temperature">Temperature</string>
+    <string name="temperature_short">Temp.</string>
+    <string name="average_cpu">Average CPU</string>
+    <string name="average_gpu">Average GPU</string>
+    <string name="average_ram">Average RAM</string>
+    <string name="maximum_temperature">Max. temp.</string>
+
+    <string name="journey_waiting">Waiting</string>
+    <string name="journey_monitoring">Monitoring</string>
+    <string name="journey_preparing">Preparing</string>
+    <string name="journey_completed_detected">Detected</string>
+    <string name="journey_completed_analyzed">Analyzed</string>
+    <string name="journey_completed_ready">Completed</string>
+
+    <string name="diagnostic_completed_title">All done</string>
+    <string name="diagnostic_completed_description">The diagnostic is ready to share.</string>
+
+    <string name="last_session">Last session</string>
+    <string name="duration">Duration</string>
+    <string name="samples">Samples</string>
+    <plurals name="session_seconds">
+        <item quantity="one">%1$d second</item>
+        <item quantity="other">%1$d seconds</item>
+    </plurals>
+    <plurals name="session_samples">
+        <item quantity="one">%1$d sample</item>
+        <item quantity="other">%1$d samples</item>
+    </plurals>
+
+    <string name="device">Device</string>
+    <string name="model">Model</string>
+    <string name="android">Android</string>
+    <string name="emulators">Emulators</string>
+    <string name="readable_configs">Readable configs</string>
+
+    <string name="status_ready">Ready</string>
+    <string name="status_waiting_emulator">Waiting for you to open an emulator</string>
+    <string name="status_monitoring">Monitoring %1$s</string>
+    <string name="status_monitoring_generic">Monitoring</string>
+    <string name="status_finishing_background">Emulator in background · finishing in %1$d s</string>
+    <string name="status_finishing">Finishing diagnostic</string>
+    <string name="status_generating">Generating diagnostic</string>
+    <string name="status_completed">Diagnostic ready</string>
+    <string name="status_error">Error</string>
+    <string name="error_save_session">Error saving session</string>
+    <string name="error_generate_diagnostic">Error generating diagnostic</string>
+
+    <string name="duration_hours">%1$d h %2$02d min %3$02d s</string>
+    <string name="duration_minutes">%1$d min %2$02d s</string>
+    <string name="duration_seconds">%1$d s</string>
+
+    <string name="notification_channel_name">Diagnostic monitor</string>
+    <string name="notification_channel_description">Active monitoring of an emulation session</string>
+    <string name="notification_waiting_emulator">Waiting for emulator…</string>
+    <string name="notification_monitoring">Monitoring %1$s</string>
+    <string name="notification_background">Emulator in background · finishing in %1$d s</string>
+    <string name="notification_generating">Generating diagnostic…</string>
+    <string name="notification_finishing">Finishing session…</string>
+
+    <string name="settings">Settings</string>
+    <string name="back">Back</string>
+
+    <string name="appearance">Appearance</string>
+    <string name="theme">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+
+    <string name="diagnostics">Diagnostics</string>
+    <string name="current_folder">Current folder</string>
+    <string name="change_folder">Change folder</string>
+    <string name="diagnostic_folder_note">New diagnostics will be saved in this folder. Existing files are not moved.</string>
+
+    <string name="permissions">Permissions</string>
+    <string name="manage_permission">Manage</string>
+
+    <string name="information">Information</string>
+    <string name="version">Version</string>
+    <string name="app">Application</string>
+
+</resources>
