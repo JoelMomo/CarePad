@@ -1,12 +1,11 @@
 package com.joel.thordoctor.core.diagnostics
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import androidx.core.content.FileProvider
-import androidx.documentfile.provider.DocumentFile
 import com.joel.thordoctor.AppPreferences
+import com.joel.thordoctor.core.storage.CoreTreeStorage
 import java.io.File
 
 data class StoredDiagnosticDocument(
@@ -23,28 +22,15 @@ object CoreDiagnosticStorage {
     private const val DEFAULT_DIRECTORY = "Download/DocThor"
 
     fun setCustomFolder(context: Context, uri: Uri): Boolean {
-        val flags =
-            Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-
         val oldUri = AppPreferences.getDiagnosticFolderUri(context)
 
-        try {
-            context.contentResolver.takePersistableUriPermission(uri, flags)
-        } catch (_: SecurityException) {
+        if (!CoreTreeStorage.takePersistableReadWritePermission(context, uri)) {
             return false
         }
 
-        val directory = DocumentFile.fromTreeUri(context, uri)
-
-        if (
-            directory == null ||
-            !directory.exists() ||
-            !directory.canRead() ||
-            !directory.canWrite()
-        ) {
+        if (CoreTreeStorage.writableDirectory(context, uri) == null) {
             if (oldUri == null || oldUri != uri) {
-                releaseFolderPermission(context, uri)
+                CoreTreeStorage.releasePersistableReadWritePermission(context, uri)
             }
             return false
         }
@@ -52,7 +38,7 @@ object CoreDiagnosticStorage {
         AppPreferences.setDiagnosticFolderUri(context, uri)
 
         if (oldUri != null && oldUri != uri) {
-            releaseFolderPermission(context, oldUri)
+            CoreTreeStorage.releasePersistableReadWritePermission(context, oldUri)
         }
 
         return true
@@ -62,7 +48,7 @@ object CoreDiagnosticStorage {
         val oldUri = AppPreferences.getDiagnosticFolderUri(context)
 
         if (oldUri != null) {
-            releaseFolderPermission(context, oldUri)
+            CoreTreeStorage.releasePersistableReadWritePermission(context, oldUri)
         }
 
         AppPreferences.clearDiagnosticFolder(context)
@@ -74,7 +60,7 @@ object CoreDiagnosticStorage {
     fun folderDisplayName(context: Context): String {
         val uri = customFolderUri(context) ?: return DEFAULT_DIRECTORY
 
-        return DocumentFile.fromTreeUri(context, uri)
+        return CoreTreeStorage.directory(context, uri)
             ?.name
             ?.takeIf { it.isNotBlank() }
             ?: DEFAULT_DIRECTORY
@@ -82,11 +68,7 @@ object CoreDiagnosticStorage {
 
     fun hasValidCustomFolder(context: Context): Boolean {
         val uri = customFolderUri(context) ?: return false
-        val directory = DocumentFile.fromTreeUri(context, uri) ?: return false
-
-        return directory.exists() &&
-            directory.canRead() &&
-            directory.canWrite()
+        return CoreTreeStorage.writableDirectory(context, uri) != null
     }
 
     fun documentInfo(
@@ -96,17 +78,18 @@ object CoreDiagnosticStorage {
         val uri = customFolderUri(context)
 
         if (uri != null) {
-            val document =
-                customDirectory(context, uri)
-                    ?.findFile(filename)
+            val directory =
+                CoreTreeStorage.writableDirectory(context, uri)
                     ?: return null
 
-            if (!document.exists() || !document.canRead()) return null
+            val info =
+                CoreTreeStorage.documentInfo(directory, filename)
+                    ?: return null
 
             return StoredDiagnosticDocument(
-                name = document.name ?: filename,
-                lastModified = document.lastModified(),
-                sizeBytes = document.length()
+                name = info.name,
+                lastModified = info.lastModified,
+                sizeBytes = info.sizeBytes
             )
         }
 
@@ -124,18 +107,11 @@ object CoreDiagnosticStorage {
         val uri = customFolderUri(context)
 
         if (uri != null) {
-            val document =
-                customDirectory(context, uri)
-                    ?.findFile(filename)
+            val directory =
+                CoreTreeStorage.writableDirectory(context, uri)
                     ?: throw IllegalStateException("Document not found: $filename")
 
-            val inputStream =
-                context.contentResolver.openInputStream(document.uri)
-                    ?: throw IllegalStateException("Unable to open: $filename")
-
-            return inputStream
-                .bufferedReader(Charsets.UTF_8)
-                .use { it.readText() }
+            return CoreTreeStorage.readText(context, directory, filename)
         }
 
         return defaultFile(filename).readText(Charsets.UTF_8)
@@ -150,25 +126,16 @@ object CoreDiagnosticStorage {
 
         if (uri != null) {
             val directory =
-                customDirectory(context, uri)
+                CoreTreeStorage.writableDirectory(context, uri)
                     ?: throw IllegalStateException("Diagnostic folder unavailable")
 
-            var document = directory.findFile(filename)
-
-            if (document == null) {
-                document =
-                    directory.createFile("application/json", filename)
-                        ?: throw IllegalStateException("Unable to create: $filename")
-            }
-
-            val outputStream =
-                context.contentResolver.openOutputStream(document.uri, "wt")
-                    ?: throw IllegalStateException("Unable to write: $filename")
-
-            outputStream
-                .bufferedWriter(Charsets.UTF_8)
-                .use { it.write(text) }
-
+            CoreTreeStorage.writeText(
+                context = context,
+                directory = directory,
+                filename = filename,
+                text = text,
+                mimeType = "application/json"
+            )
             return
         }
 
@@ -181,9 +148,10 @@ object CoreDiagnosticStorage {
         val uri = customFolderUri(context)
 
         if (uri != null) {
-            customDirectory(context, uri)
-                ?.findFile(filename)
-                ?.delete()
+            CoreTreeStorage.writableDirectory(context, uri)
+                ?.let { directory ->
+                    CoreTreeStorage.delete(directory, filename)
+                }
             return
         }
 
@@ -194,10 +162,11 @@ object CoreDiagnosticStorage {
         val treeUri = customFolderUri(context)
 
         if (treeUri != null) {
-            return customDirectory(context, treeUri)
-                ?.findFile(filename)
-                ?.takeIf { it.exists() && it.canRead() }
-                ?.uri
+            val directory =
+                CoreTreeStorage.writableDirectory(context, treeUri)
+                    ?: return null
+
+            return CoreTreeStorage.readableDocumentUri(directory, filename)
         }
 
         val file = defaultFile(filename)
@@ -208,34 +177,6 @@ object CoreDiagnosticStorage {
             "${context.packageName}.fileprovider",
             file
         )
-    }
-
-    private fun customDirectory(
-        context: Context,
-        uri: Uri
-    ): DocumentFile? {
-        val directory = DocumentFile.fromTreeUri(context, uri) ?: return null
-
-        if (
-            !directory.exists() ||
-            !directory.canRead() ||
-            !directory.canWrite()
-        ) {
-            return null
-        }
-
-        return directory
-    }
-
-    private fun releaseFolderPermission(context: Context, uri: Uri) {
-        try {
-            context.contentResolver.releasePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            )
-        } catch (_: Exception) {
-        }
     }
 
     private fun defaultFile(filename: String): File {
