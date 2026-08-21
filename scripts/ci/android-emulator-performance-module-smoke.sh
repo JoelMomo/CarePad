@@ -118,17 +118,40 @@ open_performance() {
     return 1
 }
 
+launch_emulator_fixture() {
+    adb shell am start -n "$EMULATOR_FIXTURE_COMPONENT" >/dev/null
+    for _ in $(seq 1 20); do
+        resumed="$(current_resumed_activity)"
+        if grep -Fq "$EMULATOR_FIXTURE_PACKAGE" <<<"$resumed" &&
+            grep -Fq "FakeEmulatorActivity" <<<"$resumed"; then
+            return 0
+        fi
+        sleep 0.5
+    done
+
+    echo "Emulator fixture never became foreground" >&2
+    echo "$(current_resumed_activity)" >&2
+    return 1
+}
+
 read_private_file() {
     local relative_path="$1"
     local destination="$2"
     adb shell run-as "$PERFORMANCE_PACKAGE" cat "$relative_path" >"$destination" 2>/dev/null
 }
 
+sample_count() {
+    if ! read_private_file files/active_session_samples.jsonl "$SAMPLES_LOCAL" ||
+        [[ ! -s "$SAMPLES_LOCAL" ]]; then
+        echo 0
+        return
+    fi
+    wc -l < "$SAMPLES_LOCAL" | tr -d ' '
+}
+
 wait_for_samples() {
-    rm -f "$SAMPLES_LOCAL"
     for _ in $(seq 1 30); do
-        if read_private_file files/active_session_samples.jsonl "$SAMPLES_LOCAL" &&
-            [[ -s "$SAMPLES_LOCAL" ]]; then
+        if (( $(sample_count) >= 1 )); then
             return 0
         fi
         sleep 1
@@ -138,6 +161,26 @@ wait_for_samples() {
     adb shell dumpsys activity activities >&2 || true
     adb shell dumpsys appops "$PERFORMANCE_PACKAGE" >&2 || true
     return 1
+}
+
+wait_for_sample_count_greater_than() {
+    local previous_count="$1"
+    for _ in $(seq 1 30); do
+        current_count="$(sample_count)"
+        if (( current_count > previous_count )); then
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "Performance module did not append samples after recovery; previous=$previous_count current=$(sample_count)" >&2
+    adb shell dumpsys activity activities >&2 || true
+    return 1
+}
+
+clear_last_session() {
+    adb shell run-as "$PERFORMANCE_PACKAGE" rm -f files/last_session.json >/dev/null 2>&1 || true
+    rm -f "$SESSION_LOCAL"
 }
 
 wait_for_last_session() {
@@ -156,11 +199,15 @@ wait_for_last_session() {
 }
 
 assert_session_json() {
-    python3 - "$SESSION_LOCAL" <<'PY'
+    local expected_end_reason="$1"
+    local minimum_samples="${2:-1}"
+    python3 - "$SESSION_LOCAL" "$expected_end_reason" "$minimum_samples" <<'PY'
 import json
 import sys
 
 path = sys.argv[1]
+expected_end_reason = sys.argv[2]
+minimum_samples = int(sys.argv[3])
 with open(path, encoding="utf-8") as handle:
     session = json.load(handle)
 
@@ -168,12 +215,27 @@ assert session["schema"] == "thor-doctor-session", session
 assert session["schemaVersion"] == 2, session
 assert session["emulator"]["name"] == "PPSSPP", session
 assert session["emulator"]["package"] == "org.ppsspp.ppsspp", session
-assert session["sampleCount"] >= 1, session
+assert session["sampleCount"] >= minimum_samples, session
 assert len(session["samples"]) == session["sampleCount"], session
 assert session["durationSeconds"] > 0, session
-assert session["endReason"] == "foreground_timeout", session
+assert session["endReason"] == expected_end_reason, session
 assert isinstance(session["summary"], dict), session
 PY
+}
+
+assert_recovery_cleared() {
+    if adb shell run-as "$PERFORMANCE_PACKAGE" test -e files/active_session_samples.jsonl; then
+        echo "Performance recovery samples remained after successful finalization" >&2
+        adb shell run-as "$PERFORMANCE_PACKAGE" ls -la files >&2 || true
+        exit 1
+    fi
+}
+
+start_session_with_fixture() {
+    open_performance
+    tap_ui_button "Start session" "Iniciar sesión"
+    launch_emulator_fixture
+    wait_for_samples
 }
 
 # The previous generic module smoke can leave its own host installation in place.
@@ -195,7 +257,7 @@ fi
 adb shell appops set "$PERFORMANCE_PACKAGE" GET_USAGE_STATS allow
 adb shell pm grant "$PERFORMANCE_PACKAGE" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
 
-# Reopen after the app-op grant and initiate the session through the real UI.
+# Session 1: automatic foreground timeout after the user returns to Performance.
 open_performance
 if ! grep -Eiq "Start session|Iniciar sesión" "$UI_DUMP_LOCAL"; then
     echo "Performance module did not expose the session start action after Usage Access was granted" >&2
@@ -203,33 +265,12 @@ if ! grep -Eiq "Start session|Iniciar sesión" "$UI_DUMP_LOCAL"; then
     exit 1
 fi
 tap_ui_button "Start session" "Iniciar sesión"
-
-# Put a known emulator package in the foreground. The fixture is a CI-only app
-# whose package matches PPSSPP so the real Emulator Engine and UsageStats path run.
-adb shell am start -n "$EMULATOR_FIXTURE_COMPONENT" >/dev/null
-for _ in $(seq 1 20); do
-    resumed="$(current_resumed_activity)"
-    if grep -Fq "$EMULATOR_FIXTURE_PACKAGE" <<<"$resumed" &&
-        grep -Fq "FakeEmulatorActivity" <<<"$resumed"; then
-        break
-    fi
-    sleep 0.5
-done
-
-resumed="$(current_resumed_activity)"
-if ! grep -Fq "$EMULATOR_FIXTURE_PACKAGE" <<<"$resumed"; then
-    echo "Emulator fixture never became foreground" >&2
-    echo "$resumed" >&2
-    exit 1
-fi
-
+launch_emulator_fixture
 wait_for_samples
 
-# Returning to Performance triggers the existing foreground grace/timeout path.
-# The persisted session must end at the first-away timestamp and produce a summary.
 open_performance
 wait_for_last_session
-assert_session_json
+assert_session_json "foreground_timeout" 1
 
 if ! dump_ui ||
     ! grep -Fq "PPSSPP" "$UI_DUMP_LOCAL" ||
@@ -238,18 +279,49 @@ if ! dump_ui ||
     cat "$UI_DUMP_LOCAL" >&2 || true
     exit 1
 fi
+assert_recovery_cleared
 
-# Successful finalization clears recoverable samples/state rather than leaving a
-# stale session that could be resumed later.
-if adb shell run-as "$PERFORMANCE_PACKAGE" test -e files/active_session_samples.jsonl; then
-    echo "Performance recovery samples remained after successful finalization" >&2
+# Session 2: explicit stop from the real Performance UI must save exactly as a
+# manual stop and clear recovery state rather than depending on the timeout path.
+clear_last_session
+start_session_with_fixture
+open_performance
+tap_ui_button "Stop session" "Detener sesión"
+wait_for_last_session
+assert_session_json "manual_stop" 1
+assert_recovery_cleared
+
+# Session 3: killing the Performance process during active monitoring must keep
+# persisted recovery. Reopening the module auto-resumes that same session; putting
+# PPSSPP back in foreground must append another sample before the user stops it.
+clear_last_session
+start_session_with_fixture
+samples_before_restart="$(sample_count)"
+if (( samples_before_restart < 1 )); then
+    echo "Recovery scenario did not have a persisted sample before interruption" >&2
+    exit 1
+fi
+
+adb shell am force-stop "$PERFORMANCE_PACKAGE" >/dev/null
+if ! adb shell run-as "$PERFORMANCE_PACKAGE" test -s files/active_session_samples.jsonl; then
+    echo "Performance interruption lost persisted recovery samples" >&2
     adb shell run-as "$PERFORMANCE_PACKAGE" ls -la files >&2 || true
     exit 1
 fi
+
+open_performance
+launch_emulator_fixture
+wait_for_sample_count_greater_than "$samples_before_restart"
+minimum_recovered_samples=$((samples_before_restart + 1))
+open_performance
+tap_ui_button "Stop session" "Detener sesión"
+wait_for_last_session
+assert_session_json "manual_stop" "$minimum_recovered_samples"
+assert_recovery_cleared
 
 # Removing the real module must return the host to a healthy no-module state.
 adb uninstall "$PERFORMANCE_PACKAGE"
 adb uninstall "$EMULATOR_FIXTURE_PACKAGE"
 assert_harness_contains "No compatible trusted modules discovered."
 
-echo "CarePad Performance module complete-session emulator smoke test passed."
+echo "CarePad Performance module timeout, manual-stop and recovery emulator smoke tests passed."
