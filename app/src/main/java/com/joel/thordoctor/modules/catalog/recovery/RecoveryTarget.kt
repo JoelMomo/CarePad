@@ -29,9 +29,7 @@ data class RecoveryProtocolRange(
     fun supports(version: Int): Boolean = version in min..max
 }
 
-/**
- * Exact catalog-selected recovery artifact. This is distribution metadata, not runtime module metadata.
- */
+/** Exact catalog-selected recovery artifact. Distribution metadata, not runtime module metadata. */
 data class RecoveryTarget(
     val artifactId: String,
     val moduleId: String,
@@ -87,6 +85,7 @@ data class InstalledModuleRecoveryIdentity(
 enum class RecoveryTargetUnavailableReason {
     NO_LVRK,
     ARTIFACT_NOT_FOUND,
+    ARTIFACT_ID_NOT_UNIQUE,
     NOT_RECOVERABLE,
     ARTIFACT_UNAVAILABLE,
     MODULE_MISMATCH,
@@ -101,8 +100,8 @@ sealed class RecoveryTargetResolution {
 }
 
 /**
- * Resolves only the catalog's explicit LVRK pointer. It deliberately never sorts versions or
- * derives "the previous version" from versionCode.
+ * Resolves only the catalog's explicit LVRK pointer. It never sorts versions or derives
+ * "the previous version" from versionCode.
  */
 object RecoveryTargetResolver {
     fun resolve(
@@ -121,8 +120,16 @@ object RecoveryTargetResolver {
 
         val artifactId = catalog.lastKnownRecoverableByChannel[channel]
             ?: return RecoveryTargetResolution.Unavailable(RecoveryTargetUnavailableReason.NO_LVRK)
-        val record = catalog.artifacts.firstOrNull { it.target.artifactId == artifactId }
-            ?: return RecoveryTargetResolution.Unavailable(RecoveryTargetUnavailableReason.ARTIFACT_NOT_FOUND)
+        val matchingRecords = catalog.artifacts.filter { it.target.artifactId == artifactId }
+        if (matchingRecords.isEmpty()) {
+            return RecoveryTargetResolution.Unavailable(RecoveryTargetUnavailableReason.ARTIFACT_NOT_FOUND)
+        }
+        if (matchingRecords.size != 1) {
+            return RecoveryTargetResolution.Unavailable(
+                RecoveryTargetUnavailableReason.ARTIFACT_ID_NOT_UNIQUE
+            )
+        }
+        val record = matchingRecords.single()
 
         if (record.recoveryStatus != RecoveryStatus.RECOVERABLE) {
             return RecoveryTargetResolution.Unavailable(RecoveryTargetUnavailableReason.NOT_RECOVERABLE)
@@ -139,14 +146,18 @@ object RecoveryTargetResolver {
             return RecoveryTargetResolution.Unavailable(RecoveryTargetUnavailableReason.TARGET_NOT_OLDER)
         }
         if (!target.protocol.supports(hostProtocolVersion)) {
-            return RecoveryTargetResolution.Unavailable(RecoveryTargetUnavailableReason.PROTOCOL_INCOMPATIBLE)
+            return RecoveryTargetResolution.Unavailable(
+                RecoveryTargetUnavailableReason.PROTOCOL_INCOMPATIBLE
+            )
         }
 
         val verifiedLocalCopy = target.artifactId in verifiedLocalArtifactIds
-        val remoteSourceAvailable = record.availability == RecoveryAvailability.AVAILABLE &&
+        val officialBytesAvailable = record.availability == RecoveryAvailability.AVAILABLE &&
             target.sources.isNotEmpty()
-        if (!verifiedLocalCopy && !remoteSourceAvailable) {
-            return RecoveryTargetResolution.Unavailable(RecoveryTargetUnavailableReason.ARTIFACT_UNAVAILABLE)
+        if (!verifiedLocalCopy && !officialBytesAvailable) {
+            return RecoveryTargetResolution.Unavailable(
+                RecoveryTargetUnavailableReason.ARTIFACT_UNAVAILABLE
+            )
         }
 
         return RecoveryTargetResolution.Available(target)
@@ -158,7 +169,7 @@ sealed class RecoveryArtifactSource {
     data object VerifiedLocalCache : RecoveryArtifactSource()
 }
 
-/** Source fallback stays within the exact artifactId selected by the catalog. */
+/** Source fallback stays within the exact artifactId already selected by the catalog. */
 object RecoveryArtifactSourceSelector {
     fun select(
         target: RecoveryTarget,

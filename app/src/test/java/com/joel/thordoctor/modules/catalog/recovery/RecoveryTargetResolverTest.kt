@@ -10,24 +10,36 @@ class RecoveryTargetResolverTest {
     fun resolvesOnlyExplicitLvrkPointerWithoutSortingVersions() {
         val pointed = target("performance@1", versionCode = 1)
         val newerRecoverable = target("performance@2", versionCode = 2)
-        val catalog = catalog(
-            pointer = pointed.artifactId,
-            artifacts = listOf(
-                record(pointed),
-                record(newerRecoverable)
-            )
-        )
-
         val resolution = RecoveryTargetResolver.resolve(
-            catalog = catalog,
+            catalog = catalog(
+                pointer = pointed.artifactId,
+                artifacts = listOf(record(pointed), record(newerRecoverable))
+            ),
             channel = "public",
             installed = installed(versionCode = 3),
             hostProtocolVersion = 1
         )
 
+        assertEquals(pointed, (resolution as RecoveryTargetResolution.Available).target)
+    }
+
+    @Test
+    fun duplicateArtifactIdIsRejectedAsAmbiguous() {
+        val first = target("performance@1", versionCode = 1)
+        val duplicate = first.copy(versionName = "duplicate-record")
+        val resolution = RecoveryTargetResolver.resolve(
+            catalog = catalog(
+                pointer = first.artifactId,
+                artifacts = listOf(record(first), record(duplicate))
+            ),
+            channel = "public",
+            installed = installed(versionCode = 2),
+            hostProtocolVersion = 1
+        )
+
         assertEquals(
-            pointed,
-            (resolution as RecoveryTargetResolution.Available).target
+            RecoveryTargetUnavailableReason.ARTIFACT_ID_NOT_UNIQUE,
+            (resolution as RecoveryTargetResolution.Unavailable).reason
         )
     }
 
@@ -57,9 +69,7 @@ class RecoveryTargetResolverTest {
         val target = target("performance@1", versionCode = 1, sources = emptyList())
         val catalog = catalog(
             pointer = target.artifactId,
-            artifacts = listOf(
-                record(target, availability = RecoveryAvailability.UNAVAILABLE)
-            )
+            artifacts = listOf(record(target, availability = RecoveryAvailability.UNAVAILABLE))
         )
 
         val unavailable = RecoveryTargetResolver.resolve(
