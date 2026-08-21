@@ -7,6 +7,7 @@
     <string name="usage_access_explanation">CarePad needs to know which emulator is in the foreground so it can start and finish the session correctly.</string>
     <string name="open_usage_access">Grant usage access</string>
     <string name="start_session">Start session</string>
+    <string name="retry_save">Retry save</string>
     <string name="stop_session">Finish session</string>
     <string name="last_session">Last session</string>
     <string name="state_ready">Ready</string>
@@ -34,7 +35,7 @@
     <string name="summary_ram">Average RAM: %1$s</string>
     <string name="summary_temperature">Maximum reliable temperature: %1$s</string>
     <string name="summary_battery">Battery: %1$s</string>
-    <string name="save_failed">The summary could not be saved. Recoverable session data is kept so it can be retried.</string>
+    <string name="save_failed">The summary could not be saved. The completed session is kept so you can retry saving it without monitoring again.</string>
     <string name="generic_error">An error occurred. You can start another session.</string>
     <string name="notification_channel_name">Performance sessions</string>
     <string name="notification_channel_description">User-initiated monitoring during an emulation session.</string>
