@@ -35,7 +35,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run JVM unit tests
-        run: ./gradlew :app:testDebugUnitTest --stacktrace
+        run: ./gradlew :app:testDebugUnitTest :performance-runtime:testDebugUnitTest --stacktrace
 
   build:
     needs: unit-tests
@@ -63,8 +63,8 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Build debug APKs
+        run: ./gradlew :app:assembleDebug :module-lab:assembleDebug :performance-module:assembleDebug :performance-emulator-fixture:assembleDebug --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -79,6 +79,22 @@ jobs:
         with:
           name: CarePad-module-lab-baseline-debug
           path: module-lab/build/outputs/apk/debug/module-lab-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Performance module APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-performance-module-debug
+          path: modules/performance/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Performance emulator fixture APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-performance-emulator-fixture-debug
+          path: test-fixtures/performance-emulator/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -212,6 +228,18 @@ jobs:
           name: CarePad-module-lab-defective-update-debug
           path: artifacts/module-defective-update
 
+      - name: Download Performance module
+        uses: actions/download-artifact@v4
+        with:
+          name: CarePad-performance-module-debug
+          path: artifacts/performance-module
+
+      - name: Download Performance emulator fixture
+        uses: actions/download-artifact@v4
+        with:
+          name: CarePad-performance-emulator-fixture-debug
+          path: artifacts/performance-emulator-fixture
+
       - name: Install Android emulator image
         run: |
           yes | sdkmanager --licenses >/dev/null || true
@@ -250,7 +278,9 @@ jobs:
             "$(find artifacts/module-update -name '*.apk' -print -quit)" \
             "$(find artifacts/module-incompatible-protocol -name '*.apk' -print -quit)" \
             "$(find artifacts/module-wrong-signature -name '*.apk' -print -quit)" \
-            "$(find artifacts/module-defective-update -name '*.apk' -print -quit)"
+            "$(find artifacts/module-defective-update -name '*.apk' -print -quit)" \
+            "$(find artifacts/performance-module -name '*.apk' -print -quit)" \
+            "$(find artifacts/performance-emulator-fixture -name '*.apk' -print -quit)"
 
       - name: Upload emulator log on failure
         if: failure()

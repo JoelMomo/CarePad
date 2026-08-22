@@ -9,7 +9,14 @@ import kotlin.math.abs
 
 enum class PerformanceRecoveryStage {
     WAITING_EMULATOR,
-    MONITORING
+    MONITORING,
+    SAVING
+}
+
+enum class PerformanceRecoveryAction {
+    WAIT_FOR_EMULATOR,
+    MONITOR_EMULATOR,
+    RETRY_SAVE
 }
 
 sealed interface PerformanceRecoveryState {
@@ -27,6 +34,26 @@ sealed interface PerformanceRecoveryState {
     ) : PerformanceRecoveryState {
         override val stage = PerformanceRecoveryStage.MONITORING
     }
+
+    data class Saving(
+        val sessionId: String,
+        val emulatorName: String,
+        val emulatorPackage: String,
+        val startedAt: Long,
+        val endedAt: Long,
+        val endReason: String
+    ) : PerformanceRecoveryState {
+        override val stage = PerformanceRecoveryStage.SAVING
+    }
+}
+
+object PerformanceRecoveryPolicy {
+    fun actionFor(state: PerformanceRecoveryState): PerformanceRecoveryAction =
+        when (state) {
+            PerformanceRecoveryState.WaitingEmulator -> PerformanceRecoveryAction.WAIT_FOR_EMULATOR
+            is PerformanceRecoveryState.Monitoring -> PerformanceRecoveryAction.MONITOR_EMULATOR
+            is PerformanceRecoveryState.Saving -> PerformanceRecoveryAction.RETRY_SAVE
+        }
 }
 
 object PerformanceSessionRecoveryStore {
@@ -38,6 +65,8 @@ object PerformanceSessionRecoveryStore {
     private const val KEY_EMULATOR_NAME = "emulator_name"
     private const val KEY_EMULATOR_PACKAGE = "emulator_package"
     private const val KEY_STARTED_AT = "started_at"
+    private const val KEY_ENDED_AT = "ended_at"
+    private const val KEY_END_REASON = "end_reason"
     private const val KEY_BOOT_EPOCH_MS = "boot_epoch_ms"
     private const val SAMPLES_FILENAME = "active_session_samples.jsonl"
     private const val BOOT_EPOCH_TOLERANCE_MS = 120_000L
@@ -51,7 +80,9 @@ object PerformanceSessionRecoveryStore {
             sessionId = null,
             emulatorName = null,
             emulatorPackage = null,
-            startedAt = null
+            startedAt = null,
+            endedAt = null,
+            endReason = null
         )
     }
 
@@ -69,7 +100,31 @@ object PerformanceSessionRecoveryStore {
             sessionId = sessionId,
             emulatorName = emulatorName,
             emulatorPackage = emulatorPackage,
-            startedAt = startedAt
+            startedAt = startedAt,
+            endedAt = null,
+            endReason = null
+        )
+    }
+
+    @Synchronized
+    fun markSaving(
+        context: Context,
+        sessionId: String,
+        emulatorName: String,
+        emulatorPackage: String,
+        startedAt: Long,
+        endedAt: Long,
+        endReason: String
+    ) {
+        saveState(
+            context = context,
+            stage = PerformanceRecoveryStage.SAVING,
+            sessionId = sessionId,
+            emulatorName = emulatorName,
+            emulatorPackage = emulatorPackage,
+            startedAt = startedAt,
+            endedAt = endedAt,
+            endReason = endReason
         )
     }
 
@@ -78,17 +133,6 @@ object PerformanceSessionRecoveryStore {
         val preferences = preferences(context)
 
         if (!preferences.getBoolean(KEY_ACTIVE, false)) return null
-
-        val storedBootEpoch =
-            preferences.getLong(KEY_BOOT_EPOCH_MS, Long.MIN_VALUE)
-
-        if (
-            storedBootEpoch == Long.MIN_VALUE ||
-            abs(storedBootEpoch - currentBootEpochMs()) > BOOT_EPOCH_TOLERANCE_MS
-        ) {
-            clear(context)
-            return null
-        }
 
         val stage =
             try {
@@ -99,6 +143,21 @@ object PerformanceSessionRecoveryStore {
                 clear(context)
                 return null
             }
+
+        // A completed session waiting only for its summary to be written is safe
+        // to recover after a reboot. Live waiting/monitoring state is not.
+        if (stage != PerformanceRecoveryStage.SAVING) {
+            val storedBootEpoch =
+                preferences.getLong(KEY_BOOT_EPOCH_MS, Long.MIN_VALUE)
+
+            if (
+                storedBootEpoch == Long.MIN_VALUE ||
+                abs(storedBootEpoch - currentBootEpochMs()) > BOOT_EPOCH_TOLERANCE_MS
+            ) {
+                clear(context)
+                return null
+            }
+        }
 
         if (stage == PerformanceRecoveryStage.WAITING_EMULATOR) {
             return PerformanceRecoveryState.WaitingEmulator
@@ -119,11 +178,30 @@ object PerformanceSessionRecoveryStore {
             return null
         }
 
-        return PerformanceRecoveryState.Monitoring(
+        if (stage == PerformanceRecoveryStage.MONITORING) {
+            return PerformanceRecoveryState.Monitoring(
+                sessionId = sessionId,
+                emulatorName = emulatorName,
+                emulatorPackage = emulatorPackage,
+                startedAt = startedAt
+            )
+        }
+
+        val endedAt = preferences.getLong(KEY_ENDED_AT, 0L)
+        val endReason = preferences.getString(KEY_END_REASON, null)
+
+        if (endedAt < startedAt || endReason.isNullOrBlank()) {
+            clear(context)
+            return null
+        }
+
+        return PerformanceRecoveryState.Saving(
             sessionId = sessionId,
             emulatorName = emulatorName,
             emulatorPackage = emulatorPackage,
-            startedAt = startedAt
+            startedAt = startedAt,
+            endedAt = endedAt,
+            endReason = endReason
         )
     }
 
@@ -171,7 +249,9 @@ object PerformanceSessionRecoveryStore {
         sessionId: String?,
         emulatorName: String?,
         emulatorPackage: String?,
-        startedAt: Long?
+        startedAt: Long?,
+        endedAt: Long?,
+        endReason: String?
     ) {
         preferences(context)
             .edit()
@@ -181,6 +261,8 @@ object PerformanceSessionRecoveryStore {
             .putString(KEY_EMULATOR_NAME, emulatorName)
             .putString(KEY_EMULATOR_PACKAGE, emulatorPackage)
             .putLong(KEY_STARTED_AT, startedAt ?: 0L)
+            .putLong(KEY_ENDED_AT, endedAt ?: 0L)
+            .putString(KEY_END_REASON, endReason)
             .putLong(KEY_BOOT_EPOCH_MS, currentBootEpochMs())
             .apply()
     }
