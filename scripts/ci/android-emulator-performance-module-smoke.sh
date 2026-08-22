@@ -210,6 +210,7 @@ emit_bug_failure() {
     local stage
     local started_at
     local current_samples
+    local diagnostic_artifact="${RUNNER_TEMP:-/tmp}/carepad-emulator.log"
 
     set +e
     trap - ERR
@@ -225,43 +226,47 @@ emit_bug_failure() {
         foreground_detected="true"
     fi
 
-    echo "FAIL ${CURRENT_BUG}" >&2
-    echo "scenario=${CURRENT_BUG}" >&2
-    echo "check=${CURRENT_CHECK:-unknown}" >&2
-    echo "expected=${CURRENT_EXPECTED:-unspecified}" >&2
-    echo "actual=${CURRENT_ACTUAL:-runtime state below}" >&2
-    echo "failing_command=${command}" >&2
-    echo "session_phase=${stage:-NONE}" >&2
-    echo "sample_count=${current_samples}" >&2
-    echo "previous_sample_count=${CURRENT_PREVIOUS_SAMPLES}" >&2
-    echo "foreground_detected=${foreground_detected}" >&2
-    echo "observed_resumed_activity=${resumed:-NONE}" >&2
-    echo "observed_emulator_package=${EMULATOR_FIXTURE_PACKAGE}" >&2
-    echo "performance_process_pid=${pid:-NONE}" >&2
-    echo "performance_service_state=${service_state}" >&2
-    echo "usage_access_state=$(adb shell appops get "$PERFORMANCE_PACKAGE" GET_USAGE_STATS 2>/dev/null | tr '\n' ' ' || true)" >&2
-    echo "wall_clock_ms=$(date +%s%3N)" >&2
-    echo "recovery_started_at_ms=${started_at:-NONE}" >&2
-    echo "policy_usage_event_overlap_ms=15000" >&2
-    echo "legacy_current_foreground_lookback_ms=60000" >&2
-    echo "bug4_service_stopped_at_ms=${BUG4_SERVICE_STOPPED_AT_MS}" >&2
-    echo "bug4_resume_requested_at_ms=${BUG4_RESUME_REQUESTED_AT_MS}" >&2
-    if [[ "$BUG4_SERVICE_STOPPED_AT_MS" =~ ^[0-9]+$ && "$BUG4_RESUME_REQUESTED_AT_MS" =~ ^[0-9]+$ ]]; then
-        echo "bug4_recovery_gap_ms=$((BUG4_RESUME_REQUESTED_AT_MS - BUG4_SERVICE_STOPPED_AT_MS))" >&2
-    else
-        echo "bug4_recovery_gap_ms=n/a" >&2
-    fi
-    echo "usage_stats_evidence_begin" >&2
-    usage_stats_evidence >&2
-    echo "usage_stats_evidence_end" >&2
-    echo "recovery_state_begin" >&2
-    adb shell run-as "$PERFORMANCE_PACKAGE" \
-        cat shared_prefs/thor_doctor_session_recovery.xml >&2 2>/dev/null || true
-    echo "recovery_state_end" >&2
-    echo "last_session_begin" >&2
-    adb shell run-as "$PERFORMANCE_PACKAGE" cat files/last_session.json >&2 2>/dev/null || true
-    echo "last_session_end" >&2
-    dump_recovery_diagnostics
+    {
+        echo "=== CAREPAD_SMOKE_FAILURE_BEGIN ==="
+        echo "FAIL ${CURRENT_BUG}"
+        echo "scenario=${CURRENT_BUG}"
+        echo "check=${CURRENT_CHECK:-unknown}"
+        echo "expected=${CURRENT_EXPECTED:-unspecified}"
+        echo "actual=${CURRENT_ACTUAL:-runtime state below}"
+        echo "failing_command=${command}"
+        echo "session_phase=${stage:-NONE}"
+        echo "sample_count=${current_samples}"
+        echo "previous_sample_count=${CURRENT_PREVIOUS_SAMPLES}"
+        echo "foreground_detected=${foreground_detected}"
+        echo "observed_resumed_activity=${resumed:-NONE}"
+        echo "observed_emulator_package=${EMULATOR_FIXTURE_PACKAGE}"
+        echo "performance_process_pid=${pid:-NONE}"
+        echo "performance_service_state=${service_state}"
+        echo "usage_access_state=$(adb shell appops get "$PERFORMANCE_PACKAGE" GET_USAGE_STATS 2>/dev/null | tr '\n' ' ' || true)"
+        echo "wall_clock_ms=$(date +%s%3N)"
+        echo "recovery_started_at_ms=${started_at:-NONE}"
+        echo "policy_usage_event_overlap_ms=15000"
+        echo "legacy_current_foreground_lookback_ms=60000"
+        echo "bug4_service_stopped_at_ms=${BUG4_SERVICE_STOPPED_AT_MS}"
+        echo "bug4_resume_requested_at_ms=${BUG4_RESUME_REQUESTED_AT_MS}"
+        if [[ "$BUG4_SERVICE_STOPPED_AT_MS" =~ ^[0-9]+$ && "$BUG4_RESUME_REQUESTED_AT_MS" =~ ^[0-9]+$ ]]; then
+            echo "bug4_recovery_gap_ms=$((BUG4_RESUME_REQUESTED_AT_MS - BUG4_SERVICE_STOPPED_AT_MS))"
+        else
+            echo "bug4_recovery_gap_ms=n/a"
+        fi
+        echo "usage_stats_evidence_begin"
+        usage_stats_evidence
+        echo "usage_stats_evidence_end"
+        echo "recovery_state_begin"
+        adb shell run-as "$PERFORMANCE_PACKAGE" \
+            cat shared_prefs/thor_doctor_session_recovery.xml 2>/dev/null || true
+        echo "recovery_state_end"
+        echo "last_session_begin"
+        adb shell run-as "$PERFORMANCE_PACKAGE" cat files/last_session.json 2>/dev/null || true
+        echo "last_session_end"
+        dump_recovery_diagnostics
+        echo "=== CAREPAD_SMOKE_FAILURE_END ==="
+    } 2>&1 | tee -a "$diagnostic_artifact" >&2
     exit "$status"
 }
 
