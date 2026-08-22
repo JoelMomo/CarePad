@@ -152,13 +152,15 @@ sample_count() {
 }
 
 performance_service_running() {
-    adb shell dumpsys activity services "$PERFORMANCE_PACKAGE" 2>/dev/null |
+    adb shell dumpsys activity services 2>/dev/null |
         grep -Fq "PerformanceMonitorService"
 }
 
 dump_recovery_diagnostics() {
-    adb shell dumpsys activity services "$PERFORMANCE_PACKAGE" >&2 || true
-    adb shell dumpsys appops "$PERFORMANCE_PACKAGE" >&2 || true
+    adb shell dumpsys activity services >&2 || true
+    adb shell appops get "$PERFORMANCE_PACKAGE" GET_USAGE_STATS >&2 || true
+    adb logcat -d -v brief 2>/dev/null |
+        grep -E 'dev\.carepad\.module\.performance|PerformanceMonitorService|ForegroundService|AndroidRuntime|ActivityManager' >&2 || true
     adb shell run-as "$PERFORMANCE_PACKAGE" \
         cat shared_prefs/thor_doctor_session_recovery.xml >&2 2>/dev/null || true
 }
@@ -173,7 +175,7 @@ wait_for_samples() {
 
     echo "Performance module did not capture a sample while the emulator fixture was foreground" >&2
     adb shell dumpsys activity activities >&2 || true
-    adb shell dumpsys appops "$PERFORMANCE_PACKAGE" >&2 || true
+    adb shell appops get "$PERFORMANCE_PACKAGE" GET_USAGE_STATS >&2 || true
     return 1
 }
 
@@ -395,6 +397,7 @@ if ! grep -Fq "$EMULATOR_FIXTURE_PACKAGE" <<<"$(current_resumed_activity)"; then
     exit 1
 fi
 sleep 65
+adb logcat -c
 adb shell am start-foreground-service \
     -n "$PERFORMANCE_SERVICE_COMPONENT" \
     -a "$PERFORMANCE_RESUME_ACTION" >/dev/null
