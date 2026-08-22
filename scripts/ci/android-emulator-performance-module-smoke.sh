@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 HOST_APK="${1:?host APK path required}"
 PERFORMANCE_APK="${2:?performance module APK path required}"
@@ -17,6 +17,14 @@ UI_DUMP_DEVICE="/sdcard/carepad-performance-window.xml"
 UI_DUMP_LOCAL="${RUNNER_TEMP:-/tmp}/carepad-performance-window.xml"
 SAMPLES_LOCAL="${RUNNER_TEMP:-/tmp}/carepad-performance-samples.jsonl"
 SESSION_LOCAL="${RUNNER_TEMP:-/tmp}/carepad-performance-last-session.json"
+
+CURRENT_BUG=""
+CURRENT_CHECK=""
+CURRENT_EXPECTED=""
+CURRENT_ACTUAL=""
+CURRENT_PREVIOUS_SAMPLES="n/a"
+BUG4_SERVICE_STOPPED_AT_MS="n/a"
+BUG4_RESUME_REQUESTED_AT_MS="n/a"
 
 current_resumed_activity() {
     adb shell dumpsys activity activities 2>/dev/null |
@@ -164,6 +172,109 @@ dump_recovery_diagnostics() {
     adb shell run-as "$PERFORMANCE_PACKAGE" \
         cat shared_prefs/thor_doctor_session_recovery.xml >&2 2>/dev/null || true
 }
+
+recovery_stage() {
+    adb shell run-as "$PERFORMANCE_PACKAGE" \
+        cat shared_prefs/thor_doctor_session_recovery.xml 2>/dev/null |
+        sed -n 's/.*<string name="stage">\([^<]*\)<\/string>.*/\1/p' |
+        head -n1 || true
+}
+
+recovery_started_at() {
+    adb shell run-as "$PERFORMANCE_PACKAGE" \
+        cat shared_prefs/thor_doctor_session_recovery.xml 2>/dev/null |
+        sed -n 's/.*<long name="started_at" value="\([0-9]*\)".*/\1/p' |
+        head -n1 || true
+}
+
+usage_stats_evidence() {
+    adb shell dumpsys usagestats 2>/dev/null |
+        grep -E -C 3 "${EMULATOR_FIXTURE_PACKAGE}|${PERFORMANCE_PACKAGE}" |
+        tail -n 160 || true
+}
+
+set_bug_check() {
+    CURRENT_CHECK="$1"
+    CURRENT_EXPECTED="$2"
+    CURRENT_ACTUAL="${3:-runtime state below}"
+    CURRENT_PREVIOUS_SAMPLES="${4:-n/a}"
+}
+
+emit_bug_failure() {
+    local status="${1:-1}"
+    local command="${2:-explicit assertion}"
+    local resumed
+    local service_state="stopped"
+    local foreground_detected="false"
+    local pid
+    local stage
+    local started_at
+    local current_samples
+
+    set +e
+    trap - ERR
+    resumed="$(current_resumed_activity)"
+    current_samples="$(sample_count)"
+    pid="$(adb shell pidof "$PERFORMANCE_PACKAGE" 2>/dev/null | tr -d '\r' || true)"
+    stage="$(recovery_stage)"
+    started_at="$(recovery_started_at)"
+    if performance_service_running; then
+        service_state="running"
+    fi
+    if grep -Fq "$EMULATOR_FIXTURE_PACKAGE" <<<"$resumed"; then
+        foreground_detected="true"
+    fi
+
+    echo "FAIL ${CURRENT_BUG}" >&2
+    echo "scenario=${CURRENT_BUG}" >&2
+    echo "check=${CURRENT_CHECK:-unknown}" >&2
+    echo "expected=${CURRENT_EXPECTED:-unspecified}" >&2
+    echo "actual=${CURRENT_ACTUAL:-runtime state below}" >&2
+    echo "failing_command=${command}" >&2
+    echo "session_phase=${stage:-NONE}" >&2
+    echo "sample_count=${current_samples}" >&2
+    echo "previous_sample_count=${CURRENT_PREVIOUS_SAMPLES}" >&2
+    echo "foreground_detected=${foreground_detected}" >&2
+    echo "observed_resumed_activity=${resumed:-NONE}" >&2
+    echo "observed_emulator_package=${EMULATOR_FIXTURE_PACKAGE}" >&2
+    echo "performance_process_pid=${pid:-NONE}" >&2
+    echo "performance_service_state=${service_state}" >&2
+    echo "usage_access_state=$(adb shell appops get "$PERFORMANCE_PACKAGE" GET_USAGE_STATS 2>/dev/null | tr '\n' ' ' || true)" >&2
+    echo "wall_clock_ms=$(date +%s%3N)" >&2
+    echo "recovery_started_at_ms=${started_at:-NONE}" >&2
+    echo "policy_usage_event_overlap_ms=15000" >&2
+    echo "legacy_current_foreground_lookback_ms=60000" >&2
+    echo "bug4_service_stopped_at_ms=${BUG4_SERVICE_STOPPED_AT_MS}" >&2
+    echo "bug4_resume_requested_at_ms=${BUG4_RESUME_REQUESTED_AT_MS}" >&2
+    if [[ "$BUG4_SERVICE_STOPPED_AT_MS" =~ ^[0-9]+$ && "$BUG4_RESUME_REQUESTED_AT_MS" =~ ^[0-9]+$ ]]; then
+        echo "bug4_recovery_gap_ms=$((BUG4_RESUME_REQUESTED_AT_MS - BUG4_SERVICE_STOPPED_AT_MS))" >&2
+    else
+        echo "bug4_recovery_gap_ms=n/a" >&2
+    fi
+    echo "usage_stats_evidence_begin" >&2
+    usage_stats_evidence >&2
+    echo "usage_stats_evidence_end" >&2
+    echo "recovery_state_begin" >&2
+    adb shell run-as "$PERFORMANCE_PACKAGE" \
+        cat shared_prefs/thor_doctor_session_recovery.xml >&2 2>/dev/null || true
+    echo "recovery_state_end" >&2
+    echo "last_session_begin" >&2
+    adb shell run-as "$PERFORMANCE_PACKAGE" cat files/last_session.json >&2 2>/dev/null || true
+    echo "last_session_end" >&2
+    dump_recovery_diagnostics
+    exit "$status"
+}
+
+on_bug_error() {
+    local status="$1"
+    local command="$2"
+    if [[ -n "$CURRENT_BUG" ]]; then
+        emit_bug_failure "$status" "$command"
+    fi
+    return "$status"
+}
+
+trap 'on_bug_error "$?" "$BASH_COMMAND"' ERR
 
 wait_for_samples() {
     for _ in $(seq 1 30); do
@@ -319,101 +430,180 @@ wait_for_last_session
 assert_session_json "manual_stop" 1
 assert_recovery_cleared
 
-# Session 3: killing the Performance process during active monitoring must keep
+# Session 3 / BUG-5: killing the Performance process during active monitoring must keep
 # persisted recovery. Reopening the module auto-resumes that same session; putting
 # PPSSPP back in foreground must append another sample before the user stops it.
+CURRENT_BUG="BUG-5"
+echo "START BUG-5"
+set_bug_check "establish active session before process interruption" \
+    "PPSSPP foreground with at least one persisted sample"
 clear_last_session
 start_session_with_fixture
 samples_before_restart="$(sample_count)"
+set_bug_check "persisted sample exists before interruption" \
+    "sample_count >= 1" \
+    "sample_count=${samples_before_restart}" \
+    "$samples_before_restart"
 if (( samples_before_restart < 1 )); then
-    echo "Recovery scenario did not have a persisted sample before interruption" >&2
-    exit 1
+    emit_bug_failure 1 "samples_before_restart < 1"
 fi
 
+set_bug_check "recovery samples survive force-stop" \
+    "files/active_session_samples.jsonl exists and is non-empty" \
+    "recovery_samples_file_missing" \
+    "$samples_before_restart"
 adb shell am force-stop "$PERFORMANCE_PACKAGE" >/dev/null
 if ! adb shell run-as "$PERFORMANCE_PACKAGE" test -s files/active_session_samples.jsonl; then
-    echo "Performance interruption lost persisted recovery samples" >&2
-    adb shell run-as "$PERFORMANCE_PACKAGE" ls -la files >&2 || true
-    exit 1
+    emit_bug_failure 1 "active_session_samples.jsonl missing after force-stop"
 fi
 
+set_bug_check "recovered session appends a new sample" \
+    "sample_count > ${samples_before_restart}" \
+    "sample_count=$(sample_count)" \
+    "$samples_before_restart"
 open_performance
 launch_emulator_fixture
 wait_for_sample_count_greater_than "$samples_before_restart"
 minimum_recovered_samples=$((samples_before_restart + 1))
+set_bug_check "recovered session finalizes as manual_stop" \
+    "endReason=manual_stop and sampleCount >= ${minimum_recovered_samples}" \
+    "last_session pending" \
+    "$samples_before_restart"
 open_performance
 tap_ui_button "Finish session" "Terminar sesión"
 wait_for_last_session
 assert_session_json "manual_stop" "$minimum_recovered_samples"
+set_bug_check "recovery state cleared after BUG-5 finalization" \
+    "active_session_samples.jsonl absent" \
+    "recovery cleanup check" \
+    "$samples_before_restart"
 assert_recovery_cleared
+echo "PASS BUG-5"
+CURRENT_BUG=""
 
 # Session 4 / BUG-3: revoking Usage Access while PPSSPP remains foreground must
 # stop sampling immediately, keep recoverable state and expose the permission error.
 # Regranting the permission resumes the same session rather than starting over.
+CURRENT_BUG="BUG-3"
+echo "START BUG-3"
+set_bug_check "establish active session before Usage Access revocation" \
+    "PPSSPP foreground with at least one persisted sample"
 clear_last_session
 start_session_with_fixture
 samples_before_revoke="$(sample_count)"
+set_bug_check "Usage Access removal is surfaced in UI" \
+    "Usage access required/Falta acceso de uso visible" \
+    "UI text did not contain permission error" \
+    "$samples_before_revoke"
 adb shell appops set "$PERFORMANCE_PACKAGE" GET_USAGE_STATS ignore
 sleep 3
 open_performance
 if ! grep -Eq "Usage access required|Falta acceso de uso" "$UI_DUMP_LOCAL"; then
-    echo "Performance module did not surface Usage Access removal during a session" >&2
-    cat "$UI_DUMP_LOCAL" >&2 || true
-    exit 1
+    CURRENT_ACTUAL="$(tr '\n' ' ' < "$UI_DUMP_LOCAL" | cut -c1-600)"
+    emit_bug_failure 1 "Usage Access error text missing"
 fi
+set_bug_check "sampling stops while Usage Access is revoked" \
+    "sample_count remains ${samples_before_revoke} for 6 seconds" \
+    "sample_count=$(sample_count)" \
+    "$samples_before_revoke"
 assert_sample_count_stable "$samples_before_revoke" 6
+set_bug_check "recovery state survives Usage Access revocation" \
+    "files/active_session_samples.jsonl exists and is non-empty" \
+    "recovery samples file check" \
+    "$samples_before_revoke"
 if ! adb shell run-as "$PERFORMANCE_PACKAGE" test -s files/active_session_samples.jsonl; then
-    echo "Performance module lost recovery state when Usage Access was revoked" >&2
-    exit 1
+    emit_bug_failure 1 "active_session_samples.jsonl missing after Usage Access revocation"
 fi
 
+set_bug_check "same session resumes sampling after Usage Access restore" \
+    "sample_count > ${samples_before_revoke}" \
+    "sample_count=$(sample_count)" \
+    "$samples_before_revoke"
 adb shell appops set "$PERFORMANCE_PACKAGE" GET_USAGE_STATS allow
 open_performance
 launch_emulator_fixture
 wait_for_sample_count_greater_than "$samples_before_revoke"
 minimum_permission_recovery_samples=$((samples_before_revoke + 1))
+set_bug_check "Usage Access recovered session finalizes as manual_stop" \
+    "endReason=manual_stop and sampleCount >= ${minimum_permission_recovery_samples}" \
+    "last_session pending" \
+    "$samples_before_revoke"
 open_performance
 tap_ui_button "Finish session" "Terminar sesión"
 wait_for_last_session
 assert_session_json "manual_stop" "$minimum_permission_recovery_samples"
+set_bug_check "recovery state cleared after BUG-3 finalization" \
+    "active_session_samples.jsonl absent" \
+    "recovery cleanup check" \
+    "$samples_before_revoke"
 assert_recovery_cleared
+echo "PASS BUG-3"
+CURRENT_BUG=""
 
 # Session 5 / BUG-4: interrupt monitoring without force-stopping the package,
 # keep PPSSPP continuously foreground for longer than the old 60 s lookback, then
 # resume the service directly. This simulates recoverable process/service loss
 # without putting the app into Android's user-requested stopped state.
+CURRENT_BUG="BUG-4"
+echo "START BUG-4"
+set_bug_check "establish active session before late recovery" \
+    "PPSSPP foreground with at least one persisted sample"
 clear_last_session
 start_session_with_fixture
 samples_before_late_recovery="$(sample_count)"
+CURRENT_PREVIOUS_SAMPLES="$samples_before_late_recovery"
+set_bug_check "persisted samples survive service/process interruption" \
+    "files/active_session_samples.jsonl exists and is non-empty" \
+    "recovery samples file check" \
+    "$samples_before_late_recovery"
 adb shell am stopservice -n "$PERFORMANCE_SERVICE_COMPONENT" >/dev/null
+BUG4_SERVICE_STOPPED_AT_MS="$(date +%s%3N)"
 adb shell am kill "$PERFORMANCE_PACKAGE" >/dev/null || true
 if ! adb shell run-as "$PERFORMANCE_PACKAGE" test -s files/active_session_samples.jsonl; then
-    echo "Late recovery scenario lost persisted samples before restart" >&2
-    exit 1
+    emit_bug_failure 1 "active_session_samples.jsonl missing before late recovery"
 fi
+set_bug_check "PPSSPP remains foreground during late recovery setup" \
+    "resumed activity contains ${EMULATOR_FIXTURE_PACKAGE}" \
+    "resumed_activity=$(current_resumed_activity)" \
+    "$samples_before_late_recovery"
 if ! grep -Fq "$EMULATOR_FIXTURE_PACKAGE" <<<"$(current_resumed_activity)"; then
-    echo "Emulator fixture did not remain foreground during late recovery setup" >&2
-    echo "$(current_resumed_activity)" >&2
-    exit 1
+    emit_bug_failure 1 "PPSSPP not foreground during late recovery setup"
 fi
 sleep 65
 adb logcat -c
+BUG4_RESUME_REQUESTED_AT_MS="$(date +%s%3N)"
+set_bug_check "Performance service starts for late recovery" \
+    "PerformanceMonitorService running after ACTION_RESUME" \
+    "service_state=$(performance_service_running && echo running || echo stopped)" \
+    "$samples_before_late_recovery"
 adb shell am start-foreground-service \
     -n "$PERFORMANCE_SERVICE_COMPONENT" \
     -a "$PERFORMANCE_RESUME_ACTION" >/dev/null
 sleep 2
 if ! performance_service_running; then
-    echo "Performance service did not start for late recovery" >&2
-    dump_recovery_diagnostics
-    exit 1
+    emit_bug_failure 1 "PerformanceMonitorService not running after ACTION_RESUME"
 fi
+set_bug_check "late recovery appends a new sample" \
+    "sample_count > ${samples_before_late_recovery}" \
+    "sample_count=$(sample_count)" \
+    "$samples_before_late_recovery"
 wait_for_sample_count_greater_than "$samples_before_late_recovery"
 minimum_late_recovery_samples=$((samples_before_late_recovery + 1))
+set_bug_check "late recovered session finalizes as manual_stop" \
+    "endReason=manual_stop and sampleCount >= ${minimum_late_recovery_samples}" \
+    "last_session pending" \
+    "$samples_before_late_recovery"
 open_performance
 tap_ui_button "Finish session" "Terminar sesión"
 wait_for_last_session
 assert_session_json "manual_stop" "$minimum_late_recovery_samples"
+set_bug_check "recovery state cleared after BUG-4 finalization" \
+    "active_session_samples.jsonl absent" \
+    "recovery cleanup check" \
+    "$samples_before_late_recovery"
 assert_recovery_cleared
+echo "PASS BUG-4"
+CURRENT_BUG=""
 
 # Removing the real module must return the host to a healthy no-module state.
 adb uninstall "$PERFORMANCE_PACKAGE"
