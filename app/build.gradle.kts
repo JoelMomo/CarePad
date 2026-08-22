@@ -21,6 +21,7 @@ android {
         versionCode = 1
         versionName = "1.0"
         manifestPlaceholders["docThorMainEnabled"] = true
+        manifestPlaceholders["carepadRecoveryLabEnabled"] = false
     }
 
     buildTypes {
@@ -29,8 +30,13 @@ android {
                 applicationIdSuffix = ".carepadlabhost"
                 versionNameSuffix = "-carepad-lab-host"
                 manifestPlaceholders["docThorMainEnabled"] = false
+                manifestPlaceholders["carepadRecoveryLabEnabled"] = true
             }
         }
+    }
+
+    if (carePadLabHost.get()) {
+        sourceSets.getByName("debug").java.srcDir("src/recoveryLab/java")
     }
 
     compileOptions {

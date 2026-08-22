@@ -17,6 +17,14 @@
 
         </activity>
 
+        <activity
+            android:name=".modules.host.recovery.RecoveryLabHarnessActivity"
+            android:enabled="${carepadRecoveryLabEnabled}"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <receiver
             android:name=".modules.host.ModuleInstallStatusReceiver"
             android:exported="false" />
