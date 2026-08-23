@@ -101,12 +101,17 @@ run_lab() {
 
     LAST_RESULT=""
     for _ in $(seq 1 20); do
-        LAST_RESULT="$(adb exec-out run-as "$HOST_PACKAGE" cat "$RESULT_FILE" 2>/dev/null | tr -d '\r' || true)"
-        if [[ -n "$LAST_RESULT" ]]; then
-            return 0
+        if adb shell run-as "$HOST_PACKAGE" test -s "$RESULT_FILE" >/dev/null 2>&1; then
+            LAST_RESULT="$(adb exec-out run-as "$HOST_PACKAGE" cat "$RESULT_FILE" 2>/dev/null | tr -d '\r' || true)"
+            if [[ -n "$LAST_RESULT" ]]; then
+                return 0
+            fi
         fi
         sleep 0.1
     done
+    echo "Recovery lab result file was not produced or remained empty: $RESULT_FILE" >&2
+    echo "Resumed activity: $(current_resumed_activity)" >&2
+    adb shell run-as "$HOST_PACKAGE" ls -l files >&2 2>/dev/null || true
     fail "Recovery lab command did not produce a result: $command"
 }
 
