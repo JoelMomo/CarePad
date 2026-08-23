@@ -18,6 +18,10 @@ import java.io.File
  * .carepadlabhost applicationId.
  */
 class RecoveryLabHarnessActivity : Activity() {
+    private var keepVisibleForInstall = false
+    private var hasResumedWhileWaitingForInstall = false
+    private var leftForExternalInstallUi = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -47,7 +51,38 @@ class RecoveryLabHarnessActivity : Activity() {
                 )
             }
         persistResult(command, result, pid)
-        finish()
+        if (keepVisibleForInstall) {
+            Log.i(TAG, "LAB_KEEP_VISIBLE_FOR_INSTALL command=$command pid=$pid")
+        } else {
+            finish()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!keepVisibleForInstall) return
+
+        if (leftForExternalInstallUi) {
+            Log.i(TAG, "LAB_EXTERNAL_INSTALL_UI_RETURNED")
+            keepVisibleForInstall = false
+            finish()
+            return
+        }
+
+        hasResumedWhileWaitingForInstall = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (
+            keepVisibleForInstall &&
+            hasResumedWhileWaitingForInstall &&
+            AndroidModuleRecovery.currentState(this)?.phase ==
+                RecoveryPhase.WAITING_FOR_INSTALL_CONFIRMATION
+        ) {
+            leftForExternalInstallUi = true
+            Log.i(TAG, "LAB_EXTERNAL_INSTALL_UI_LEFT")
+        }
     }
 
     private fun execute(command: String, source: Intent): String = when (command) {
@@ -71,12 +106,16 @@ class RecoveryLabHarnessActivity : Activity() {
             )
         )
         "request_uninstall" -> renderAction(AndroidModuleRecovery.requestUninstall(this))
-        "continue_uninstall" ->
-            renderAction(AndroidModuleRecovery.continueAfterUninstallConfirmation(this))
+        "continue_uninstall" -> renderInstallStartingAction(
+            command,
+            AndroidModuleRecovery.continueAfterUninstallConfirmation(this)
+        )
         "request_install_permission" ->
             renderAction(AndroidModuleRecovery.requestInstallPermission(this))
-        "continue_install_permission" ->
-            renderAction(AndroidModuleRecovery.continueAfterInstallPermission(this))
+        "continue_install_permission" -> renderInstallStartingAction(
+            command,
+            AndroidModuleRecovery.continueAfterInstallPermission(this)
+        )
         "complete_data_restore" -> renderAction(
             AndroidModuleRecovery.completeDataRestore(
                 context = this,
@@ -84,7 +123,10 @@ class RecoveryLabHarnessActivity : Activity() {
                 detail = source.getStringExtra(EXTRA_DETAIL)
             )
         )
-        "retry_install" -> renderAction(AndroidModuleRecovery.retryInstall(this))
+        "retry_install" -> renderInstallStartingAction(
+            command,
+            AndroidModuleRecovery.retryInstall(this)
+        )
         "cancel_prepared" -> renderAction(AndroidModuleRecovery.cancelPrepared(this))
         "clear_terminal" -> lines(
             "kind" to "boolean",
@@ -96,6 +138,20 @@ class RecoveryLabHarnessActivity : Activity() {
             "error" to "UNKNOWN_COMMAND",
             "detail" to "Unsupported recovery lab command."
         )
+    }
+
+    private fun renderInstallStartingAction(
+        command: String,
+        result: RecoveryActionResult
+    ): String {
+        if (
+            command in INSTALL_STARTING_COMMANDS &&
+            result is RecoveryActionResult.Accepted &&
+            result.state.phase == RecoveryPhase.INSTALLING
+        ) {
+            keepVisibleForInstall = true
+        }
+        return renderAction(result)
     }
 
     private fun recoveryTarget(source: Intent): RecoveryTarget = RecoveryTarget(
@@ -201,6 +257,12 @@ class RecoveryLabHarnessActivity : Activity() {
         const val LAB_PACKAGE_NAME = "com.joel.thordoctor.carepadlabhost"
         const val TAG = "CarePadRecoveryLab"
         const val RESULT_FILE_NAME = "recovery-lab-result.txt"
+
+        val INSTALL_STARTING_COMMANDS = setOf(
+            "continue_uninstall",
+            "continue_install_permission",
+            "retry_install"
+        )
 
         const val EXTRA_COMMAND = "command"
         const val EXTRA_STAGED_APK = "staged_apk"
