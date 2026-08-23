@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 NORMAL_HOST_APK="${1:?normal host APK path required}"
 LAB_HOST_APK="${2:?lab host APK path required}"
@@ -17,6 +17,40 @@ DEFECTIVE_STAGE="recovery-defective.apk"
 UI_DUMP_DEVICE="/sdcard/carepad-recovery-window.xml"
 UI_DUMP_LOCAL="${RUNNER_TEMP:-/tmp}/carepad-recovery-window.xml"
 LAST_RESULT=""
+CURRENT_STAGE="initializing recovery smoke"
+SETUP_OBSERVABILITY_ACTIVE=true
+
+recovery_setup_failure() {
+    local exit_status="$1"
+    local line="$2"
+    local command="$3"
+
+    trap - ERR
+    set +e
+
+    if [[ "${SETUP_OBSERVABILITY_ACTIVE:-false}" == true ]]; then
+        echo "RECOVERY_SETUP_FAILURE" >&2
+        echo "stage=${CURRENT_STAGE:-unknown}" >&2
+        echo "exit_status=$exit_status" >&2
+        echo "line=$line" >&2
+        printf 'command=%s\n' "$command" >&2
+        echo "normal_host_pm_path:" >&2
+        adb shell pm path "$NORMAL_HOST_PACKAGE" >&2 2>&1 || true
+        echo "lab_host_pm_path:" >&2
+        adb shell pm path "$HOST_PACKAGE" >&2 2>&1 || true
+        echo "resumed_activity: $(current_resumed_activity)" >&2
+        echo "normal_host_package:" >&2
+        adb shell dumpsys package "$NORMAL_HOST_PACKAGE" 2>&1 |
+            grep -E -m 8 'Package \[|versionName=|versionCode=|enabled=|User 0:' >&2 || true
+        echo "lab_host_package:" >&2
+        adb shell dumpsys package "$HOST_PACKAGE" 2>&1 |
+            grep -E -m 8 'Package \[|versionName=|versionCode=|enabled=|User 0:' >&2 || true
+    fi
+
+    exit "$exit_status"
+}
+
+trap 'recovery_setup_failure "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 fail() {
     echo "$*" >&2
@@ -256,23 +290,39 @@ clear_terminal() {
 # Critical isolation gate: a normal CarePad debug APK must not be able to launch
 # the recovery command activity. The class is not compiled there and the manifest
 # component is disabled unless -PcarepadLabHost=true.
+CURRENT_STAGE="install normal host"
 adb install -r "$NORMAL_HOST_APK" >/dev/null
+
+CURRENT_STAGE="normal harness isolation probe"
+trap - ERR
 set +e
 normal_launch_output="$(adb shell am start -W -n "$NORMAL_RECOVERY_ACTIVITY" --es command state 2>&1)"
 normal_launch_status=$?
 set -e
+trap 'recovery_setup_failure "$?" "$LINENO" "$BASH_COMMAND"' ERR
 if [[ "$normal_launch_status" -eq 0 ]] &&
     ! grep -Eqi "error|does not exist|not found|disabled|not enabled" <<<"$normal_launch_output"; then
     echo "$normal_launch_output" >&2
     fail "Recovery lab harness unexpectedly launched from normal CarePad debug build"
 fi
+
+CURRENT_STAGE="uninstall normal host"
 adb uninstall "$NORMAL_HOST_PACKAGE" >/dev/null
 
+CURRENT_STAGE="uninstall previous lab host"
 adb uninstall "$HOST_PACKAGE" >/dev/null 2>&1 || true
+
+CURRENT_STAGE="install lab host"
 adb install "$LAB_HOST_APK" >/dev/null
+
+CURRENT_STAGE="pm clear lab host"
 adb shell pm clear "$HOST_PACKAGE" >/dev/null
+
+CURRENT_STAGE="first run_lab state"
 run_lab state
 assert_field present false
+SETUP_OBSERVABILITY_ACTIVE=false
+trap - ERR
 
 APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
 test -n "$APKSIGNER"
