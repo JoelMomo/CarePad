@@ -23,6 +23,8 @@ CURRENT_STAGE_COMMAND="initializing recovery smoke"
 SETUP_OBSERVABILITY_ACTIVE=true
 SETUP_FAILURE_REPORTED=false
 INSTALL_PERMISSION_RESUMED_AFTER_BACK=""
+UNINSTALL_CANCEL_RESUMED_IMMEDIATELY=""
+UNINSTALL_CANCEL_RESUMED_AFTER_WAIT=""
 
 report_recovery_setup_failure() {
     local exit_status="$1"
@@ -245,6 +247,48 @@ run_lab() {
     echo "Resumed activity: $(current_resumed_activity)" >&2
     adb shell run-as "$HOST_PACKAGE" ls -l files >&2 2>/dev/null || true
     fail "Recovery lab command did not produce a result: $command"
+}
+
+wait_for_uninstall_cancel_return() {
+    local resumed=""
+    local module_path=""
+    local host_path=""
+    local recovery_status=1
+    local recovery_state=""
+
+    for _ in $(seq 1 20); do
+        resumed="$(current_resumed_activity)"
+        module_path="$(adb shell pm path "$MODULE_PACKAGE" 2>/dev/null | tr -d '\r' || true)"
+        host_path="$(adb shell pm path "$HOST_PACKAGE" 2>/dev/null | tr -d '\r' || true)"
+
+        if ! grep -Fq 'UninstallerActivity' <<<"$resumed" &&
+            [[ -n "$module_path" ]] &&
+            [[ -n "$host_path" ]]; then
+            UNINSTALL_CANCEL_RESUMED_AFTER_WAIT="$resumed"
+            set +e
+            run_lab state
+            recovery_status=$?
+            set -e
+            recovery_state="$LAST_RESULT"
+            if [[ "$recovery_status" -eq 0 ]] &&
+                grep -Fxq 'present=true' <<<"$recovery_state" &&
+                grep -Fxq 'phase=WAITING_FOR_UNINSTALL_CONFIRMATION' <<<"$recovery_state"; then
+                return 0
+            fi
+        fi
+        sleep 0.25
+    done
+
+    echo "UNINSTALL_CANCEL_RETURN_FAILURE" >&2
+    echo "RESUMED_IMMEDIATELY_AFTER_CANCEL=$UNINSTALL_CANCEL_RESUMED_IMMEDIATELY" >&2
+    echo "RESUMED_AFTER_WAIT=$resumed" >&2
+    echo "MODULE_PM_PATH=$module_path" >&2
+    echo "LAB_HOST_PM_PATH=$host_path" >&2
+    echo "RECOVERY_STATE_STATUS=$recovery_status" >&2
+    echo "RECOVERY_STATE_BEGIN" >&2
+    echo "$recovery_state" >&2
+    echo "RECOVERY_STATE_END" >&2
+    return 1
 }
 
 wait_for_install_permission_settings_exit() {
@@ -682,6 +726,10 @@ assert_accepted_phase PREPARED
 run_lab request_uninstall
 assert_accepted_phase WAITING_FOR_UNINSTALL_CONFIRMATION
 tap_button_when_visible "Cancel"
+UNINSTALL_CANCEL_RESUMED_IMMEDIATELY="$(current_resumed_activity)"
+echo "RESUMED_IMMEDIATELY_AFTER_UNINSTALL_CANCEL=$UNINSTALL_CANCEL_RESUMED_IMMEDIATELY" >&2
+wait_for_uninstall_cancel_return
+echo "RESUMED_AFTER_UNINSTALL_CANCEL_WAIT=$UNINSTALL_CANCEL_RESUMED_AFTER_WAIT" >&2
 run_lab continue_uninstall
 assert_accepted_phase CANCELLED
 assert_module_version "0.5-broken"
