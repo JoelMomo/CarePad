@@ -2,6 +2,7 @@ package com.joel.thordoctor.modules.performance
 
 import android.content.Context
 import android.os.SystemClock
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -70,10 +71,32 @@ object PerformanceSessionRecoveryStore {
     private const val KEY_BOOT_EPOCH_MS = "boot_epoch_ms"
     private const val SAMPLES_FILENAME = "active_session_samples.jsonl"
     private const val BOOT_EPOCH_TOLERANCE_MS = 120_000L
+    private const val DIAGNOSTIC_TAG = "PerformanceMonitorService"
+
+    private data class SampleFileState(
+        val exists: Boolean,
+        val lines: Int,
+        val bytes: Long
+    )
 
     @Synchronized
     fun markWaiting(context: Context) {
-        samplesFile(context).delete()
+        val file = samplesFile(context)
+        val before = sampleFileState(file)
+        val stageBefore = storedStage(context)
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "RECOVERY_FILE_DELETE operation=markWaiting phase=before " +
+                "stage=$stageBefore exists=${before.exists} lines=${before.lines} " +
+                "bytes=${before.bytes} thread=${Thread.currentThread().name}"
+        )
+        val deleted = file.delete()
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "RECOVERY_FILE_DELETE operation=markWaiting phase=after " +
+                "deleteAttempted=true deleteResult=$deleted existsAfter=${file.exists()} " +
+                "thread=${Thread.currentThread().name}"
+        )
         saveState(
             context = context,
             stage = PerformanceRecoveryStage.WAITING_EMULATOR,
@@ -140,6 +163,7 @@ object PerformanceSessionRecoveryStore {
                     preferences.getString(KEY_STAGE, null) ?: return null
                 )
             } catch (_: IllegalArgumentException) {
+                logClearRequest(context, "load_invalid_stage")
                 clear(context)
                 return null
             }
@@ -154,6 +178,7 @@ object PerformanceSessionRecoveryStore {
                 storedBootEpoch == Long.MIN_VALUE ||
                 abs(storedBootEpoch - currentBootEpochMs()) > BOOT_EPOCH_TOLERANCE_MS
             ) {
+                logClearRequest(context, "load_boot_epoch_mismatch")
                 clear(context)
                 return null
             }
@@ -174,6 +199,7 @@ object PerformanceSessionRecoveryStore {
             emulatorPackage.isNullOrBlank() ||
             startedAt <= 0L
         ) {
+            logClearRequest(context, "load_invalid_session_fields")
             clear(context)
             return null
         }
@@ -191,6 +217,7 @@ object PerformanceSessionRecoveryStore {
         val endReason = preferences.getString(KEY_END_REASON, null)
 
         if (endedAt < startedAt || endReason.isNullOrBlank()) {
+            logClearRequest(context, "load_invalid_saving_fields")
             clear(context)
             return null
         }
@@ -210,9 +237,27 @@ object PerformanceSessionRecoveryStore {
 
     @Synchronized
     fun appendSample(context: Context, sample: JSONObject) {
-        samplesFile(context).appendText(
+        val file = samplesFile(context)
+        val before = sampleFileState(file)
+        val stage = storedStage(context)
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "RECOVERY_FILE_APPEND phase=before stage=$stage " +
+                "exists=${before.exists} lines=${before.lines} bytes=${before.bytes} " +
+                "thread=${Thread.currentThread().name}"
+        )
+
+        file.appendText(
             sample.toString() + "\n",
             Charsets.UTF_8
+        )
+
+        val after = sampleFileState(file)
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "RECOVERY_FILE_APPEND phase=after stage=${storedStage(context)} " +
+                "exists=${after.exists} lines=${after.lines} bytes=${after.bytes} " +
+                "thread=${Thread.currentThread().name}"
         )
     }
 
@@ -220,10 +265,20 @@ object PerformanceSessionRecoveryStore {
     fun readSamples(context: Context): JSONArray {
         val result = JSONArray()
         val file = samplesFile(context)
+        var physicalLines = 0
 
-        if (!file.exists() || !file.canRead()) return result
+        if (!file.exists() || !file.canRead()) {
+            Log.i(
+                DIAGNOSTIC_TAG,
+                "RECOVERY_FILE_READ stage=${storedStage(context)} exists=${file.exists()} " +
+                    "physicalLines=0 samplesReturned=0 bytes=${file.length()} " +
+                    "thread=${Thread.currentThread().name}"
+            )
+            return result
+        }
 
         file.forEachLine(Charsets.UTF_8) { line ->
+            physicalLines += 1
             val trimmed = line.trim()
             if (trimmed.isNotEmpty()) {
                 try {
@@ -234,13 +289,34 @@ object PerformanceSessionRecoveryStore {
             }
         }
 
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "RECOVERY_FILE_READ stage=${storedStage(context)} exists=true " +
+                "physicalLines=$physicalLines samplesReturned=${result.length()} bytes=${file.length()} " +
+                "thread=${Thread.currentThread().name}"
+        )
         return result
     }
 
     @Synchronized
     fun clear(context: Context) {
+        val file = samplesFile(context)
+        val before = sampleFileState(file)
+        val stageBefore = storedStage(context)
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "RECOVERY_FILE_DELETE operation=clear phase=before stage=$stageBefore " +
+                "exists=${before.exists} lines=${before.lines} bytes=${before.bytes} " +
+                "thread=${Thread.currentThread().name}"
+        )
         preferences(context).edit().clear().apply()
-        samplesFile(context).delete()
+        val deleted = file.delete()
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "RECOVERY_FILE_DELETE operation=clear phase=after " +
+                "deleteAttempted=true deleteResult=$deleted existsAfter=${file.exists()} " +
+                "thread=${Thread.currentThread().name}"
+        )
     }
 
     private fun saveState(
@@ -265,6 +341,29 @@ object PerformanceSessionRecoveryStore {
             .putString(KEY_END_REASON, endReason)
             .putLong(KEY_BOOT_EPOCH_MS, currentBootEpochMs())
             .apply()
+    }
+
+    private fun logClearRequest(context: Context, reason: String) {
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "RECOVERY_CLEAR_REQUEST reason=$reason stage=${storedStage(context)} " +
+                "thread=${Thread.currentThread().name}"
+        )
+    }
+
+    private fun storedStage(context: Context): String =
+        preferences(context).getString(KEY_STAGE, null) ?: "NONE"
+
+    private fun sampleFileState(file: File): SampleFileState {
+        val exists = file.exists()
+        val bytes = if (exists) file.length() else 0L
+        val lines =
+            if (!exists || !file.canRead()) {
+                0
+            } else {
+                runCatching { file.useLines(Charsets.UTF_8) { it.count() } }.getOrDefault(-1)
+            }
+        return SampleFileState(exists = exists, lines = lines, bytes = bytes)
     }
 
     private fun preferences(context: Context) =
