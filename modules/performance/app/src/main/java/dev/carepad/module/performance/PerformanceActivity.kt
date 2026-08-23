@@ -67,16 +67,14 @@ class PerformanceActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        val hasRecovery = PerformanceMonitorService.hasRecoverableSession(this)
-        val pendingSave = PerformanceMonitorService.hasPendingSave(this)
-        val mayAutoResume =
-            PerformanceMonitorService.currentError != PerformanceMonitorError.SESSION_SAVE_FAILED &&
-                (pendingSave || ForegroundEmulatorDetector.hasUsageAccess(this))
-
-        if (hasRecovery && mayAutoResume && !PerformanceMonitorService.isRunning) {
-            resumeSession()
-        }
+        maybeResumeRecoverableSession()
         handler.post(refreshRunnable)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        maybeResumeRecoverableSession()
     }
 
     override fun onStop() {
@@ -326,6 +324,18 @@ class PerformanceActivity : Activity() {
             Intent(this, PerformanceMonitorService::class.java)
                 .setAction(PerformanceMonitorService.ACTION_START)
         )
+    }
+
+    private fun maybeResumeRecoverableSession() {
+        val hasRecovery = PerformanceMonitorService.hasRecoverableSession(this)
+        val pendingSave = PerformanceMonitorService.hasPendingSave(this)
+        val mayAutoResume =
+            PerformanceMonitorService.currentError != PerformanceMonitorError.SESSION_SAVE_FAILED &&
+                (pendingSave || ForegroundEmulatorDetector.hasUsageAccess(this))
+
+        if (hasRecovery && mayAutoResume && !PerformanceMonitorService.isRunning) {
+            resumeSession()
+        }
     }
 
     private fun resumeSession() {
