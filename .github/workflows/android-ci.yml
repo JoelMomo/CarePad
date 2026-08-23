@@ -122,10 +122,10 @@ jobs:
 
           assert SERVICE in debug_services, debug_services.keys()
           assert SERVICE in release_services, release_services.keys()
-          assert debug_services[SERVICE].attrib.get(ANDROID + "exported") == "false"
+          assert debug_services[SERVICE].attrib.get(ANDROID + "exported") == "true"
           assert release_services[SERVICE].attrib.get(ANDROID + "exported") == "false"
 
-          print("Performance LAB isolation verified: receiver=debug-only, service exported=false")
+          print("Performance LAB isolation verified: receiver=debug-only, service debug exported=true/release exported=false")
           PY
 
       - name: Upload debug APK

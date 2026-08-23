@@ -8,6 +8,8 @@ EMULATOR_FIXTURE_APK="${3:?performance emulator fixture APK path required}"
 HOST_PACKAGE="com.joel.thordoctor.carepadlabhost"
 PERFORMANCE_PACKAGE="dev.carepad.module.performance"
 PERFORMANCE_LAB_RECEIVER_COMPONENT="${PERFORMANCE_PACKAGE}/.PerformanceLabControlReceiver"
+PERFORMANCE_SERVICE_COMPONENT="${PERFORMANCE_PACKAGE}/.PerformanceMonitorService"
+PERFORMANCE_RESUME_ACTION="dev.carepad.module.performance.action.RESUME"
 PERFORMANCE_LAB_RESULT_FILE="files/performance_lab_control_result.txt"
 EMULATOR_FIXTURE_PACKAGE="org.ppsspp.ppsspp"
 EMULATOR_FIXTURE_COMPONENT="${EMULATOR_FIXTURE_PACKAGE}/dev.carepad.fixture.emulator.FakeEmulatorActivity"
@@ -588,8 +590,8 @@ CURRENT_BUG=""
 
 # Session 5 / BUG-4: interrupt monitoring without force-stopping the package,
 # keep PPSSPP continuously foreground for longer than the old 60 s lookback, then
-# resume the service through the debug-only in-process LAB receiver. This simulates
-# recoverable process/service loss without putting the app into Android's stopped state.
+# resume the real service directly from ADB. The debug APK alone exports the service
+# for this LAB path; release keeps the production service non-exported.
 CURRENT_BUG="BUG-4"
 echo "START BUG-4"
 set_bug_check "establish active session before late recovery" \
@@ -727,43 +729,31 @@ set_bug_check "PPSSPP remains foreground through 65 second recovery gap" \
     "resumed_activity=$(current_resumed_activity)" \
     "$samples_before_late_recovery"
 if ! grep -Fq "$EMULATOR_FIXTURE_PACKAGE" <<<"$(current_resumed_activity)"; then
-    emit_bug_failure 1 "PPSSPP not foreground before LAB RESUME_SERVICE"
+    emit_bug_failure 1 "PPSSPP not foreground before direct service resume"
 fi
 
 adb logcat -c
 BUG4_RESUME_REQUESTED_AT_MS="$(date +%s%3N)"
-set_bug_check "Performance service starts for late recovery through debug LAB receiver" \
-    "explicit broadcast succeeds, command=RESUME_SERVICE, success=true and PerformanceMonitorService running" \
-    "LAB RESUME_SERVICE pending" \
+set_bug_check "Performance service starts for late recovery directly from ADB" \
+    "adb shell am start-foreground-service exits 0 and PerformanceMonitorService becomes running" \
+    "direct service resume pending" \
     "$samples_before_late_recovery"
-if ! run_lab_control "RESUME_SERVICE"; then
+bug4_direct_resume_output=""
+bug4_direct_resume_status=0
+if bug4_direct_resume_output="$(adb shell am start-foreground-service \
+    -n "$PERFORMANCE_SERVICE_COMPONENT" \
+    -a "$PERFORMANCE_RESUME_ACTION" 2>&1)"; then
+    bug4_direct_resume_status=0
+else
+    bug4_direct_resume_status=$?
     bug4_service_state="stopped"
     if performance_service_running; then
         bug4_service_state="running"
     fi
     bug4_package_state="$(adb shell dumpsys package "$PERFORMANCE_PACKAGE" 2>/dev/null | \
         grep -m1 -E 'User [0-9]+:.*stopped=(true|false)' || true)"
-    CURRENT_ACTUAL="broadcast_exit_status=${LAB_CONTROL_STATUS}; broadcast_output=$(tr '\n' ' ' <<<"$LAB_CONTROL_OUTPUT"); lab_result=$(lab_control_result_inline); service_state=${bug4_service_state}; recovery_stage=$(recovery_stage); resumed_activity=$(current_resumed_activity); package_state=${bug4_package_state:-unknown}"
-    emit_bug_failure 1 "adb shell am broadcast -n $PERFORMANCE_LAB_RECEIVER_COMPONENT --es command RESUME_SERVICE"
-fi
-if ! grep -Fxq "command=RESUME_SERVICE" "$LAB_CONTROL_RESULT_LOCAL" ||
-    ! grep -Fxq "success=true" "$LAB_CONTROL_RESULT_LOCAL"; then
-    bug4_service_state="stopped"
-    if performance_service_running; then
-        bug4_service_state="running"
-    fi
-    bug4_package_state="$(adb shell dumpsys package "$PERFORMANCE_PACKAGE" 2>/dev/null | \
-        grep -m1 -E 'User [0-9]+:.*stopped=(true|false)' || true)"
-    CURRENT_ACTUAL="broadcast_exit_status=${LAB_CONTROL_STATUS}; broadcast_output=$(tr '\n' ' ' <<<"$LAB_CONTROL_OUTPUT"); lab_result=$(lab_control_result_inline); service_state=${bug4_service_state}; recovery_stage=$(recovery_stage); resumed_activity=$(current_resumed_activity); package_state=${bug4_package_state:-unknown}"
-    emit_bug_failure 1 "LAB RESUME_SERVICE returned unsuccessful result"
-fi
-
-set_bug_check "LAB resume does not replace PPSSPP foreground Activity" \
-    "resumed activity still contains ${EMULATOR_FIXTURE_PACKAGE}" \
-    "resumed_activity=$(current_resumed_activity)" \
-    "$samples_before_late_recovery"
-if ! grep -Fq "$EMULATOR_FIXTURE_PACKAGE" <<<"$(current_resumed_activity)"; then
-    emit_bug_failure 1 "LAB RESUME_SERVICE replaced PPSSPP foreground Activity"
+    CURRENT_ACTUAL="command_exit_status=${bug4_direct_resume_status}; command_output=$(tr '\n' ' ' <<<"$bug4_direct_resume_output"); service_state=${bug4_service_state}; recovery_stage=$(recovery_stage); resumed_activity=$(current_resumed_activity); package_state=${bug4_package_state:-unknown}; sample_count=$(sample_count)"
+    emit_bug_failure "$bug4_direct_resume_status" "adb shell am start-foreground-service -n $PERFORMANCE_SERVICE_COMPONENT -a $PERFORMANCE_RESUME_ACTION"
 fi
 
 for _ in $(seq 1 20); do
@@ -773,8 +763,39 @@ for _ in $(seq 1 20); do
     sleep 0.25
  done
 if ! performance_service_running; then
-    CURRENT_ACTUAL="lab_result=$(lab_control_result_inline); service_state=stopped; recovery_stage=$(recovery_stage); resumed_activity=$(current_resumed_activity)"
-    emit_bug_failure 1 "PerformanceMonitorService not running after LAB RESUME_SERVICE"
+    bug4_package_state="$(adb shell dumpsys package "$PERFORMANCE_PACKAGE" 2>/dev/null | \
+        grep -m1 -E 'User [0-9]+:.*stopped=(true|false)' || true)"
+    CURRENT_ACTUAL="command_exit_status=${bug4_direct_resume_status}; command_output=$(tr '\n' ' ' <<<"$bug4_direct_resume_output"); service_state=stopped; recovery_stage=$(recovery_stage); resumed_activity=$(current_resumed_activity); package_state=${bug4_package_state:-unknown}; sample_count=$(sample_count)"
+    emit_bug_failure 1 "PerformanceMonitorService not running after direct ADB resume"
+fi
+
+set_bug_check "direct service resume does not replace PPSSPP foreground Activity" \
+    "resumed activity still contains ${EMULATOR_FIXTURE_PACKAGE}" \
+    "resumed_activity=$(current_resumed_activity)" \
+    "$samples_before_late_recovery"
+if ! grep -Fq "$EMULATOR_FIXTURE_PACKAGE" <<<"$(current_resumed_activity)"; then
+    emit_bug_failure 1 "direct service resume replaced PPSSPP foreground Activity"
+fi
+
+set_bug_check "recovery remains MONITORING after direct service resume" \
+    "recovery stage=MONITORING" \
+    "recovery_stage=$(recovery_stage)" \
+    "$samples_before_late_recovery"
+bug4_recovery_stage="$(recovery_stage)"
+if [[ "$bug4_recovery_stage" != "MONITORING" ]]; then
+    CURRENT_ACTUAL="recovery_stage=${bug4_recovery_stage:-NONE}; resumed_activity=$(current_resumed_activity); service_state=running; sample_count=$(sample_count)"
+    emit_bug_failure 1 "Performance recovery did not remain MONITORING after direct ADB resume"
+fi
+
+set_bug_check "Performance package remains not force-stopped after direct service resume" \
+    "package state contains stopped=false" \
+    "package stopped state pending" \
+    "$samples_before_late_recovery"
+bug4_package_state="$(adb shell dumpsys package "$PERFORMANCE_PACKAGE" 2>/dev/null | \
+    grep -m1 -E 'User [0-9]+:.*stopped=(true|false)' || true)"
+if ! grep -Fq "stopped=false" <<<"$bug4_package_state"; then
+    CURRENT_ACTUAL="package_state=${bug4_package_state:-unknown}; recovery_stage=$(recovery_stage); resumed_activity=$(current_resumed_activity); service_state=running; sample_count=$(sample_count)"
+    emit_bug_failure 1 "Performance package force-stopped after direct ADB resume"
 fi
 
 set_bug_check "late recovery appends a new sample" \
