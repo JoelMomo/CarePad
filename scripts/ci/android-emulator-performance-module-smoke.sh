@@ -557,15 +557,47 @@ clear_last_session
 start_session_with_fixture
 samples_before_late_recovery="$(sample_count)"
 CURRENT_PREVIOUS_SAMPLES="$samples_before_late_recovery"
-set_bug_check "persisted samples survive service/process interruption" \
-    "files/active_session_samples.jsonl exists and is non-empty" \
-    "recovery samples file check" \
+set_bug_check "stop Performance service under app identity" \
+    "run-as stopservice exit_status=0 and PerformanceMonitorService stopped" \
+    "service control pending" \
     "$samples_before_late_recovery"
-adb shell am stopservice -n "$PERFORMANCE_SERVICE_COMPONENT" >/dev/null
+if bug4_stop_output="$(adb shell run-as "$PERFORMANCE_PACKAGE" \
+    am stopservice -n "$PERFORMANCE_SERVICE_COMPONENT" 2>&1)"; then
+    bug4_stop_status=0
+else
+    bug4_stop_status=$?
+    bug4_service_state="stopped"
+    if performance_service_running; then
+        bug4_service_state="running"
+    fi
+    bug4_package_state="$(adb shell dumpsys package "$PERFORMANCE_PACKAGE" 2>/dev/null | \
+        grep -m1 -E 'User [0-9]+:.*stopped=(true|false)' || true)"
+    CURRENT_ACTUAL="exit_status=${bug4_stop_status}; stdout_stderr=$(tr '\n' ' ' <<<"$bug4_stop_output"); service_state=${bug4_service_state}; package_state=${bug4_package_state:-unknown}"
+    emit_bug_failure "$bug4_stop_status" "adb shell run-as $PERFORMANCE_PACKAGE am stopservice -n $PERFORMANCE_SERVICE_COMPONENT"
+fi
+for _ in $(seq 1 20); do
+    if ! performance_service_running; then
+        break
+    fi
+    sleep 0.25
+done
+if performance_service_running; then
+    CURRENT_ACTUAL="exit_status=0; stdout_stderr=$(tr '\n' ' ' <<<"$bug4_stop_output"); service_state=running"
+    emit_bug_failure 1 "PerformanceMonitorService still running after run-as stopservice"
+fi
 BUG4_SERVICE_STOPPED_AT_MS="$(date +%s%3N)"
 adb shell am kill "$PERFORMANCE_PACKAGE" >/dev/null || true
+set_bug_check "persisted samples survive service/process interruption" \
+    "files/active_session_samples.jsonl exists, is non-empty and retains at least ${samples_before_late_recovery} samples" \
+    "recovery samples file check" \
+    "$samples_before_late_recovery"
 if ! adb shell run-as "$PERFORMANCE_PACKAGE" test -s files/active_session_samples.jsonl; then
     emit_bug_failure 1 "active_session_samples.jsonl missing before late recovery"
+fi
+samples_after_interruption="$(sample_count)"
+if (( samples_after_interruption < samples_before_late_recovery )); then
+    CURRENT_ACTUAL="sample_count=${samples_after_interruption}"
+    emit_bug_failure 1 "active_session_samples.jsonl lost persisted samples before late recovery"
 fi
 set_bug_check "PPSSPP remains foreground during late recovery setup" \
     "resumed activity contains ${EMULATOR_FIXTURE_PACKAGE}" \
@@ -574,19 +606,43 @@ set_bug_check "PPSSPP remains foreground during late recovery setup" \
 if ! grep -Fq "$EMULATOR_FIXTURE_PACKAGE" <<<"$(current_resumed_activity)"; then
     emit_bug_failure 1 "PPSSPP not foreground during late recovery setup"
 fi
+set_bug_check "Performance package is not force-stopped during late recovery setup" \
+    "package state contains stopped=false" \
+    "package stopped state pending" \
+    "$samples_before_late_recovery"
+bug4_package_state="$(adb shell dumpsys package "$PERFORMANCE_PACKAGE" 2>/dev/null | \
+    grep -m1 -E 'User [0-9]+:.*stopped=(true|false)' || true)"
+if ! grep -Fq "stopped=false" <<<"$bug4_package_state"; then
+    CURRENT_ACTUAL="package_state=${bug4_package_state:-unknown}"
+    emit_bug_failure 1 "Performance package force-stopped before late recovery wait"
+fi
 sleep 65
 adb logcat -c
 BUG4_RESUME_REQUESTED_AT_MS="$(date +%s%3N)"
 set_bug_check "Performance service starts for late recovery" \
-    "PerformanceMonitorService running after ACTION_RESUME" \
-    "service_state=$(performance_service_running && echo running || echo stopped)" \
+    "run-as ACTION_RESUME exit_status=0 and PerformanceMonitorService running" \
+    "service control pending" \
     "$samples_before_late_recovery"
-adb shell am start-foreground-service \
+if bug4_resume_output="$(adb shell run-as "$PERFORMANCE_PACKAGE" \
+    am start-foreground-service \
     -n "$PERFORMANCE_SERVICE_COMPONENT" \
-    -a "$PERFORMANCE_RESUME_ACTION" >/dev/null
+    -a "$PERFORMANCE_RESUME_ACTION" 2>&1)"; then
+    bug4_resume_status=0
+else
+    bug4_resume_status=$?
+    bug4_service_state="stopped"
+    if performance_service_running; then
+        bug4_service_state="running"
+    fi
+    bug4_package_state="$(adb shell dumpsys package "$PERFORMANCE_PACKAGE" 2>/dev/null | \
+        grep -m1 -E 'User [0-9]+:.*stopped=(true|false)' || true)"
+    CURRENT_ACTUAL="exit_status=${bug4_resume_status}; stdout_stderr=$(tr '\n' ' ' <<<"$bug4_resume_output"); service_state=${bug4_service_state}; package_state=${bug4_package_state:-unknown}"
+    emit_bug_failure "$bug4_resume_status" "adb shell run-as $PERFORMANCE_PACKAGE am start-foreground-service -n $PERFORMANCE_SERVICE_COMPONENT -a $PERFORMANCE_RESUME_ACTION"
+fi
 sleep 2
 if ! performance_service_running; then
-    emit_bug_failure 1 "PerformanceMonitorService not running after ACTION_RESUME"
+    CURRENT_ACTUAL="exit_status=0; stdout_stderr=$(tr '\n' ' ' <<<"$bug4_resume_output"); service_state=stopped"
+    emit_bug_failure 1 "PerformanceMonitorService not running after run-as ACTION_RESUME"
 fi
 set_bug_check "late recovery appends a new sample" \
     "sample_count > ${samples_before_late_recovery}" \
