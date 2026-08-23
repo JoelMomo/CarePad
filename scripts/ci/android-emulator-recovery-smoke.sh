@@ -395,6 +395,71 @@ run_continue_install_permission_with_diagnostics() {
     return "$failure_status"
 }
 
+log_package_installer_observability() {
+    echo "PACKAGE_INSTALLER_RELEVANT_LOGCAT_BEGIN" >&2
+    adb logcat -d -v threadtime 2>&1 |
+        grep -E 'CarePadRecoveryStatus|PackageInstaller|ActivityTaskManager|Background activity|background activity|BAL_' |
+        tail -n 300 >&2 || true
+    echo "PACKAGE_INSTALLER_RELEVANT_LOGCAT_END" >&2
+}
+
+wait_for_install_status_transition() {
+    local final_phase="INSTALLING"
+    local error_code=""
+    local detail=""
+
+    for _ in $(seq 1 50); do
+        run_lab state
+        if grep -Fxq 'present=true' <<<"$LAST_RESULT" &&
+            grep -Fxq 'phase=WAITING_FOR_INSTALL_CONFIRMATION' <<<"$LAST_RESULT"; then
+            final_phase="WAITING_FOR_INSTALL_CONFIRMATION"
+            break
+        fi
+        if grep -Fxq 'present=true' <<<"$LAST_RESULT" &&
+            grep -Fxq 'phase=FAILED' <<<"$LAST_RESULT"; then
+            final_phase="FAILED"
+            break
+        fi
+        sleep 0.2
+    done
+
+    echo "PACKAGE_INSTALLER_STATUS_OBSERVABILITY" >&2
+    echo "FINAL_PHASE=$final_phase" >&2
+    echo "RESUMED_ACTIVITY=$(current_resumed_activity)" >&2
+    echo "RECOVERY_STATE_BEGIN" >&2
+    echo "$LAST_RESULT" >&2
+    echo "RECOVERY_STATE_END" >&2
+    log_package_installer_observability
+
+    if [[ "$final_phase" == "WAITING_FOR_INSTALL_CONFIRMATION" ]]; then
+        return 0
+    fi
+
+    if [[ "$final_phase" == "FAILED" ]]; then
+        error_code="$(sed -n 's/^error=//p' <<<"$LAST_RESULT" | head -n 1)"
+        detail="$(sed -n 's/^detail=//p' <<<"$LAST_RESULT" | head -n 1)"
+        echo "PACKAGE_INSTALLER_CLASSIFICATION=C" >&2
+        echo "ERROR_CODE=$error_code" >&2
+        echo "DETAIL=$detail" >&2
+        return 2
+    fi
+
+    echo "PACKAGE_INSTALLER_CLASSIFICATION=A" >&2
+    return 3
+}
+
+tap_install_after_waiting() {
+    if tap_button_when_visible "Install"; then
+        echo "PACKAGE_INSTALLER_CLASSIFICATION=D" >&2
+        return 0
+    fi
+
+    echo "PACKAGE_INSTALLER_CLASSIFICATION=B" >&2
+    echo "RESUMED_ACTIVITY_AFTER_INSTALL_BUTTON_WAIT=$(current_resumed_activity)" >&2
+    log_package_installer_observability
+    return 1
+}
+
 assert_field() {
     local key="$1"
     local expected="$2"
@@ -764,7 +829,13 @@ run_continue_install_permission_with_diagnostics \
     "$INSTALL_PERMISSION_RESUMED_AFTER_BACK" \
     "$INSTALL_PERMISSION_RECOVERY_BEFORE_CONTINUE"
 assert_accepted_phase INSTALLING
-accept_install_and_wait VERIFIED
+if ! wait_for_install_status_transition; then
+    fail "PackageInstaller did not reach Android install confirmation"
+fi
+if ! tap_install_after_waiting; then
+    fail "Android install confirmation dialog was not visible"
+fi
+wait_state VERIFIED
 assert_module_version "0.2-lab"
 clear_terminal
 
