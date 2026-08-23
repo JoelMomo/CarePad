@@ -36,7 +36,7 @@ android {
     }
 
     if (carePadLabHost.get()) {
-        sourceSets.getByName("debug").java.srcDir("src/recoveryLab/java")
+        sourceSets.getByName("debug").kotlin.srcDir("src/recoveryLab/java")
     }
 
     compileOptions {
