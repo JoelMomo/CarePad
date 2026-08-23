@@ -18,14 +18,18 @@ UI_DUMP_DEVICE="/sdcard/carepad-recovery-window.xml"
 UI_DUMP_LOCAL="${RUNNER_TEMP:-/tmp}/carepad-recovery-window.xml"
 LAST_RESULT=""
 CURRENT_STAGE="initializing recovery smoke"
+CURRENT_STAGE_LINE=0
+CURRENT_STAGE_COMMAND="initializing recovery smoke"
 SETUP_OBSERVABILITY_ACTIVE=true
+SETUP_FAILURE_REPORTED=false
 
-recovery_setup_failure() {
+report_recovery_setup_failure() {
     local exit_status="$1"
     local line="$2"
     local command="$3"
 
-    trap - ERR
+    SETUP_FAILURE_REPORTED=true
+    trap - ERR EXIT
     set +e
 
     if [[ "${SETUP_OBSERVABILITY_ACTIVE:-false}" == true ]]; then
@@ -46,11 +50,34 @@ recovery_setup_failure() {
         adb shell dumpsys package "$HOST_PACKAGE" 2>&1 |
             grep -E -m 8 'Package \[|versionName=|versionCode=|enabled=|User 0:' >&2 || true
     fi
+}
 
+recovery_setup_failure() {
+    local exit_status="$1"
+    local line="$2"
+    local command="$3"
+    report_recovery_setup_failure "$exit_status" "$line" "$command"
+    exit "$exit_status"
+}
+
+recovery_setup_exit() {
+    local exit_status="$1"
+
+    if [[ "${SETUP_OBSERVABILITY_ACTIVE:-false}" == true &&
+          "$exit_status" -ne 0 &&
+          "${SETUP_FAILURE_REPORTED:-false}" != true ]]; then
+        report_recovery_setup_failure \
+            "$exit_status" \
+            "${CURRENT_STAGE_LINE:-0}" \
+            "${CURRENT_STAGE_COMMAND:-$BASH_COMMAND}"
+    fi
+
+    trap - EXIT
     exit "$exit_status"
 }
 
 trap 'recovery_setup_failure "$?" "$LINENO" "$BASH_COMMAND"' ERR
+trap 'recovery_setup_exit "$?"' EXIT
 
 fail() {
     echo "$*" >&2
@@ -291,11 +318,15 @@ clear_terminal() {
 # the recovery command activity. The class is not compiled there and the manifest
 # component is disabled unless -PcarepadLabHost=true.
 CURRENT_STAGE="install normal host"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='adb install -r "$NORMAL_HOST_APK" >/dev/null'
 adb install -r "$NORMAL_HOST_APK" >/dev/null
 
 CURRENT_STAGE="normal harness isolation probe"
 trap - ERR
 set +e
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='normal_launch_output="$(adb shell am start -W -n "$NORMAL_RECOVERY_ACTIVITY" --es command state 2>&1)"'
 normal_launch_output="$(adb shell am start -W -n "$NORMAL_RECOVERY_ACTIVITY" --es command state 2>&1)"
 normal_launch_status=$?
 set -e
@@ -307,22 +338,32 @@ if [[ "$normal_launch_status" -eq 0 ]] &&
 fi
 
 CURRENT_STAGE="uninstall normal host"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='adb uninstall "$NORMAL_HOST_PACKAGE" >/dev/null'
 adb uninstall "$NORMAL_HOST_PACKAGE" >/dev/null
 
 CURRENT_STAGE="uninstall previous lab host"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='adb uninstall "$HOST_PACKAGE" >/dev/null 2>&1 || true'
 adb uninstall "$HOST_PACKAGE" >/dev/null 2>&1 || true
 
 CURRENT_STAGE="install lab host"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='adb install "$LAB_HOST_APK" >/dev/null'
 adb install "$LAB_HOST_APK" >/dev/null
 
 CURRENT_STAGE="pm clear lab host"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='adb shell pm clear "$HOST_PACKAGE" >/dev/null'
 adb shell pm clear "$HOST_PACKAGE" >/dev/null
 
 CURRENT_STAGE="first run_lab state"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='run_lab state'
 run_lab state
 assert_field present false
 SETUP_OBSERVABILITY_ACTIVE=false
-trap - ERR
+trap - ERR EXIT
 
 APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
 test -n "$APKSIGNER"
