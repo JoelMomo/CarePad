@@ -387,11 +387,19 @@ DEFECTIVE_SHA="$(sha256sum "$DEFECTIVE_APK" | awk '{print tolower($1)}')"
 CURRENT_STAGE="extract signing sha"
 CURRENT_STAGE_LINE=$((LINENO + 2))
 CURRENT_STAGE_COMMAND='APKSIGNER_OUTPUT="$(apksigner verify --print-certs "$UPDATE_APK")"'
-APKSIGNER_OUTPUT="$("$APKSIGNER" verify --print-certs "$UPDATE_APK")"
+APKSIGNER_STDERR_FILE="${RUNNER_TEMP:-/tmp}/carepad-apksigner.stderr"
+rm -f "$APKSIGNER_STDERR_FILE"
+APKSIGNER_OUTPUT="$("$APKSIGNER" verify --print-certs "$UPDATE_APK" 2>"$APKSIGNER_STDERR_FILE")"
+APKSIGNER_STDERR="$(cat "$APKSIGNER_STDERR_FILE" 2>/dev/null || true)"
 CERT_DIGEST_LINE="$(printf '%s\n' "$APKSIGNER_OUTPUT" |
     grep -m1 '^Signer #1 certificate SHA-256 digest:' || true)"
 SIGNING_SHA="$(printf '%s\n' "$APKSIGNER_OUTPUT" |
     awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print tolower($2); exit}')"
+printf 'APKSIGNER_PATH=%q\n' "$APKSIGNER" >&2
+printf 'APKSIGNER_STDOUT_QUOTED=%q\n' "$APKSIGNER_OUTPUT" >&2
+printf 'APKSIGNER_STDERR_QUOTED=%q\n' "$APKSIGNER_STDERR" >&2
+printf 'APKSIGNER_STDOUT_BEGIN\n%s\nAPKSIGNER_STDOUT_END\n' "$APKSIGNER_OUTPUT" >&2
+printf 'APKSIGNER_STDERR_BEGIN\n%s\nAPKSIGNER_STDERR_END\n' "$APKSIGNER_STDERR" >&2
 printf 'APKSIGNER_SIGNER_SHA256_LINE=%s\n' "$CERT_DIGEST_LINE" >&2
 printf 'SIGNING_SHA=%s\n' "$SIGNING_SHA" >&2
 printf 'SIGNING_SHA_LENGTH=%d\n' "${#SIGNING_SHA}" >&2
