@@ -427,11 +427,8 @@ adb install "$EMULATOR_FIXTURE_APK"
 
 assert_harness_contains "Accepted: performance" "Version: 0.1.0"
 
-if ! adb shell dumpsys package "$PERFORMANCE_PACKAGE" 2>/dev/null |
-    grep -Fq "PerformanceLabControlReceiver"; then
-    echo "Debug Performance APK did not contain PerformanceLabControlReceiver" >&2
-    exit 1
-fi
+# The build job verifies the receiver is present only in the debug APK. Its first
+# explicit STOP_SERVICE broadcast below proves that ADB can invoke it by component.
 
 # The first open proves the user-facing missing-permission state before CI grants it.
 adb shell am force-stop "$PERFORMANCE_PACKAGE" >/dev/null
@@ -678,7 +675,7 @@ for _ in $(seq 1 20); do
         break
     fi
     sleep 0.25
-done
+ done
 if [[ -n "$bug4_process_pid" ]]; then
     CURRENT_ACTUAL="performance_process_pid=${bug4_process_pid}"
     emit_bug_failure 1 "Performance process remained after am kill"
@@ -774,7 +771,7 @@ for _ in $(seq 1 20); do
         break
     fi
     sleep 0.25
-done
+ done
 if ! performance_service_running; then
     CURRENT_ACTUAL="lab_result=$(lab_control_result_inline); service_state=stopped; recovery_stage=$(recovery_stage); resumed_activity=$(current_resumed_activity)"
     emit_bug_failure 1 "PerformanceMonitorService not running after LAB RESUME_SERVICE"
