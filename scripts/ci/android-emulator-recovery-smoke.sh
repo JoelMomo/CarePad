@@ -362,22 +362,67 @@ CURRENT_STAGE_LINE=$((LINENO + 2))
 CURRENT_STAGE_COMMAND='run_lab state'
 run_lab state
 assert_field present false
-SETUP_OBSERVABILITY_ACTIVE=false
-trap - ERR EXIT
+echo "RECOVERY_SETUP_CHECKPOINT first_run_lab_state=passed" >&2
 
+CURRENT_STAGE="locate apksigner"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"'
 APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+
+CURRENT_STAGE="validate apksigner"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='test -n "$APKSIGNER"'
 test -n "$APKSIGNER"
+
+CURRENT_STAGE="hash update apk"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='UPDATE_SHA="$(sha256sum "$UPDATE_APK" | awk '\''{print tolower($1)}'\'')"'
 UPDATE_SHA="$(sha256sum "$UPDATE_APK" | awk '{print tolower($1)}')"
+
+CURRENT_STAGE="hash defective apk"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='DEFECTIVE_SHA="$(sha256sum "$DEFECTIVE_APK" | awk '\''{print tolower($1)}'\'')"'
 DEFECTIVE_SHA="$(sha256sum "$DEFECTIVE_APK" | awk '{print tolower($1)}')"
+
+CURRENT_STAGE="extract signing sha"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='SIGNING_SHA="$(apksigner verify --print-certs "$UPDATE_APK" | awk signer-sha256)"'
 SIGNING_SHA="$("$APKSIGNER" verify --print-certs "$UPDATE_APK" |
     awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print tolower($2); exit}')"
+
+CURRENT_STAGE="validate update sha"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='[[ "$UPDATE_SHA" =~ ^[0-9a-f]{64}$ ]]'
 [[ "$UPDATE_SHA" =~ ^[0-9a-f]{64}$ ]]
+
+CURRENT_STAGE="validate defective sha"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='[[ "$DEFECTIVE_SHA" =~ ^[0-9a-f]{64}$ ]]'
 [[ "$DEFECTIVE_SHA" =~ ^[0-9a-f]{64}$ ]]
+
+CURRENT_STAGE="validate signing sha"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='[[ "$SIGNING_SHA" =~ ^[0-9a-f]{64}$ ]]'
 [[ "$SIGNING_SHA" =~ ^[0-9a-f]{64}$ ]]
 
+CURRENT_STAGE="stage update apk"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='stage_apk "$UPDATE_APK" "$UPDATE_STAGE"'
 stage_apk "$UPDATE_APK" "$UPDATE_STAGE"
+
+CURRENT_STAGE="stage defective apk"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='stage_apk "$DEFECTIVE_APK" "$DEFECTIVE_STAGE"'
 stage_apk "$DEFECTIVE_APK" "$DEFECTIVE_STAGE"
+
+CURRENT_STAGE="install defective fixture"
+CURRENT_STAGE_LINE=$((LINENO + 2))
+CURRENT_STAGE_COMMAND='install_defective'
 install_defective
+
+echo "RECOVERY_SETUP_COMPLETE" >&2
+SETUP_OBSERVABILITY_ACTIVE=false
+trap - ERR EXIT
 
 # Fail closed before Android removal: missing bytes and every exact identity axis.
 prepare_target "missing.apk" "lab@2" "lab" "$MODULE_PACKAGE" 2 "0.2-lab" \
