@@ -66,13 +66,14 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
 
+      # Retention policy: keep the user-facing debug APK longer than disposable lab fixtures.
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: CarePad-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
       - name: Upload baseline module lab APK
         uses: actions/upload-artifact@v4
@@ -80,7 +81,7 @@ jobs:
           name: CarePad-module-lab-baseline-debug
           path: module-lab/build/outputs/apk/debug/module-lab-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
       - name: Build update module lab APK
         run: ./gradlew :module-lab:clean :module-lab:assembleDebug -PcarepadModuleLabVersionCode=2 -PcarepadModuleLabVersionName=0.2-lab --stacktrace
@@ -91,7 +92,7 @@ jobs:
           name: CarePad-module-lab-update-debug
           path: module-lab/build/outputs/apk/debug/module-lab-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
       - name: Build incompatible-protocol module lab APK
         run: ./gradlew :module-lab:clean :module-lab:assembleDebug -PcarepadModuleLabVersionCode=3 -PcarepadModuleLabVersionName=0.3-incompatible -PcarepadModuleLabProtocolMin=2 -PcarepadModuleLabProtocolMax=2 --stacktrace
@@ -102,7 +103,7 @@ jobs:
           name: CarePad-module-lab-incompatible-protocol-debug
           path: module-lab/build/outputs/apk/debug/module-lab-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
       - name: Build wrong-signature module lab APK
         run: ./gradlew :module-lab:clean :module-lab:assembleRelease -PcarepadModuleLabVersionCode=4 -PcarepadModuleLabVersionName=0.4-wrong-signature --stacktrace
@@ -134,7 +135,7 @@ jobs:
           name: CarePad-module-lab-wrong-signature
           path: ${{ runner.temp }}/module-lab-wrong-signature.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
       - name: Build defective update module lab APK
         run: ./gradlew :module-lab:clean :module-lab:assembleDebug -PcarepadModuleLabVersionCode=5 -PcarepadModuleLabVersionName=0.5-broken -PcarepadModuleLabAlwaysCrash=true --stacktrace
@@ -145,7 +146,7 @@ jobs:
           name: CarePad-module-lab-defective-update-debug
           path: module-lab/build/outputs/apk/debug/module-lab-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
       - name: Build parallel CarePad lab host
         run: ./gradlew :app:assembleDebug -PcarepadLabHost=true --stacktrace
@@ -156,7 +157,7 @@ jobs:
           name: CarePad-host-lab-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
   # Generic Android regression coverage; OEM/hardware checks stay on real devices.
   android-emulator-smoke:
