@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.joel.thordoctor.core.emulator.ForegroundEmulatorDetector
 import com.joel.thordoctor.modules.performance.PerformanceMetrics
@@ -47,6 +48,8 @@ class PerformanceMonitorService : Service() {
 
         private const val CHANNEL_ID = "carepad_performance_monitor"
         private const val NOTIFICATION_ID = 1201
+        private const val DIAGNOSTIC_TAG = "PerformanceMonitorService"
+        private const val RECOVERY_DIAGNOSTIC_CYCLES = 5
 
         @Volatile
         var isRunning = false
@@ -133,7 +136,7 @@ class PerformanceMonitorService : Service() {
                 if (isRunning) START_STICKY else START_NOT_STICKY
             }
             ACTION_RESUME -> {
-                if (!isRunning) resumePersistedMonitor()
+                if (!isRunning) resumePersistedMonitor(recoveryDiagnostics = true)
                 if (isRunning) START_STICKY else START_NOT_STICKY
             }
             ACTION_STOP -> {
@@ -141,7 +144,7 @@ class PerformanceMonitorService : Service() {
                 START_NOT_STICKY
             }
             null -> {
-                if (!isRunning) resumePersistedMonitor()
+                if (!isRunning) resumePersistedMonitor(recoveryDiagnostics = false)
                 if (isRunning) START_STICKY else START_NOT_STICKY
             }
             else -> START_NOT_STICKY
@@ -174,7 +177,7 @@ class PerformanceMonitorService : Service() {
         Thread(::monitorLoop, "CarePadPerformanceMonitor").start()
     }
 
-    private fun resumePersistedMonitor() {
+    private fun resumePersistedMonitor(recoveryDiagnostics: Boolean) {
         val recovery = PerformanceSessionRecoveryStore.load(this)
         if (recovery == null) {
             currentState = PerformanceMonitorState.IDLE
@@ -237,7 +240,8 @@ class PerformanceMonitorService : Service() {
                             emulator = emulator,
                             sessionId = monitoring.sessionId,
                             sessionStartedAt = monitoring.startedAt,
-                            samples = samples
+                            samples = samples,
+                            recoveryDiagnostics = recoveryDiagnostics
                         )
                     },
                     "CarePadPerformanceMonitor"
@@ -307,7 +311,8 @@ class PerformanceMonitorService : Service() {
             emulator = emulator,
             sessionId = sessionId,
             sessionStartedAt = startedAt,
-            samples = JSONArray()
+            samples = JSONArray(),
+            recoveryDiagnostics = false
         )
     }
 
@@ -315,7 +320,8 @@ class PerformanceMonitorService : Service() {
         emulator: ForegroundEmulatorDetector.DetectedEmulator,
         sessionId: String,
         sessionStartedAt: Long,
-        samples: JSONArray
+        samples: JSONArray,
+        recoveryDiagnostics: Boolean
     ) {
         currentSessionStartedAt = sessionStartedAt
         currentSessionElapsedSeconds = 0L
@@ -351,6 +357,24 @@ class PerformanceMonitorService : Service() {
         var usageCursor = PerformanceMonitoringPolicy.usageCursorFor(System.currentTimeMillis())
         var awaySince: Long? = null
         var endReason = "unknown"
+        var recoveryDiagnosticCyclesRemaining =
+            if (recoveryDiagnostics) RECOVERY_DIAGNOSTIC_CYCLES else 0
+
+        if (recoveryDiagnostics) {
+            Log.i(
+                DIAGNOSTIC_TAG,
+                "RECOVERY_INIT sessionId=$sessionId " +
+                    "sessionStartedAt=$sessionStartedAt " +
+                    "now=${System.currentTimeMillis()} " +
+                    "initialUsageCursor=$initialUsageCursor " +
+                    "initialForegroundEventPackage=${initialForegroundEvent?.packageName ?: "NONE"} " +
+                    "initialForegroundEventTimestamp=${initialForegroundEvent?.timestamp ?: -1L} " +
+                    "packageRemainsForeground=$emulatorRemainsForeground " +
+                    "lastForegroundPackage=$lastForegroundPackage " +
+                    "lastForegroundEventTime=$lastForegroundEventTime " +
+                    "usageCursor=$usageCursor"
+            )
+        }
 
         while (shouldRun) {
             if (stopForMissingUsageAccess()) return
@@ -374,6 +398,26 @@ class PerformanceMonitorService : Service() {
             )
             awaySince = decision.awaySince
             currentSessionElapsedSeconds = decision.elapsedSeconds
+            val captureSampleDue = decision.emulatorInForeground && now >= nextSampleAt
+
+            if (recoveryDiagnosticCyclesRemaining > 0) {
+                val cycle = RECOVERY_DIAGNOSTIC_CYCLES - recoveryDiagnosticCyclesRemaining + 1
+                Log.i(
+                    DIAGNOSTIC_TAG,
+                    "RECOVERY_CYCLE cycle=$cycle " +
+                        "foregroundEventPackage=${foregroundEvent?.packageName ?: "NONE"} " +
+                        "foregroundEventTimestamp=${foregroundEvent?.timestamp ?: -1L} " +
+                        "lastForegroundPackage=$lastForegroundPackage " +
+                        "lastForegroundEventTime=$lastForegroundEventTime " +
+                        "awaySince=${awaySince ?: -1L} " +
+                        "decisionPhase=${decision.phase} " +
+                        "decisionEmulatorInForeground=${decision.emulatorInForeground} " +
+                        "now=$now " +
+                        "nextSampleAt=$nextSampleAt " +
+                        "captureSampleDue=$captureSampleDue"
+                )
+                recoveryDiagnosticCyclesRemaining -= 1
+            }
 
             when (decision.phase) {
                 PerformanceMonitoringPhase.MONITORING -> {
@@ -394,8 +438,8 @@ class PerformanceMonitorService : Service() {
                 }
             }
 
-            if (decision.emulatorInForeground && now >= nextSampleAt) {
-                captureSample(samples, now)
+            if (captureSampleDue) {
+                captureSample(samples, now, recoveryDiagnostics)
                 nextSampleAt = now + PerformanceMonitoringPolicy.SAMPLE_INTERVAL_MS
             }
 
@@ -431,14 +475,40 @@ class PerformanceMonitorService : Service() {
         return true
     }
 
-    private fun captureSample(samples: JSONArray, timestamp: Long) {
+    private fun captureSample(
+        samples: JSONArray,
+        timestamp: Long,
+        recoveryDiagnostics: Boolean
+    ) {
+        if (recoveryDiagnostics) {
+            Log.i(
+                DIAGNOSTIC_TAG,
+                "SAMPLE_ATTEMPT timestamp=$timestamp sampleCountBefore=${samples.length()}"
+            )
+        }
+
         try {
             val snapshot = PerformanceMetrics.capture(this)
             latestSnapshot = snapshot
             val sample = PerformanceSessionSerializer.serializeSample(timestamp, snapshot)
             samples.put(sample)
             PerformanceSessionRecoveryStore.appendSample(this, sample)
-        } catch (_: Exception) {
+            if (recoveryDiagnostics) {
+                Log.i(
+                    DIAGNOSTIC_TAG,
+                    "SAMPLE_SUCCESS timestamp=$timestamp sampleCountAfter=${samples.length()}"
+                )
+            }
+        } catch (error: Exception) {
+            if (recoveryDiagnostics) {
+                Log.e(
+                    DIAGNOSTIC_TAG,
+                    "SAMPLE_FAILURE timestamp=$timestamp " +
+                        "exceptionClass=${error.javaClass.name} " +
+                        "exceptionMessage=${error.message ?: "NONE"}",
+                    error
+                )
+            }
             // A missing or failed metric never invalidates the session.
         }
     }
