@@ -126,29 +126,44 @@ class PerformanceMonitorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "SERVICE_ON_CREATE thread=${Thread.currentThread().name}"
+        )
         createNotificationChannel()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int =
-        when (intent?.action) {
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "SERVICE_START_COMMAND action=${intent?.action ?: "NULL"} flags=$flags startId=$startId " +
+                "isRunning=$isRunning state=$currentState thread=${Thread.currentThread().name}"
+        )
+
+        return when (intent?.action) {
             ACTION_START -> {
+                Log.i(DIAGNOSTIC_TAG, "SERVICE_ACTION action=ACTION_START")
                 if (!isRunning) startMonitor()
                 if (isRunning) START_STICKY else START_NOT_STICKY
             }
             ACTION_RESUME -> {
+                Log.i(DIAGNOSTIC_TAG, "SERVICE_ACTION action=ACTION_RESUME")
                 if (!isRunning) resumePersistedMonitor(recoveryDiagnostics = true)
                 if (isRunning) START_STICKY else START_NOT_STICKY
             }
             ACTION_STOP -> {
+                Log.i(DIAGNOSTIC_TAG, "SERVICE_ACTION action=ACTION_STOP")
                 requestStop()
                 START_NOT_STICKY
             }
             null -> {
+                Log.i(DIAGNOSTIC_TAG, "SERVICE_ACTION action=NULL_REDELIVERY")
                 if (!isRunning) resumePersistedMonitor(recoveryDiagnostics = false)
                 if (isRunning) START_STICKY else START_NOT_STICKY
             }
             else -> START_NOT_STICKY
         }
+    }
 
     private fun startMonitor() {
         if (!ForegroundEmulatorDetector.hasUsageAccess(this)) {
@@ -168,6 +183,7 @@ class PerformanceMonitorService : Service() {
         latestSnapshot = null
         currentState = PerformanceMonitorState.WAITING_EMULATOR
 
+        logRecoveryCall("markWaiting", "start_monitor")
         PerformanceSessionRecoveryStore.markWaiting(this)
         startForeground(
             NOTIFICATION_ID,
@@ -186,6 +202,11 @@ class PerformanceMonitorService : Service() {
         }
 
         val action = PerformanceRecoveryPolicy.actionFor(recovery)
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "RECOVERY_RESUME action=$action stage=${recovery.stage} " +
+                "diagnostics=$recoveryDiagnostics thread=${Thread.currentThread().name}"
+        )
         if (
             action != PerformanceRecoveryAction.RETRY_SAVE &&
             !ForegroundEmulatorDetector.hasUsageAccess(this)
@@ -286,6 +307,7 @@ class PerformanceMonitorService : Service() {
         val emulator = waitForEmulator()
         if (emulator == null) {
             if (manualStopRequested) {
+                logRecoveryCall("clear", "manual_stop_while_waiting")
                 PerformanceSessionRecoveryStore.clear(this)
                 currentState = PerformanceMonitorState.IDLE
                 finishService()
@@ -471,6 +493,10 @@ class PerformanceMonitorService : Service() {
 
         currentError = PerformanceMonitorError.USAGE_ACCESS_REQUIRED
         currentState = PerformanceMonitorState.ERROR
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "SERVICE_FINISH_REQUEST reason=missing_usage_access state=$currentState"
+        )
         finishService()
         return true
     }
@@ -549,10 +575,15 @@ class PerformanceMonitorService : Service() {
             currentState = PerformanceMonitorState.ERROR
             // Keep SAVING recovery and samples. A retry finalizes this same session;
             // it never re-enters emulator monitoring after the session already ended.
+            Log.i(
+                DIAGNOSTIC_TAG,
+                "SERVICE_FINISH_REQUEST reason=session_save_failed state=$currentState"
+            )
             finishService()
             return
         }
 
+        logRecoveryCall("clear", "session_finalized")
         PerformanceSessionRecoveryStore.clear(this)
         currentError = null
         currentState = PerformanceMonitorState.COMPLETED
@@ -561,6 +592,7 @@ class PerformanceMonitorService : Service() {
 
     private fun requestStop() {
         if (!isRunning) {
+            logRecoveryCall("clear", "stop_requested_while_not_running")
             PerformanceSessionRecoveryStore.clear(this)
             currentState = PerformanceMonitorState.IDLE
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -634,7 +666,22 @@ class PerformanceMonitorService : Service() {
             .notify(NOTIFICATION_ID, buildNotification(text))
     }
 
+    private fun logRecoveryCall(operation: String, reason: String) {
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "RECOVERY_STORE_CALL operation=$operation reason=$reason state=$currentState " +
+                "isRunning=$isRunning shouldRun=$shouldRun manualStop=$manualStopRequested " +
+                "thread=${Thread.currentThread().name}"
+        )
+    }
+
     private fun finishService() {
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "SERVICE_FINISH state=$currentState error=${currentError ?: "NONE"} " +
+                "isRunning=$isRunning shouldRun=$shouldRun manualStop=$manualStopRequested " +
+                "thread=${Thread.currentThread().name}"
+        )
         shouldRun = false
         isRunning = false
         currentEmulatorName = null
@@ -658,6 +705,12 @@ class PerformanceMonitorService : Service() {
     }
 
     override fun onDestroy() {
+        Log.i(
+            DIAGNOSTIC_TAG,
+            "SERVICE_ON_DESTROY state=$currentState error=${currentError ?: "NONE"} " +
+                "isRunning=$isRunning shouldRun=$shouldRun manualStop=$manualStopRequested " +
+                "thread=${Thread.currentThread().name}"
+        )
         shouldRun = false
         isRunning = false
         currentSessionStartedAt = 0L
