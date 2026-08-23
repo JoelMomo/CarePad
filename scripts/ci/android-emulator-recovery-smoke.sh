@@ -158,19 +158,89 @@ tap_button_when_visible() {
 run_lab() {
     local command="$1"
     shift
+    local observe_continue_uninstall=false
+    local am_stdout_file="${RUNNER_TEMP:-/tmp}/carepad-continue-uninstall.stdout"
+    local am_stderr_file="${RUNNER_TEMP:-/tmp}/carepad-continue-uninstall.stderr"
+    local am_start_status=0
+    local am_start_stdout=""
+    local am_start_stderr=""
+    local host_pid_before=""
+    local resumed_before=""
+
+    if [[ "$command" == "continue_uninstall" ]]; then
+        observe_continue_uninstall=true
+        host_pid_before="$(adb shell pidof "$HOST_PACKAGE" 2>/dev/null | tr -d '\r' || true)"
+        resumed_before="$(current_resumed_activity)"
+        rm -f "$am_stdout_file" "$am_stderr_file"
+    fi
+
     adb shell run-as "$HOST_PACKAGE" rm -f "$RESULT_FILE" >/dev/null 2>&1 || true
-    adb shell am start -W -n "$RECOVERY_ACTIVITY" --es command "$command" "$@" >/dev/null
+    if [[ "$observe_continue_uninstall" == true ]]; then
+        set +e
+        adb shell am start -W -n "$RECOVERY_ACTIVITY" --es command "$command" "$@" \
+            >"$am_stdout_file" 2>"$am_stderr_file"
+        am_start_status=$?
+        set -e
+        am_start_stdout="$(cat "$am_stdout_file" 2>/dev/null || true)"
+        am_start_stderr="$(cat "$am_stderr_file" 2>/dev/null || true)"
+    else
+        adb shell am start -W -n "$RECOVERY_ACTIVITY" --es command "$command" "$@" >/dev/null
+    fi
 
     LAST_RESULT=""
-    for _ in $(seq 1 20); do
-        if adb shell run-as "$HOST_PACKAGE" test -s "$RESULT_FILE" >/dev/null 2>&1; then
-            LAST_RESULT="$(adb exec-out run-as "$HOST_PACKAGE" cat "$RESULT_FILE" 2>/dev/null | tr -d '\r' || true)"
-            if [[ -n "$LAST_RESULT" ]]; then
-                return 0
+    if [[ "$am_start_status" -eq 0 ]]; then
+        for _ in $(seq 1 20); do
+            if adb shell run-as "$HOST_PACKAGE" test -s "$RESULT_FILE" >/dev/null 2>&1; then
+                LAST_RESULT="$(adb exec-out run-as "$HOST_PACKAGE" cat "$RESULT_FILE" 2>/dev/null | tr -d '\r' || true)"
+                if [[ -n "$LAST_RESULT" ]]; then
+                    if [[ "$observe_continue_uninstall" == true ]]; then
+                        break
+                    fi
+                    return 0
+                fi
             fi
+            sleep 0.1
+        done
+    fi
+
+    if [[ "$observe_continue_uninstall" == true ]]; then
+        set +e
+        local host_pid_after
+        local resumed_after
+        local result_exists=false
+        local result_size=0
+        host_pid_after="$(adb shell pidof "$HOST_PACKAGE" 2>/dev/null | tr -d '\r' || true)"
+        resumed_after="$(current_resumed_activity)"
+        if adb shell run-as "$HOST_PACKAGE" test -e "$RESULT_FILE" >/dev/null 2>&1; then
+            result_exists=true
+            result_size="$(adb exec-out run-as "$HOST_PACKAGE" cat "$RESULT_FILE" 2>/dev/null | wc -c | tr -d '[:space:]' || true)"
         fi
-        sleep 0.1
-    done
+
+        echo "CONTINUE_UNINSTALL_OBSERVABILITY" >&2
+        echo "AM_START_EXIT_STATUS=$am_start_status" >&2
+        printf 'AM_START_STDOUT=%q\n' "$am_start_stdout" >&2
+        printf 'AM_START_STDERR=%q\n' "$am_start_stderr" >&2
+        echo "HOST_PID_BEFORE=$host_pid_before" >&2
+        echo "HOST_PID_AFTER=$host_pid_after" >&2
+        echo "RESUMED_BEFORE=$resumed_before" >&2
+        echo "RESUMED_AFTER=$resumed_after" >&2
+        echo "RESULT_FILE_EXISTS=$result_exists" >&2
+        echo "RESULT_FILE_SIZE=$result_size" >&2
+        echo "CONTINUE_UNINSTALL_LOGCAT_BEGIN" >&2
+        adb logcat -d -v threadtime \
+            CarePadRecoveryLab:V AndroidRuntime:V ActivityTaskManager:V '*:S' 2>&1 |
+            tail -n 300 >&2 || true
+        echo "CONTINUE_UNINSTALL_LOGCAT_END" >&2
+        set -e
+
+        if [[ "$am_start_status" -ne 0 ]]; then
+            fail "Recovery lab activity launch failed: $command"
+        fi
+        if [[ -n "$LAST_RESULT" ]]; then
+            return 0
+        fi
+    fi
+
     echo "Recovery lab result file was not produced or remained empty: $RESULT_FILE" >&2
     echo "Resumed activity: $(current_resumed_activity)" >&2
     adb shell run-as "$HOST_PACKAGE" ls -l files >&2 2>/dev/null || true

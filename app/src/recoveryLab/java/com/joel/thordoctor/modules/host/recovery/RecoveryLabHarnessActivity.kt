@@ -3,6 +3,7 @@ package com.joel.thordoctor.modules.host.recovery
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.os.Process
 import android.util.Log
 import com.joel.thordoctor.modules.catalog.recovery.RecoveryProtocolRange
 import com.joel.thordoctor.modules.catalog.recovery.RecoverySafety
@@ -26,8 +27,18 @@ class RecoveryLabHarnessActivity : Activity() {
         }
 
         val command = intent.getStringExtra(EXTRA_COMMAND).orEmpty()
+        val pid = Process.myPid()
+        Log.i(TAG, "LAB_COMMAND_START command=$command pid=$pid")
         val result = runCatching { execute(command, intent) }
+            .onSuccess {
+                Log.i(TAG, "LAB_COMMAND_EXECUTED command=$command pid=$pid outcome=success")
+            }
             .getOrElse { error ->
+                Log.e(
+                    TAG,
+                    "LAB_COMMAND_EXECUTED command=$command pid=$pid outcome=exception",
+                    error
+                )
                 lines(
                     "kind" to "exception",
                     "command" to command,
@@ -35,7 +46,7 @@ class RecoveryLabHarnessActivity : Activity() {
                     "detail" to (error.message ?: "unknown")
                 )
             }
-        persistResult(result)
+        persistResult(command, result, pid)
         finish()
     }
 
@@ -155,9 +166,14 @@ class RecoveryLabHarnessActivity : Activity() {
         "${prefix}detail" to (snapshot.detail ?: "")
     )
 
-    private fun persistResult(result: String) {
+    private fun persistResult(command: String, result: String, pid: Int) {
         val normalized = result.trimEnd() + "\n"
-        File(filesDir, RESULT_FILE_NAME).writeText(normalized)
+        val resultFile = File(filesDir, RESULT_FILE_NAME)
+        resultFile.writeText(normalized)
+        Log.i(
+            TAG,
+            "LAB_RESULT_PERSISTED command=$command pid=$pid bytes=${resultFile.length()}"
+        )
         Log.i(TAG, normalized.replace('\n', ';'))
     }
 
