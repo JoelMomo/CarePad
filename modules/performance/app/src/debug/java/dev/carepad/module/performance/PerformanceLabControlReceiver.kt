@@ -41,7 +41,7 @@ class PerformanceLabControlReceiver : BroadcastReceiver() {
                     LabResult(
                         command = command,
                         success = component != null,
-                        detail = "startForegroundService returned ${component?.flattenToShortString() ?: "null"}"
+                        detail = "startForegroundService returned ${component ?: "null"}"
                     )
                 }
 
