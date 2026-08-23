@@ -392,9 +392,10 @@ rm -f "$APKSIGNER_STDERR_FILE"
 APKSIGNER_OUTPUT="$("$APKSIGNER" verify --print-certs "$UPDATE_APK" 2>"$APKSIGNER_STDERR_FILE")"
 APKSIGNER_STDERR="$(cat "$APKSIGNER_STDERR_FILE" 2>/dev/null || true)"
 CERT_DIGEST_LINE="$(printf '%s\n' "$APKSIGNER_OUTPUT" |
-    grep -m1 '^Signer #1 certificate SHA-256 digest:' || true)"
-SIGNING_SHA="$(printf '%s\n' "$APKSIGNER_OUTPUT" |
-    awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print tolower($2); exit}')"
+    grep -E -m1 '^(Signer #1 certificate|V2 Signer: certificate) SHA-256 digest: ' || true)"
+SIGNING_SHA="$(printf '%s\n' "$CERT_DIGEST_LINE" |
+    sed -E 's/^(Signer #1 certificate|V2 Signer: certificate) SHA-256 digest: //' |
+    tr '[:upper:]' '[:lower:]')"
 printf 'APKSIGNER_PATH=%q\n' "$APKSIGNER" >&2
 printf 'APKSIGNER_STDOUT_QUOTED=%q\n' "$APKSIGNER_OUTPUT" >&2
 printf 'APKSIGNER_STDERR_QUOTED=%q\n' "$APKSIGNER_STDERR" >&2
