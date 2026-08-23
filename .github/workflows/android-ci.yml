@@ -66,6 +66,68 @@ jobs:
       - name: Build debug APKs
         run: ./gradlew :app:assembleDebug :module-lab:assembleDebug :performance-module:assembleDebug :performance-emulator-fixture:assembleDebug --stacktrace
 
+      - name: Build Performance release APK for LAB isolation
+        run: ./gradlew :performance-module:assembleRelease --stacktrace
+
+      - name: Verify Performance LAB debug/release isolation
+        run: |
+          if grep -R -n --fixed-strings "PerformanceLabControlReceiver" modules/performance/app/src/main; then
+            echo "PerformanceLabControlReceiver must not exist in src/main" >&2
+            exit 1
+          fi
+
+          DEBUG_APK="$(find modules/performance/app/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          RELEASE_APK="$(find modules/performance/app/build/outputs/apk/release -name '*.apk' -print -quit)"
+          test -n "$DEBUG_APK"
+          test -n "$RELEASE_APK"
+
+          APKANALYZER="$(command -v apkanalyzer || true)"
+          if [ -z "$APKANALYZER" ]; then
+            APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -print -quit)"
+          fi
+          test -n "$APKANALYZER"
+          test -x "$APKANALYZER"
+
+          "$APKANALYZER" manifest print "$DEBUG_APK" > "$RUNNER_TEMP/performance-debug-manifest.xml"
+          "$APKANALYZER" manifest print "$RELEASE_APK" > "$RUNNER_TEMP/performance-release-manifest.xml"
+
+          python3 - \
+            "$RUNNER_TEMP/performance-debug-manifest.xml" \
+            "$RUNNER_TEMP/performance-release-manifest.xml" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          ANDROID = "{http://schemas.android.com/apk/res/android}"
+          RECEIVER = "dev.carepad.module.performance.PerformanceLabControlReceiver"
+          SERVICE = "dev.carepad.module.performance.PerformanceMonitorService"
+
+          def components(path, tag):
+              root = ET.parse(path).getroot()
+              application = root.find("application")
+              if application is None:
+                  raise AssertionError(f"application missing in {path}")
+              return {
+                  node.attrib.get(ANDROID + "name"): node
+                  for node in application.findall(tag)
+              }
+
+          debug_receivers = components(sys.argv[1], "receiver")
+          release_receivers = components(sys.argv[2], "receiver")
+          debug_services = components(sys.argv[1], "service")
+          release_services = components(sys.argv[2], "service")
+
+          assert RECEIVER in debug_receivers, debug_receivers.keys()
+          assert debug_receivers[RECEIVER].attrib.get(ANDROID + "exported") == "true"
+          assert RECEIVER not in release_receivers, release_receivers.keys()
+
+          assert SERVICE in debug_services, debug_services.keys()
+          assert SERVICE in release_services, release_services.keys()
+          assert debug_services[SERVICE].attrib.get(ANDROID + "exported") == "false"
+          assert release_services[SERVICE].attrib.get(ANDROID + "exported") == "false"
+
+          print("Performance LAB isolation verified: receiver=debug-only, service exported=false")
+          PY
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
