@@ -386,9 +386,19 @@ DEFECTIVE_SHA="$(sha256sum "$DEFECTIVE_APK" | awk '{print tolower($1)}')"
 
 CURRENT_STAGE="extract signing sha"
 CURRENT_STAGE_LINE=$((LINENO + 2))
-CURRENT_STAGE_COMMAND='SIGNING_SHA="$(apksigner verify --print-certs "$UPDATE_APK" | awk signer-sha256)"'
-SIGNING_SHA="$("$APKSIGNER" verify --print-certs "$UPDATE_APK" |
+CURRENT_STAGE_COMMAND='APKSIGNER_OUTPUT="$(apksigner verify --print-certs "$UPDATE_APK")"'
+APKSIGNER_OUTPUT="$("$APKSIGNER" verify --print-certs "$UPDATE_APK")"
+CERT_DIGEST_LINE="$(printf '%s\n' "$APKSIGNER_OUTPUT" |
+    grep -m1 '^Signer #1 certificate SHA-256 digest:' || true)"
+SIGNING_SHA="$(printf '%s\n' "$APKSIGNER_OUTPUT" |
     awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print tolower($2); exit}')"
+printf 'APKSIGNER_SIGNER_SHA256_LINE=%s\n' "$CERT_DIGEST_LINE" >&2
+printf 'SIGNING_SHA=%s\n' "$SIGNING_SHA" >&2
+printf 'SIGNING_SHA_LENGTH=%d\n' "${#SIGNING_SHA}" >&2
+printf 'SIGNING_SHA_QUOTED=%q\n' "$SIGNING_SHA" >&2
+printf 'SIGNING_SHA_BYTES=' >&2
+printf '%s' "$SIGNING_SHA" | od -An -tx1 | tr -d '\n' >&2
+printf '\n' >&2
 
 CURRENT_STAGE="validate update sha"
 CURRENT_STAGE_LINE=$((LINENO + 2))
