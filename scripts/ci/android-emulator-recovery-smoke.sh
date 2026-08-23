@@ -22,6 +22,7 @@ CURRENT_STAGE_LINE=0
 CURRENT_STAGE_COMMAND="initializing recovery smoke"
 SETUP_OBSERVABILITY_ACTIVE=true
 SETUP_FAILURE_REPORTED=false
+INSTALL_PERMISSION_RESUMED_AFTER_BACK=""
 
 report_recovery_setup_failure() {
     local exit_status="$1"
@@ -174,6 +175,110 @@ run_lab() {
     echo "Resumed activity: $(current_resumed_activity)" >&2
     adb shell run-as "$HOST_PACKAGE" ls -l files >&2 2>/dev/null || true
     fail "Recovery lab command did not produce a result: $command"
+}
+
+wait_for_install_permission_settings_exit() {
+    local resumed=""
+    local host_path=""
+
+    for _ in $(seq 1 20); do
+        resumed="$(current_resumed_activity)"
+        host_path="$(adb shell pm path "$HOST_PACKAGE" 2>/dev/null | tr -d '\r' || true)"
+        if [[ -n "$host_path" ]] &&
+            ! grep -Fq 'com.android.settings/.spa.SpaActivity' <<<"$resumed"; then
+            INSTALL_PERMISSION_RESUMED_AFTER_BACK="$resumed"
+            return 0
+        fi
+        sleep 0.25
+    done
+
+    echo "Install-permission Settings did not leave the resumed state after BACK" >&2
+    echo "REQUEST_INSTALL_PACKAGES=$(adb shell appops get "$HOST_PACKAGE" REQUEST_INSTALL_PACKAGES 2>&1 | tr -d '\r' || true)" >&2
+    echo "resumed_activity=$resumed" >&2
+    echo "lab_host_pm_path=$host_path" >&2
+    return 1
+}
+
+run_continue_install_permission_with_diagnostics() {
+    local appop_before="$1"
+    local resumed_before_back="$2"
+    local resumed_after_back="$3"
+    local recovery_before="$4"
+    local stdout_file="${RUNNER_TEMP:-/tmp}/carepad-continue-install-permission.stdout"
+    local stderr_file="${RUNNER_TEMP:-/tmp}/carepad-continue-install-permission.stderr"
+    local start_status=0
+    local start_stdout=""
+    local start_stderr=""
+
+    adb shell run-as "$HOST_PACKAGE" rm -f "$RESULT_FILE" >/dev/null 2>&1 || true
+    rm -f "$stdout_file" "$stderr_file"
+
+    set +e
+    adb shell am start -W -n "$RECOVERY_ACTIVITY" \
+        --es command continue_install_permission \
+        >"$stdout_file" 2>"$stderr_file"
+    start_status=$?
+    set -e
+
+    start_stdout="$(cat "$stdout_file" 2>/dev/null || true)"
+    start_stderr="$(cat "$stderr_file" 2>/dev/null || true)"
+    LAST_RESULT=""
+
+    if [[ "$start_status" -eq 0 ]]; then
+        for _ in $(seq 1 20); do
+            if adb shell run-as "$HOST_PACKAGE" test -s "$RESULT_FILE" >/dev/null 2>&1; then
+                LAST_RESULT="$(adb exec-out run-as "$HOST_PACKAGE" cat "$RESULT_FILE" 2>/dev/null | tr -d '\r' || true)"
+                if [[ -n "$LAST_RESULT" ]]; then
+                    return 0
+                fi
+            fi
+            sleep 0.1
+        done
+    fi
+
+    local failure_status="$start_status"
+    if [[ "$failure_status" -eq 0 ]]; then
+        failure_status=1
+    fi
+
+    set +e
+    local appop_after
+    local resumed_after_continue
+    local lab_host_path
+    local recovery_after_status
+    local recovery_after
+    appop_after="$(adb shell appops get "$HOST_PACKAGE" REQUEST_INSTALL_PACKAGES 2>&1 | tr -d '\r' || true)"
+    resumed_after_continue="$(current_resumed_activity)"
+    lab_host_path="$(adb shell pm path "$HOST_PACKAGE" 2>&1 | tr -d '\r' || true)"
+    run_lab state
+    recovery_after_status=$?
+    recovery_after="$LAST_RESULT"
+
+    echo "CONTINUE_INSTALL_PERMISSION_FAILURE" >&2
+    echo "REQUEST_INSTALL_PACKAGES_BEFORE=$appop_before" >&2
+    echo "REQUEST_INSTALL_PACKAGES_AFTER=$appop_after" >&2
+    echo "RESUMED_BEFORE_BACK=$resumed_before_back" >&2
+    echo "RESUMED_AFTER_BACK=$resumed_after_back" >&2
+    echo "RESUMED_AFTER_CONTINUE=$resumed_after_continue" >&2
+    echo "LAB_HOST_PM_PATH=$lab_host_path" >&2
+    echo "AM_START_EXIT_STATUS=$start_status" >&2
+    printf 'AM_START_STDOUT=%q\n' "$start_stdout" >&2
+    printf 'AM_START_STDERR=%q\n' "$start_stderr" >&2
+    echo "RECOVERY_BEFORE_CONTINUE_BEGIN" >&2
+    echo "$recovery_before" >&2
+    echo "RECOVERY_BEFORE_CONTINUE_END" >&2
+    echo "RECOVERY_AFTER_CONTINUE_STATUS=$recovery_after_status" >&2
+    echo "RECOVERY_AFTER_CONTINUE_BEGIN" >&2
+    echo "$recovery_after" >&2
+    echo "RECOVERY_AFTER_CONTINUE_END" >&2
+    echo "RECOVERY_RELEVANT_LOGCAT_BEGIN" >&2
+    adb logcat -d -v threadtime \
+        CarePadRecoveryLab:V AndroidRuntime:V ActivityTaskManager:V '*:S' 2>&1 |
+        tail -n 200 >&2 || true
+    echo "RECOVERY_RELEVANT_LOGCAT_END" >&2
+    set -e
+
+    return "$failure_status"
 }
 
 assert_field() {
@@ -521,7 +626,25 @@ assert_accepted_phase WAITING_FOR_INSTALL_PERMISSION
 run_lab request_install_permission
 assert_accepted_phase WAITING_FOR_INSTALL_PERMISSION
 adb shell appops set "$HOST_PACKAGE" REQUEST_INSTALL_PACKAGES allow >/dev/null
-run_lab continue_install_permission
+INSTALL_PERMISSION_APPOP="$(adb shell appops get "$HOST_PACKAGE" REQUEST_INSTALL_PACKAGES 2>&1 | tr -d '\r')"
+echo "REQUEST_INSTALL_PACKAGES_AFTER_ALLOW=$INSTALL_PERMISSION_APPOP" >&2
+if ! grep -Eq 'REQUEST_INSTALL_PACKAGES:[[:space:]]*allow([;[:space:]]|$)' <<<"$INSTALL_PERMISSION_APPOP"; then
+    fail "REQUEST_INSTALL_PACKAGES AppOp was not allow after grant"
+fi
+INSTALL_PERMISSION_RESUMED_BEFORE_BACK="$(current_resumed_activity)"
+echo "RESUMED_BEFORE_INSTALL_PERMISSION_BACK=$INSTALL_PERMISSION_RESUMED_BEFORE_BACK" >&2
+adb shell input keyevent KEYCODE_BACK >/dev/null
+wait_for_install_permission_settings_exit
+echo "RESUMED_AFTER_INSTALL_PERMISSION_BACK=$INSTALL_PERMISSION_RESUMED_AFTER_BACK" >&2
+run_lab state
+assert_field present true
+assert_field phase WAITING_FOR_INSTALL_PERMISSION
+INSTALL_PERMISSION_RECOVERY_BEFORE_CONTINUE="$LAST_RESULT"
+run_continue_install_permission_with_diagnostics \
+    "$INSTALL_PERMISSION_APPOP" \
+    "$INSTALL_PERMISSION_RESUMED_BEFORE_BACK" \
+    "$INSTALL_PERMISSION_RESUMED_AFTER_BACK" \
+    "$INSTALL_PERMISSION_RECOVERY_BEFORE_CONTINUE"
 assert_accepted_phase INSTALLING
 accept_install_and_wait VERIFIED
 assert_module_version "0.2-lab"
