@@ -86,6 +86,10 @@ class SessionMonitorService : Service() {
                 is PerformanceRecoveryState
                     .Monitoring ->
                     MonitorState.MONITORING
+
+                is PerformanceRecoveryState
+                    .Saving ->
+                    currentState
             }
         }
 
@@ -439,6 +443,26 @@ class SessionMonitorService : Service() {
 
                     start()
                 }
+            }
+
+            is PerformanceRecoveryState
+                .Saving -> {
+
+                // SAVING is owned by the independent Performance APK.
+                // The legacy host never creates this recovery state.
+                PerformanceSessionRecoveryStore
+                    .clear(this)
+
+                shouldRun =
+                    false
+
+                isRunning =
+                    false
+
+                currentState =
+                    MonitorState.IDLE
+
+                stopSelf()
             }
         }
     }

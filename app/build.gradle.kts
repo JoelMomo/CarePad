@@ -51,6 +51,8 @@ android {
 
 dependencies {
     implementation(project(":carepad-contracts"))
+    implementation(project(":carepad-core-android"))
+    implementation(project(":performance-runtime"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
