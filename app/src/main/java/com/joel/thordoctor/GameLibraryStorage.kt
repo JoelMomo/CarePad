@@ -67,6 +67,11 @@ object GameLibraryStorage {
         val flags =
             Intent.FLAG_GRANT_READ_URI_PERMISSION
 
+        val oldUri =
+            AppPreferences.getGameFolderUri(
+                context
+            )
+
         try {
             context.contentResolver
                 .takePersistableUriPermission(
@@ -88,13 +93,22 @@ object GameLibraryStorage {
             !directory.exists() ||
             !directory.canRead()
         ) {
+            if (
+                oldUri == null ||
+                oldUri != uri
+            ) {
+                try {
+                    context.contentResolver
+                        .releasePersistableUriPermission(
+                            uri,
+                            flags
+                        )
+                } catch (_: Exception) {
+                }
+            }
+
             return false
         }
-
-        val oldUri =
-            AppPreferences.getGameFolderUri(
-                context
-            )
 
         if (
             oldUri != null &&
@@ -104,7 +118,7 @@ object GameLibraryStorage {
                 context.contentResolver
                     .releasePersistableUriPermission(
                         oldUri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        flags
                     )
             } catch (_: Exception) {
             }
