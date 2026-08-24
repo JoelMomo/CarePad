@@ -483,9 +483,14 @@ assert_accepted_phase() {
 wait_state() {
     local expected_phase="$1"
     local expected_error="${2:-}"
+    local state_status
     for _ in $(seq 1 50); do
+        set +e
         run_lab state
-        if grep -Fxq "present=true" <<<"$LAST_RESULT" &&
+        state_status=$?
+        set -e
+        if [[ "$state_status" -eq 0 ]] &&
+            grep -Fxq "present=true" <<<"$LAST_RESULT" &&
             grep -Fxq "phase=$expected_phase" <<<"$LAST_RESULT"; then
             if [[ -z "$expected_error" ]] || grep -Fxq "error=$expected_error" <<<"$LAST_RESULT"; then
                 return 0
@@ -657,7 +662,6 @@ CURRENT_STAGE="validate apksigner"
 CURRENT_STAGE_LINE=$((LINENO + 2))
 CURRENT_STAGE_COMMAND='test -n "$APKSIGNER"'
 test -n "$APKSIGNER"
-
 CURRENT_STAGE="hash update apk"
 CURRENT_STAGE_LINE=$((LINENO + 2))
 CURRENT_STAGE_COMMAND='UPDATE_SHA="$(sha256sum "$UPDATE_APK" | awk '\''{print tolower($1)}'\'')"'
