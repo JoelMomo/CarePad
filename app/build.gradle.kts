@@ -21,6 +21,7 @@ android {
         versionCode = 1
         versionName = "1.0"
         manifestPlaceholders["docThorMainEnabled"] = true
+        manifestPlaceholders["carepadRecoveryLabEnabled"] = false
     }
 
     buildTypes {
@@ -29,8 +30,13 @@ android {
                 applicationIdSuffix = ".carepadlabhost"
                 versionNameSuffix = "-carepad-lab-host"
                 manifestPlaceholders["docThorMainEnabled"] = false
+                manifestPlaceholders["carepadRecoveryLabEnabled"] = true
             }
         }
+    }
+
+    if (carePadLabHost.get()) {
+        sourceSets.getByName("debug").kotlin.srcDir("src/recoveryLab/java")
     }
 
     compileOptions {
@@ -45,6 +51,8 @@ android {
 
 dependencies {
     implementation(project(":carepad-contracts"))
+    implementation(project(":carepad-core-android"))
+    implementation(project(":performance-runtime"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
