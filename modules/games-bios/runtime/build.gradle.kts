@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "com.joel.thordoctor.core"
+    namespace = "com.joel.thordoctor.modules.gamesbios"
 
     compileSdk {
         version = release(36)
@@ -20,5 +20,5 @@ android {
 }
 
 dependencies {
-    implementation(libs.androidx.documentfile)
+    testImplementation(libs.junit)
 }

@@ -35,7 +35,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run JVM unit tests
-        run: ./gradlew :app:testDebugUnitTest :performance-runtime:testDebugUnitTest --stacktrace
+        run: ./gradlew :app:testDebugUnitTest :performance-runtime:testDebugUnitTest :games-bios-runtime:testDebugUnitTest --stacktrace
 
   build:
     needs: unit-tests
