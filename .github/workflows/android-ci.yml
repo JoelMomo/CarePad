@@ -236,11 +236,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Generic Android regression coverage; OEM/hardware checks stay on real devices.
+  # Generic Android regression coverage plus lab-only recovery execution.
   android-emulator-smoke:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -253,6 +253,12 @@ jobs:
         run: |
           echo "ANDROID_AVD_HOME=$RUNNER_TEMP/carepad-avd" >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/carepad-avd"
+
+      - name: Download normal CarePad debug host
+        uses: actions/download-artifact@v4
+        with:
+          name: CarePad-debug
+          path: artifacts/host-normal
 
       - name: Download CarePad lab host
         uses: actions/download-artifact@v4
@@ -305,7 +311,7 @@ jobs:
       - name: Install Android emulator image
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "emulator" "system-images;android-35;google_apis;x86_64"
+          sdkmanager "platform-tools" "build-tools;36.0.0" "emulator" "system-images;android-35;google_apis;x86_64"
 
       - name: Create Android virtual device
         run: |
@@ -343,6 +349,15 @@ jobs:
             "$(find artifacts/module-defective-update -name '*.apk' -print -quit)" \
             "$(find artifacts/performance-module -name '*.apk' -print -quit)" \
             "$(find artifacts/performance-emulator-fixture -name '*.apk' -print -quit)"
+
+      - name: Run AndroidModuleRecovery lab smoke test
+        run: |
+          chmod +x scripts/ci/android-emulator-recovery-smoke.sh
+          scripts/ci/android-emulator-recovery-smoke.sh \
+            "$(find artifacts/host-normal -name '*.apk' -print -quit)" \
+            "$(find artifacts/host -name '*.apk' -print -quit)" \
+            "$(find artifacts/module-update -name '*.apk' -print -quit)" \
+            "$(find artifacts/module-defective-update -name '*.apk' -print -quit)"
 
       - name: Upload emulator log on failure
         if: failure()
