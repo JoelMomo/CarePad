@@ -35,7 +35,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run JVM unit tests
-        run: ./gradlew :app:testDebugUnitTest --stacktrace
+        run: ./gradlew :app:testDebugUnitTest :performance-runtime:testDebugUnitTest --stacktrace
 
   build:
     needs: unit-tests
@@ -63,17 +63,78 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Build debug APKs
+        run: ./gradlew :app:assembleDebug :module-lab:assembleDebug :performance-module:assembleDebug :performance-emulator-fixture:assembleDebug --stacktrace
 
-      # Retention policy: keep the user-facing debug APK longer than disposable lab fixtures.
+      - name: Build Performance release APK for LAB isolation
+        run: ./gradlew :performance-module:assembleRelease --stacktrace
+
+      - name: Verify Performance LAB debug/release isolation
+        run: |
+          if grep -R -n --fixed-strings "PerformanceLabControlReceiver" modules/performance/app/src/main; then
+            echo "PerformanceLabControlReceiver must not exist in src/main" >&2
+            exit 1
+          fi
+
+          DEBUG_APK="$(find modules/performance/app/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          RELEASE_APK="$(find modules/performance/app/build/outputs/apk/release -name '*.apk' -print -quit)"
+          test -n "$DEBUG_APK"
+          test -n "$RELEASE_APK"
+
+          APKANALYZER="$(command -v apkanalyzer || true)"
+          if [ -z "$APKANALYZER" ]; then
+            APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -print -quit)"
+          fi
+          test -n "$APKANALYZER"
+          test -x "$APKANALYZER"
+
+          "$APKANALYZER" manifest print "$DEBUG_APK" > "$RUNNER_TEMP/performance-debug-manifest.xml"
+          "$APKANALYZER" manifest print "$RELEASE_APK" > "$RUNNER_TEMP/performance-release-manifest.xml"
+
+          python3 - \
+            "$RUNNER_TEMP/performance-debug-manifest.xml" \
+            "$RUNNER_TEMP/performance-release-manifest.xml" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          ANDROID = "{http://schemas.android.com/apk/res/android}"
+          RECEIVER = "dev.carepad.module.performance.PerformanceLabControlReceiver"
+          SERVICE = "dev.carepad.module.performance.PerformanceMonitorService"
+
+          def components(path, tag):
+              root = ET.parse(path).getroot()
+              application = root.find("application")
+              if application is None:
+                  raise AssertionError(f"application missing in {path}")
+              return {
+                  node.attrib.get(ANDROID + "name"): node
+                  for node in application.findall(tag)
+              }
+
+          debug_receivers = components(sys.argv[1], "receiver")
+          release_receivers = components(sys.argv[2], "receiver")
+          debug_services = components(sys.argv[1], "service")
+          release_services = components(sys.argv[2], "service")
+
+          assert RECEIVER in debug_receivers, debug_receivers.keys()
+          assert debug_receivers[RECEIVER].attrib.get(ANDROID + "exported") == "true"
+          assert RECEIVER not in release_receivers, release_receivers.keys()
+
+          assert SERVICE in debug_services, debug_services.keys()
+          assert SERVICE in release_services, release_services.keys()
+          assert debug_services[SERVICE].attrib.get(ANDROID + "exported") == "true"
+          assert release_services[SERVICE].attrib.get(ANDROID + "exported") == "false"
+
+          print("Performance LAB isolation verified: receiver=debug-only, service debug exported=true/release exported=false")
+          PY
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: CarePad-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
 
       - name: Upload baseline module lab APK
         uses: actions/upload-artifact@v4
@@ -81,7 +142,23 @@ jobs:
           name: CarePad-module-lab-baseline-debug
           path: module-lab/build/outputs/apk/debug/module-lab-debug.apk
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 14
+
+      - name: Upload Performance module APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-performance-module-debug
+          path: modules/performance/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Performance emulator fixture APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-performance-emulator-fixture-debug
+          path: test-fixtures/performance-emulator/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Build update module lab APK
         run: ./gradlew :module-lab:clean :module-lab:assembleDebug -PcarepadModuleLabVersionCode=2 -PcarepadModuleLabVersionName=0.2-lab --stacktrace
@@ -92,7 +169,7 @@ jobs:
           name: CarePad-module-lab-update-debug
           path: module-lab/build/outputs/apk/debug/module-lab-debug.apk
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 14
 
       - name: Build incompatible-protocol module lab APK
         run: ./gradlew :module-lab:clean :module-lab:assembleDebug -PcarepadModuleLabVersionCode=3 -PcarepadModuleLabVersionName=0.3-incompatible -PcarepadModuleLabProtocolMin=2 -PcarepadModuleLabProtocolMax=2 --stacktrace
@@ -103,7 +180,7 @@ jobs:
           name: CarePad-module-lab-incompatible-protocol-debug
           path: module-lab/build/outputs/apk/debug/module-lab-debug.apk
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 14
 
       - name: Build wrong-signature module lab APK
         run: ./gradlew :module-lab:clean :module-lab:assembleRelease -PcarepadModuleLabVersionCode=4 -PcarepadModuleLabVersionName=0.4-wrong-signature --stacktrace
@@ -135,7 +212,7 @@ jobs:
           name: CarePad-module-lab-wrong-signature
           path: ${{ runner.temp }}/module-lab-wrong-signature.apk
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 14
 
       - name: Build defective update module lab APK
         run: ./gradlew :module-lab:clean :module-lab:assembleDebug -PcarepadModuleLabVersionCode=5 -PcarepadModuleLabVersionName=0.5-broken -PcarepadModuleLabAlwaysCrash=true --stacktrace
@@ -146,7 +223,7 @@ jobs:
           name: CarePad-module-lab-defective-update-debug
           path: module-lab/build/outputs/apk/debug/module-lab-debug.apk
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 14
 
       - name: Build parallel CarePad lab host
         run: ./gradlew :app:assembleDebug -PcarepadLabHost=true --stacktrace
@@ -157,13 +234,13 @@ jobs:
           name: CarePad-host-lab-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 14
 
-  # Generic Android regression coverage; OEM/hardware checks stay on real devices.
+  # Generic Android regression coverage plus lab-only recovery execution.
   android-emulator-smoke:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -176,6 +253,12 @@ jobs:
         run: |
           echo "ANDROID_AVD_HOME=$RUNNER_TEMP/carepad-avd" >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/carepad-avd"
+
+      - name: Download normal CarePad debug host
+        uses: actions/download-artifact@v4
+        with:
+          name: CarePad-debug
+          path: artifacts/host-normal
 
       - name: Download CarePad lab host
         uses: actions/download-artifact@v4
@@ -213,10 +296,22 @@ jobs:
           name: CarePad-module-lab-defective-update-debug
           path: artifacts/module-defective-update
 
+      - name: Download Performance module
+        uses: actions/download-artifact@v4
+        with:
+          name: CarePad-performance-module-debug
+          path: artifacts/performance-module
+
+      - name: Download Performance emulator fixture
+        uses: actions/download-artifact@v4
+        with:
+          name: CarePad-performance-emulator-fixture-debug
+          path: artifacts/performance-emulator-fixture
+
       - name: Install Android emulator image
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "emulator" "system-images;android-35;google_apis;x86_64"
+          sdkmanager "platform-tools" "build-tools;36.0.0" "emulator" "system-images;android-35;google_apis;x86_64"
 
       - name: Create Android virtual device
         run: |
@@ -251,6 +346,17 @@ jobs:
             "$(find artifacts/module-update -name '*.apk' -print -quit)" \
             "$(find artifacts/module-incompatible-protocol -name '*.apk' -print -quit)" \
             "$(find artifacts/module-wrong-signature -name '*.apk' -print -quit)" \
+            "$(find artifacts/module-defective-update -name '*.apk' -print -quit)" \
+            "$(find artifacts/performance-module -name '*.apk' -print -quit)" \
+            "$(find artifacts/performance-emulator-fixture -name '*.apk' -print -quit)"
+
+      - name: Run AndroidModuleRecovery lab smoke test
+        run: |
+          chmod +x scripts/ci/android-emulator-recovery-smoke.sh
+          scripts/ci/android-emulator-recovery-smoke.sh \
+            "$(find artifacts/host-normal -name '*.apk' -print -quit)" \
+            "$(find artifacts/host -name '*.apk' -print -quit)" \
+            "$(find artifacts/module-update -name '*.apk' -print -quit)" \
             "$(find artifacts/module-defective-update -name '*.apk' -print -quit)"
 
       - name: Upload emulator log on failure

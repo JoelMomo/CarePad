@@ -10,6 +10,7 @@ import android.os.Process
 object ForegroundEmulatorDetector {
 
     private const val LEGACY_MOVE_TO_FOREGROUND_EVENT = 1
+    private const val LEGACY_MOVE_TO_BACKGROUND_EVENT = 2
 
     data class DetectedEmulator(
         val name: String,
@@ -84,6 +85,44 @@ object ForegroundEmulatorDetector {
         )
     }
 
+    /**
+     * Reconstructs whether one package has remained foreground since a known
+     * session cursor. Unlike currentEmulator(), this does not rely on a fixed
+     * recent lookback window, so it can recover sessions after long process gaps.
+     */
+    fun packageRemainsForeground(
+        context: Context,
+        packageName: String,
+        sinceTimestamp: Long
+    ): Boolean {
+        if (!hasUsageAccess(context)) return false
+
+        val manager =
+            context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val events = manager.queryEvents(sinceTimestamp, System.currentTimeMillis())
+        val event = UsageEvents.Event()
+        var foreground = false
+        var sawPackageTransition = false
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.packageName != packageName) continue
+
+            when {
+                isForegroundEvent(event) -> {
+                    foreground = true
+                    sawPackageTransition = true
+                }
+                isBackgroundEvent(event) -> {
+                    foreground = false
+                    sawPackageTransition = true
+                }
+            }
+        }
+
+        return sawPackageTransition && foreground
+    }
+
     private fun currentForegroundPackage(
         context: Context,
         lookbackMs: Long = 60_000L
@@ -120,5 +159,15 @@ object ForegroundEmulatorDetector {
 
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
             event.eventType == UsageEvents.Event.ACTIVITY_RESUMED
+    }
+
+    private fun isBackgroundEvent(event: UsageEvents.Event): Boolean {
+        if (event.eventType == LEGACY_MOVE_TO_BACKGROUND_EVENT) return true
+
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            (
+                event.eventType == UsageEvents.Event.ACTIVITY_PAUSED ||
+                    event.eventType == UsageEvents.Event.ACTIVITY_STOPPED
+                )
     }
 }

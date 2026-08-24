@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Performance</string>
+    <string name="performance_title">Performance</string>
+    <string name="performance_intro">Record an emulation session and summarize how the device behaved. Metrics that are unavailable are omitted without invalidating the session.</string>
+    <string name="usage_access_required">Usage access required</string>
+    <string name="usage_access_explanation">CarePad needs to know which emulator is in the foreground so it can start and finish the session correctly.</string>
+    <string name="open_usage_access">Grant usage access</string>
+    <string name="start_session">Start session</string>
+    <string name="retry_save">Retry save</string>
+    <string name="stop_session">Finish session</string>
+    <string name="last_session">Last session</string>
+    <string name="state_ready">Ready</string>
+    <string name="state_waiting">Waiting for emulator</string>
+    <string name="state_monitoring">Monitoring</string>
+    <string name="state_finishing">Finishing</string>
+    <string name="state_saving">Saving summary</string>
+    <string name="state_completed">Session completed</string>
+    <string name="state_error">The session could not be completed</string>
+    <string name="waiting_instruction">Open a supported emulator now. Measurement will start when it becomes foreground.</string>
+    <string name="ready_explanation">Start a session, then open your emulator.</string>
+    <string name="session_details">%1$s · %2$s</string>
+    <string name="metrics_waiting">Metrics will appear when the session starts.</string>
+    <string name="metric_cpu">CPU: %1$s</string>
+    <string name="metric_gpu">GPU: %1$s</string>
+    <string name="metric_ram">RAM: %1$s</string>
+    <string name="metric_temperature">Temperature: %1$s</string>
+    <string name="metric_battery">Battery: %1$s</string>
+    <string name="unavailable">Unavailable</string>
+    <string name="summary_emulator">Emulator: %1$s</string>
+    <string name="summary_duration">Duration: %1$s</string>
+    <string name="summary_samples">Samples: %1$d</string>
+    <string name="summary_cpu">Average CPU: %1$s</string>
+    <string name="summary_gpu">Average GPU: %1$s</string>
+    <string name="summary_ram">Average RAM: %1$s</string>
+    <string name="summary_temperature">Maximum reliable temperature: %1$s</string>
+    <string name="summary_battery">Battery: %1$s</string>
+    <string name="save_failed">The summary could not be saved. The completed session is kept so you can retry saving it without monitoring again.</string>
+    <string name="generic_error">An error occurred. You can start another session.</string>
+    <string name="notification_channel_name">Performance sessions</string>
+    <string name="notification_channel_description">User-initiated monitoring during an emulation session.</string>
+    <string name="notification_waiting">Waiting for you to open an emulator</string>
+    <string name="notification_monitoring">Monitoring %1$s</string>
+    <string name="notification_finishing">Emulator left foreground · %1$d s</string>
+    <string name="notification_saving">Saving session summary</string>
+    <string name="notification_stopping">Finishing session</string>
+</resources>
