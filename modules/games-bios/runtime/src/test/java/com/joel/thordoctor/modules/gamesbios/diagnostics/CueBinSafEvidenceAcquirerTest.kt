@@ -106,6 +106,71 @@ class CueBinSafEvidenceAcquirerTest {
     }
 
     @Test
+    fun failureBeforeObtainingChildrenMarksEvidenceIncomplete() {
+        val root =
+            failingDirectory(
+                name = "root",
+                failAfterChildren = 0,
+                file(
+                    "disc.cue",
+                    text = """FILE "missing.bin" BINARY""",
+                ),
+            )
+
+        val evidence =
+            CueBinSafEvidenceAcquirer.acquire(root)
+
+        assertFalse(evidence.complete)
+        assertTrue(evidence.availableRelativePaths.isEmpty())
+        assertTrue(evidence.cues.isEmpty())
+    }
+
+    @Test
+    fun failureAfterObtainingSomeChildrenMarksEvidenceIncomplete() {
+        val root =
+            failingDirectory(
+                name = "root",
+                failAfterChildren = 1,
+                file(
+                    "disc.cue",
+                    text = """FILE "track01.bin" BINARY""",
+                ),
+                file("track01.bin"),
+            )
+
+        val evidence =
+            CueBinSafEvidenceAcquirer.acquire(root)
+
+        assertFalse(evidence.complete)
+        assertTrue(evidence.availableRelativePaths.isEmpty())
+        assertTrue(evidence.cues.isEmpty())
+    }
+
+    @Test
+    fun partialEnumerationNeverProducesMissingReferencedBinDiagnostic() {
+        val root =
+            failingDirectory(
+                name = "root",
+                failAfterChildren = 1,
+                file(
+                    "disc.cue",
+                    text = """FILE "track01.bin" BINARY""",
+                ),
+                file("track01.bin"),
+            )
+
+        val diagnostics =
+            CueBinSafEvidenceAcquirer.evaluate(root)
+
+        assertTrue(diagnostics.isEmpty())
+        assertTrue(
+            diagnostics.none {
+                it.kind == CueBinDiagnosticKind.MISSING_REFERENCED_BIN
+            }
+        )
+    }
+
+    @Test
     fun incompleteDirectoryListingSuppressesDiagnostics() {
         val root =
             directory(
@@ -177,6 +242,19 @@ class CueBinSafEvidenceAcquirerTest {
             children = children.toList(),
         )
 
+    private fun failingDirectory(
+        name: String,
+        failAfterChildren: Int,
+        vararg children: CueBinSafNode,
+    ): CueBinSafNode =
+        FakeCueBinSafNode(
+            name = name,
+            isDirectory = true,
+            isFile = false,
+            children = children.toList(),
+            failAfterChildren = failAfterChildren,
+        )
+
     private fun unreadableDirectory(
         name: String,
     ): CueBinSafNode =
@@ -184,7 +262,8 @@ class CueBinSafEvidenceAcquirerTest {
             name = name,
             isDirectory = true,
             isFile = false,
-            children = null,
+            children = emptyList(),
+            failAfterChildren = 0,
         )
 
     private fun file(
@@ -205,12 +284,27 @@ class CueBinSafEvidenceAcquirerTest {
         override val isDirectory: Boolean,
         override val isFile: Boolean,
         override val sizeBytes: Long = 0L,
-        val children: List<CueBinSafNode>?,
+        val children: List<CueBinSafNode>,
         val text: String? = null,
+        val failAfterChildren: Int? = null,
     ) : CueBinSafNode {
 
-        override fun listChildren(): List<CueBinSafNode>? =
-            children
+        override fun enumerateChildren(
+            onChild: (CueBinSafNode) -> Unit,
+        ): Boolean {
+            children.forEachIndexed { index, child ->
+                if (
+                    failAfterChildren != null &&
+                    index >= failAfterChildren
+                ) {
+                    return false
+                }
+
+                onChild(child)
+            }
+
+            return failAfterChildren == null
+        }
 
         override fun readText(): String? =
             text

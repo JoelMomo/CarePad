@@ -1,6 +1,8 @@
 package com.joel.thordoctor.modules.gamesbios.diagnostics
 
 import android.content.Context
+import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import com.joel.thordoctor.modules.gamesbios.library.GameLibraryEntry
 import java.util.ArrayDeque
@@ -11,7 +13,9 @@ internal interface CueBinSafNode {
     val isFile: Boolean
     val sizeBytes: Long
 
-    fun listChildren(): List<CueBinSafNode>?
+    fun enumerateChildren(
+        onChild: (CueBinSafNode) -> Unit,
+    ): Boolean
 
     fun readText(): String?
 }
@@ -32,8 +36,10 @@ internal data class CueBinSafEvidence(
  *
  * The authorized tree is traversed independently from the game-library scan so auxiliary files
  * such as `.bin` remain part of the evidence without changing scan counts or persisted cache data.
- * If a directory cannot be listed completely, diagnostics are suppressed rather than inferred from
- * partial evidence. Unreadable CUE text is skipped conservatively.
+ * Directory enumeration is controlled directly through ContentResolver/DocumentsContract so a
+ * provider/query failure remains observable. Any incomplete enumeration suppresses diagnostics
+ * rather than allowing missing-file conclusions from partial evidence. Unreadable CUE text is
+ * skipped conservatively.
  */
 object CueBinSafEvidenceAcquirer {
 
@@ -104,11 +110,19 @@ object CueBinSafEvidenceAcquirer {
                 pending.removeLast()
 
             val children =
-                current.node.listChildren()
-                    ?: return incompleteEvidence(
-                        availablePaths = availablePaths,
-                        cues = cues,
-                    )
+                mutableListOf<CueBinSafNode>()
+
+            val enumerationComplete =
+                current.node.enumerateChildren { child ->
+                    children += child
+                }
+
+            if (!enumerationComplete) {
+                return incompleteEvidence(
+                    availablePaths = availablePaths,
+                    cues = cues,
+                )
+            }
 
             val sortedChildren =
                 children.sortedWith(
@@ -175,6 +189,13 @@ object CueBinSafEvidenceAcquirer {
                             }
                         }
                     }
+
+                    else -> {
+                        return incompleteEvidence(
+                            availablePaths = availablePaths,
+                            cues = cues,
+                        )
+                    }
                 }
             }
         }
@@ -226,53 +247,139 @@ object CueBinSafEvidenceAcquirer {
 
 private class DocumentFileCueBinSafNode(
     private val context: Context,
-    private val document: DocumentFile,
+    private val uri: Uri,
+    override val name: String?,
+    override val isDirectory: Boolean,
+    override val isFile: Boolean,
+    override val sizeBytes: Long,
 ) : CueBinSafNode {
 
-    override val name: String?
-        get() = document.name
+    constructor(
+        context: Context,
+        document: DocumentFile,
+    ) : this(
+        context = context,
+        uri = document.uri,
+        name = document.name,
+        isDirectory = document.isDirectory,
+        isFile = document.isFile,
+        sizeBytes = document.length(),
+    )
 
-    override val isDirectory: Boolean
-        get() = document.isDirectory
-
-    override val isFile: Boolean
-        get() = document.isFile
-
-    override val sizeBytes: Long
-        get() = document.length()
-
-    override fun listChildren(): List<CueBinSafNode>? {
-        if (
-            !document.isDirectory ||
-            !document.canRead()
-        ) {
-            return null
+    override fun enumerateChildren(
+        onChild: (CueBinSafNode) -> Unit,
+    ): Boolean {
+        if (!isDirectory) {
+            return false
         }
 
-        return try {
-            document.listFiles()
-                .map { child ->
-                    DocumentFileCueBinSafNode(
-                        context = context,
-                        document = child,
+        val childrenUri =
+            try {
+                DocumentsContract.buildChildDocumentsUriUsingTree(
+                    uri,
+                    DocumentsContract.getDocumentId(uri),
+                )
+            } catch (_: Exception) {
+                return false
+            }
+
+        val cursor =
+            try {
+                context.contentResolver.query(
+                    childrenUri,
+                    CHILD_PROJECTION,
+                    null,
+                    null,
+                    null,
+                )
+            } catch (_: Exception) {
+                null
+            }
+                ?: return false
+
+        return cursor.use { children ->
+            try {
+                if (
+                    children.extras.getBoolean(
+                        DocumentsContract.EXTRA_LOADING,
+                        false,
+                    )
+                ) {
+                    return@use false
+                }
+
+                val documentIdColumn =
+                    children.getColumnIndexOrThrow(
+                        DocumentsContract.Document.COLUMN_DOCUMENT_ID
+                    )
+                val displayNameColumn =
+                    children.getColumnIndexOrThrow(
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME
+                    )
+                val mimeTypeColumn =
+                    children.getColumnIndexOrThrow(
+                        DocumentsContract.Document.COLUMN_MIME_TYPE
+                    )
+                val sizeColumn =
+                    children.getColumnIndexOrThrow(
+                        DocumentsContract.Document.COLUMN_SIZE
+                    )
+
+                while (children.moveToNext()) {
+                    val documentId =
+                        children.getString(documentIdColumn)
+                            ?: return@use false
+                    val displayName =
+                        children.getString(displayNameColumn)
+                    val mimeType =
+                        children.getString(mimeTypeColumn)
+                            ?: return@use false
+                    val childUri =
+                        DocumentsContract.buildDocumentUriUsingTree(
+                            uri,
+                            documentId,
+                        )
+                    val childIsDirectory =
+                        mimeType == DocumentsContract.Document.MIME_TYPE_DIR
+                    val childIsFile =
+                        mimeType.isNotBlank() && !childIsDirectory
+                    val childSize =
+                        if (children.isNull(sizeColumn)) {
+                            0L
+                        } else {
+                            children.getLong(sizeColumn)
+                        }
+
+                    onChild(
+                        DocumentFileCueBinSafNode(
+                            context = context,
+                            uri = childUri,
+                            name = displayName,
+                            isDirectory = childIsDirectory,
+                            isFile = childIsFile,
+                            sizeBytes = childSize,
+                        )
                     )
                 }
-        } catch (_: Exception) {
-            null
+
+                !children.extras.getBoolean(
+                    DocumentsContract.EXTRA_LOADING,
+                    false,
+                )
+            } catch (_: Exception) {
+                false
+            }
         }
     }
 
     override fun readText(): String? {
-        if (
-            !document.isFile ||
-            !document.canRead()
-        ) {
+        if (!isFile) {
             return null
         }
 
         return try {
             context.contentResolver
-                .openInputStream(document.uri)
+                .openInputStream(uri)
                 ?.bufferedReader(Charsets.UTF_8)
                 ?.use { reader ->
                     reader.readText()
@@ -280,5 +387,15 @@ private class DocumentFileCueBinSafNode(
         } catch (_: Exception) {
             null
         }
+    }
+
+    private companion object {
+        val CHILD_PROJECTION =
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_SIZE,
+            )
     }
 }
