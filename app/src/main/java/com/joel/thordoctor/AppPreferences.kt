@@ -2,6 +2,7 @@ package com.joel.thordoctor
 
 import android.content.Context
 import android.net.Uri
+import com.joel.thordoctor.modules.gamesbios.library.GameLibraryRootPreferences
 
 enum class AppThemeMode {
     SYSTEM,
@@ -28,9 +29,6 @@ object AppPreferences {
 
     private const val KEY_DIAGNOSTIC_FOLDER_URI =
         "diagnostic_folder_uri"
-
-    private const val KEY_GAME_FOLDER_URI =
-        "game_folder_uri"
 
     fun isOnboardingComplete(context: Context): Boolean =
         preferences(context).getBoolean(KEY_ONBOARDING_COMPLETE, false)
@@ -98,20 +96,21 @@ object AppPreferences {
     }
 
     fun getGameFolderUri(context: Context): Uri? =
-        readUri(context, KEY_GAME_FOLDER_URI)
+        GameLibraryRootPreferences.rootFolderUri(
+            context
+        )
 
     fun setGameFolderUri(context: Context, uri: Uri) {
-        preferences(context)
-            .edit()
-            .putString(KEY_GAME_FOLDER_URI, uri.toString())
-            .apply()
+        GameLibraryRootPreferences.setRootFolderUri(
+            context,
+            uri
+        )
     }
 
     fun clearGameFolder(context: Context) {
-        preferences(context)
-            .edit()
-            .remove(KEY_GAME_FOLDER_URI)
-            .apply()
+        GameLibraryRootPreferences.clearRootFolder(
+            context
+        )
     }
 
     private fun readUri(context: Context, key: String): Uri? {

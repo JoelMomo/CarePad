@@ -20,5 +20,6 @@ android {
 }
 
 dependencies {
+    implementation(libs.androidx.documentfile)
     testImplementation(libs.junit)
 }
