@@ -85,6 +85,44 @@ class CueBinDiagnosticEvaluatorTest {
     }
 
     @Test
+    fun windowsDriveRelativeReferenceIsIgnored() {
+        val cue = entry("disc.cue", "Sony/Game/disc.cue")
+
+        val diagnostics =
+            CueBinDiagnosticEvaluator.evaluate(
+                cueEntry = cue,
+                cueContents = """FILE "C:track.bin" BINARY""",
+                availableRelativePaths = emptySet(),
+            )
+
+        assertTrue(diagnostics.isEmpty())
+    }
+
+    @Test
+    fun missingReferencesAreDeduplicatedCaseInsensitively() {
+        val cue = entry("disc.cue", "Sony/Game/disc.cue")
+        val cueContents =
+            """
+            FILE "Track01.bin" BINARY
+            FILE "track01.bin" BINARY
+            """.trimIndent()
+
+        val diagnostics =
+            CueBinDiagnosticEvaluator.evaluate(
+                cueEntry = cue,
+                cueContents = cueContents,
+                availableRelativePaths = setOf("Sony/Game/disc.cue"),
+            )
+
+        assertEquals(1, diagnostics.size)
+        assertEquals("Sony/Game/Track01.bin", diagnostics.single().referencedBinPath)
+        assertEquals(
+            CueBinDiagnosticKind.MISSING_REFERENCED_BIN,
+            diagnostics.single().kind,
+        )
+    }
+
+    @Test
     fun insufficientEvidenceProducesNoDiagnostic() {
         val cue = entry("disc.cue", "Sony/Game/disc.cue")
 

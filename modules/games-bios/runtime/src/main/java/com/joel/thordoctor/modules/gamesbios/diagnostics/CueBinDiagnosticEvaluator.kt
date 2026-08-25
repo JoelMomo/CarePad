@@ -36,8 +36,8 @@ object CueBinDiagnosticEvaluator {
             option = RegexOption.IGNORE_CASE,
         )
 
-    private val windowsAbsolutePathPattern =
-        Regex("^[A-Za-z]:/")
+    private val windowsDrivePathPattern =
+        Regex("^[A-Za-z]:")
 
     fun evaluate(
         cueEntry: GameLibraryEntry,
@@ -65,8 +65,8 @@ object CueBinDiagnosticEvaluator {
                 .map { it.lowercase() }
                 .toSet()
 
-        val missingPaths =
-            linkedSetOf<String>()
+        val missingPathsByIdentity =
+            linkedMapOf<String, String>()
 
         cueContents.lineSequence().forEach { line ->
             val reference =
@@ -83,12 +83,18 @@ object CueBinDiagnosticEvaluator {
                 )
                     ?: return@forEach
 
-            if (resolvedPath.lowercase() !in availablePaths) {
-                missingPaths += resolvedPath
+            val resolvedPathIdentity =
+                resolvedPath.lowercase()
+
+            if (
+                resolvedPathIdentity !in availablePaths &&
+                resolvedPathIdentity !in missingPathsByIdentity
+            ) {
+                missingPathsByIdentity[resolvedPathIdentity] = resolvedPath
             }
         }
 
-        return missingPaths.map { path ->
+        return missingPathsByIdentity.values.map { path ->
             CueBinDiagnostic(
                 cueEntry = cueEntry,
                 referencedBinPath = path,
@@ -133,7 +139,7 @@ object CueBinDiagnosticEvaluator {
             path.isBlank() ||
             path.startsWith('/') ||
             path.contains("://") ||
-            windowsAbsolutePathPattern.containsMatchIn(path)
+            windowsDrivePathPattern.containsMatchIn(path)
         ) {
             return null
         }
