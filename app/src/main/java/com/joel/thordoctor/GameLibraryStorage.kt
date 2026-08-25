@@ -7,7 +7,6 @@ import androidx.documentfile.provider.DocumentFile
 import com.joel.thordoctor.modules.gamesbios.library.GameLibraryEntry
 import com.joel.thordoctor.modules.gamesbios.library.GameLibraryRuntime
 import com.joel.thordoctor.modules.gamesbios.library.GameLibraryScanResult
-import org.json.JSONArray
 import org.json.JSONObject
 
 object GameLibraryStorage {
@@ -204,7 +203,7 @@ object GameLibraryStorage {
             runtimeResult
         )
 
-        refreshDiagnosticIfPresent(
+        LegacyGameLibraryDiagnosticBridge.refreshIfPresent(
             context
         )
 
@@ -213,118 +212,10 @@ object GameLibraryStorage {
 
     fun buildDiagnosticJson(
         context: Context
-    ): JSONObject {
-
-        if (!hasValidRootFolder(context)) {
-            return JSONObject().apply {
-                put("configured", false)
-                put("count", 0)
-                put("games", JSONArray())
-            }
-        }
-
-        val cached =
-            GameLibraryRuntime.readCachedScan(
-                context
-            )
-                ?.toFacade()
-
-        if (cached == null) {
-            return JSONObject().apply {
-                put("configured", true)
-                put(
-                    "folderName",
-                    folderDisplayName(context).orEmpty()
-                )
-                put("scannedAt", JSONObject.NULL)
-                put("count", 0)
-                put("games", JSONArray())
-            }
-        }
-
-        return scanResultToJson(
-            cached
+    ): JSONObject =
+        LegacyGameLibraryDiagnosticBridge.buildDiagnosticJson(
+            context
         )
-    }
-
-    private fun scanResultToJson(
-        result: ScanResult
-    ): JSONObject {
-
-        val games =
-            JSONArray()
-
-        result.games.forEach { game ->
-            games.put(
-                JSONObject().apply {
-                    put("name", game.name)
-                    put("relativePath", game.relativePath)
-                    put("extension", game.extension)
-                    put("sizeBytes", game.sizeBytes)
-                }
-            )
-        }
-
-        return JSONObject().apply {
-            put("configured", true)
-            put("folderName", result.folderName)
-            put("scannedAt", result.scannedAt)
-            put("count", result.gameCount)
-            put("games", games)
-        }
-    }
-
-    private fun refreshDiagnosticIfPresent(
-        context: Context
-    ) {
-
-        val info =
-            DiagnosticStorage.documentInfo(
-                context,
-                DiagnosticStorage.DIAGNOSTIC_FILENAME
-            )
-                ?: return
-
-        if (info.sizeBytes <= 0L) {
-            return
-        }
-
-        try {
-            val diagnostic =
-                JSONObject(
-                    DiagnosticStorage.readText(
-                        context,
-                        DiagnosticStorage.DIAGNOSTIC_FILENAME
-                    )
-                )
-
-            diagnostic.put(
-                "schemaVersion",
-                maxOf(
-                    diagnostic.optInt(
-                        "schemaVersion",
-                        3
-                    ),
-                    3
-                )
-            )
-
-            diagnostic.put(
-                "gameLibrary",
-                buildDiagnosticJson(context)
-            )
-
-            DiagnosticStorage.writeText(
-                context = context,
-                filename =
-                    DiagnosticStorage.DIAGNOSTIC_FILENAME,
-                text =
-                    diagnostic.toString(2)
-            )
-
-        } catch (_: Exception) {
-        }
-    }
 
     private fun emptyResult(
         context: Context
