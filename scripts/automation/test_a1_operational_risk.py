@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -55,25 +56,55 @@ def pr(**overrides):
         "head_sha": OLD,
         "merged_at": None,
         "closed_at": None,
+        "updated_at": "2026-08-24T23:59:00Z",
         "events": [],
     }
     item.update(overrides)
     return item
 
 
-def snapshot(*, coordination=None, qa_rows=None, prs=None, runs=None, comparisons=None, specialists=None):
+def head_run(**overrides):
+    item = {
+        "run_number": 90,
+        "status": "completed",
+        "conclusion": "success",
+        "head_sha": NEW,
+        "event": "pull_request",
+        "created_at": "2026-08-24T23:59:00Z",
+        "updated_at": "2026-08-24T23:59:30Z",
+    }
+    item.update(overrides)
+    return item
+
+
+def snapshot(
+    *, coordination=None, qa_rows=None, prs=None, runs=None, head_runs=None,
+    comparisons=None, specialists=None,
+):
     return {
+        "repository": "JoelMomo/CarePad",
         "coordination": coordination or [],
         "qa": qa_rows or [],
         "prs": prs or {},
         "runs": runs or {},
+        "head_runs": head_runs or {},
         "comparisons": comparisons or {},
         "specialists": specialists if specialists is not None else [specialist()],
     }
 
 
+def qa_gate_for_new_head(**overrides):
+    item = coord(
+        github_ref=f"PR #12 · HEAD {NEW} · QA PASS",
+        summary="La validación física QA se usa como gate del HEAD actual.",
+        next_step="Aprobar gate QA",
+    )
+    item.update(overrides)
+    return item
+
+
 class A1SignalTests(unittest.TestCase):
-    def test_a1_01_positive_head_gate_invalidated_by_material_change(self):
+    def test_a1_01_positive_head_gate_was_already_invalid_at_handoff(self):
         data = snapshot(
             coordination=[coord()],
             prs={"12": pr(head_sha=NEW)},
@@ -81,13 +112,43 @@ class A1SignalTests(unittest.TestCase):
         )
         self.assertEqual(["A1-01"], [alert.signal for alert in a1.detect(data)])
 
-    def test_a1_01_positive_claimed_success_ci_is_not_success(self):
+    def test_a1_01_negative_head_changed_after_correct_handoff(self):
+        data = snapshot(
+            coordination=[coord()],
+            prs={"12": pr(head_sha=NEW, updated_at="2026-08-25T00:10:00Z")},
+            head_runs={NEW: [head_run(created_at="2026-08-25T00:10:00Z", updated_at="2026-08-25T00:11:00Z")]},
+            comparisons={f"{OLD}..{NEW}": ["app/src/main/Foo.kt"]},
+        )
+        self.assertEqual([], [alert for alert in a1.detect(data) if alert.signal == "A1-01"])
+
+    def test_a1_01_negative_merge_or_close_after_correct_handoff(self):
+        data = snapshot(
+            coordination=[coord(github_ref="PR #12", next_step="Validar PR #12")],
+            prs={"12": pr(state="closed", merged=True, merged_at="2026-08-25T00:10:00Z", closed_at="2026-08-25T00:10:00Z")},
+        )
+        self.assertEqual([], [alert for alert in a1.detect(data) if alert.signal == "A1-01"])
+
+    def test_a1_01_positive_claimed_success_ci_was_already_failure(self):
         data = snapshot(
             coordination=[coord(github_ref=f"PR #12 · HEAD {OLD} · Android CI #88 SUCCESS")],
             prs={"12": pr()},
-            runs={"88": {"status": "completed", "conclusion": "failure", "head_sha": OLD, "updated_at": "2026-08-25T00:01:00Z"}},
+            runs={"88": {
+                "status": "completed", "conclusion": "failure", "head_sha": OLD,
+                "created_at": "2026-08-24T23:50:00Z", "updated_at": "2026-08-24T23:59:00Z",
+            }},
         )
         self.assertEqual(["A1-01"], [alert.signal for alert in a1.detect(data)])
+
+    def test_a1_01_negative_ci_invalidity_not_provable_at_handoff(self):
+        data = snapshot(
+            coordination=[coord(github_ref=f"PR #12 · HEAD {OLD} · Android CI #88 SUCCESS")],
+            prs={"12": pr()},
+            runs={"88": {
+                "status": "completed", "conclusion": "failure", "head_sha": OLD,
+                "created_at": "2026-08-24T23:50:00Z", "updated_at": "2026-08-25T00:10:00Z",
+            }},
+        )
+        self.assertEqual([], [alert for alert in a1.detect(data) if alert.signal == "A1-01"])
 
     def test_historical_reference_is_not_a_false_positive(self):
         data = snapshot(
@@ -119,16 +180,26 @@ class A1SignalTests(unittest.TestCase):
         )
         self.assertEqual([], a1.detect(data))
 
-    def test_a1_03_positive_qa_sha_differs_with_material_change(self):
+    def test_a1_03_positive_active_source_reuses_old_qa_as_new_head_gate(self):
         data = snapshot(
+            coordination=[qa_gate_for_new_head()],
             qa_rows=[qa()],
             prs={"12": pr(head_sha=NEW)},
             comparisons={f"{OLD}..{NEW}": ["scripts/automation/a1.py"]},
         )
         self.assertEqual(["A1-03"], [alert.signal for alert in a1.detect(data)])
 
+    def test_a1_03_negative_old_qa_and_new_head_without_gate_reuse(self):
+        data = snapshot(
+            qa_rows=[qa()],
+            prs={"12": pr(head_sha=NEW)},
+            comparisons={f"{OLD}..{NEW}": ["scripts/automation/a1.py"]},
+        )
+        self.assertEqual([], [alert for alert in a1.detect(data) if alert.signal == "A1-03"])
+
     def test_documentation_only_change_does_not_invalidate_qa(self):
         data = snapshot(
+            coordination=[qa_gate_for_new_head()],
             qa_rows=[qa()],
             prs={"12": pr(head_sha=NEW)},
             comparisons={f"{OLD}..{NEW}": ["README.md", "docs/qa.md"]},
@@ -136,33 +207,67 @@ class A1SignalTests(unittest.TestCase):
         self.assertEqual([], a1.detect(data))
 
     def test_ambiguous_missing_compare_is_silent_for_qa(self):
-        data = snapshot(qa_rows=[qa()], prs={"12": pr(head_sha=NEW)})
+        data = snapshot(
+            coordination=[qa_gate_for_new_head()],
+            qa_rows=[qa()],
+            prs={"12": pr(head_sha=NEW)},
+        )
         self.assertEqual([], a1.detect(data))
 
-    def test_a1_04_positive_closed_work_reopened_without_canonical_trigger(self):
+    def test_a1_04_positive_active_work_resurrected_while_sources_stay_closed(self):
         closed = coord(state="Resuelto", type="Seguimiento", github_ref="PR #12", next_step="", last_edited="2026-08-25T00:00:00Z")
-        reopened = pr(state="open", events=[{"event": "reopened", "created_at": "2026-08-25T01:00:00Z"}])
-        data = snapshot(coordination=[closed], prs={"12": reopened})
+        active_pr = pr(state="open", head_sha=NEW, events=[])
+        data = snapshot(
+            coordination=[closed],
+            prs={"12": active_pr},
+            head_runs={NEW: [head_run(run_number=91, created_at="2026-08-25T01:00:00Z", updated_at="2026-08-25T01:05:00Z")]},
+        )
         self.assertEqual(["A1-04"], [alert.signal for alert in a1.detect(data)])
+
+    def test_a1_04_negative_legitimate_github_reopen_is_canonical_trigger(self):
+        closed = coord(state="Resuelto", type="Seguimiento", github_ref="PR #12", next_step="", last_edited="2026-08-25T00:00:00Z")
+        active_pr = pr(state="open", head_sha=NEW, events=[{"event": "reopened", "created_at": "2026-08-25T00:30:00Z"}])
+        data = snapshot(
+            coordination=[closed],
+            prs={"12": active_pr},
+            head_runs={NEW: [head_run(run_number=91, created_at="2026-08-25T01:00:00Z")]},
+        )
+        self.assertEqual([], [alert for alert in a1.detect(data) if alert.signal == "A1-04"])
 
     def test_legitimate_reopen_with_regression_is_not_a1_04(self):
         closed = coord(state="Resuelto", type="Seguimiento", github_ref="PR #12", next_step="", last_edited="2026-08-25T00:00:00Z")
-        reopened = pr(state="open", events=[{"event": "reopened", "created_at": "2026-08-25T01:00:00Z"}])
+        active_pr = pr(state="open", head_sha=NEW, events=[{"event": "reopened", "created_at": "2026-08-25T00:30:00Z"}])
         regression = qa(
             validated_real=False,
             version="PR #12",
             regression="Sí",
-            last_edited="2026-08-25T01:10:00Z",
+            last_edited="2026-08-25T00:40:00Z",
         )
-        data = snapshot(coordination=[closed], qa_rows=[regression], prs={"12": reopened})
+        data = snapshot(
+            coordination=[closed], qa_rows=[regression], prs={"12": active_pr},
+            head_runs={NEW: [head_run(run_number=91, created_at="2026-08-25T01:00:00Z")]},
+        )
         self.assertEqual([], a1.detect(data))
 
-    def test_reopen_with_active_coordination_trigger_is_not_a1_04(self):
+    def test_reactivation_with_active_coordination_trigger_is_not_a1_04(self):
         closed = coord(state="Resuelto", type="Seguimiento", github_ref="PR #12", next_step="", last_edited="2026-08-25T00:00:00Z")
-        active = coord(github_ref="PR #12", last_edited="2026-08-25T01:10:00Z")
-        reopened = pr(state="open", events=[{"event": "reopened", "created_at": "2026-08-25T01:00:00Z"}])
-        data = snapshot(coordination=[closed, active], prs={"12": reopened})
-        self.assertEqual([], [a for a in a1.detect(data) if a.signal == "A1-04"])
+        active = coord(github_ref="PR #12", last_edited="2026-08-25T00:30:00Z")
+        active_pr = pr(state="open", head_sha=NEW, events=[])
+        data = snapshot(
+            coordination=[closed, active], prs={"12": active_pr},
+            head_runs={NEW: [head_run(run_number=91, created_at="2026-08-25T01:00:00Z")]},
+        )
+        self.assertEqual([], [alert for alert in a1.detect(data) if alert.signal == "A1-04"])
+
+    def test_reactivation_with_new_qa_bug_is_not_a1_04(self):
+        closed = coord(state="Resuelto", type="Seguimiento", github_ref="PR #12", next_step="", last_edited="2026-08-25T00:00:00Z")
+        new_bug = qa(validated_real=False, version="PR #12", last_edited="2026-08-25T00:30:00Z")
+        active_pr = pr(state="open", head_sha=NEW, events=[])
+        data = snapshot(
+            coordination=[closed], qa_rows=[new_bug], prs={"12": active_pr},
+            head_runs={NEW: [head_run(run_number=91, created_at="2026-08-25T01:00:00Z")]},
+        )
+        self.assertEqual([], [alert for alert in a1.detect(data) if alert.signal == "A1-04"])
 
     def test_multiple_active_generations_audit_area_not_instance(self):
         data = snapshot(
@@ -182,11 +287,20 @@ class A1SignalTests(unittest.TestCase):
         )
         self.assertEqual("Código y arquitectura • 8", a1.detect(data)[0].target)
 
-    def test_api_or_credential_error_is_not_revisar_salud(self):
+    def test_infrastructure_error_is_unavailable_not_revisar_salud_or_success(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "a1-alert.json"
             rc = a1.run_live({}, output_path=output)
-            self.assertEqual(0, rc)
+            self.assertEqual(a1.EXIT_UNAVAILABLE, rc)
+            self.assertNotEqual(a1.EXIT_OK, rc)
+            self.assertFalse(output.exists())
+
+    def test_no_signal_is_success_and_writes_no_artifact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "a1-alert.json"
+            with mock.patch.object(a1, "collect_snapshot", return_value=snapshot()):
+                rc = a1.run_live({"ignored": "value"}, output_path=output)
+            self.assertEqual(a1.EXIT_OK, rc)
             self.assertFalse(output.exists())
 
 
