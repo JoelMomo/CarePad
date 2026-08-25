@@ -74,8 +74,8 @@ jobs:
         if: steps.detector.outputs.exit_code == '2' && hashFiles('a1-alert.json') != ''
         run: exit 1
 
-      - name: Fail on detector implementation error
+      - name: Fail when detector is unavailable or broken
         if: steps.detector.outputs.exit_code != '0' && steps.detector.outputs.exit_code != '2'
         run: |
-          echo "A1 detector failed without emitting a health signal." >&2
+          echo "A1 detector unavailable or failed; no REVISAR SALUD signal was emitted." >&2
           exit 1
