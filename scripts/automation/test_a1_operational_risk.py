@@ -180,6 +180,42 @@ class A1SignalTests(unittest.TestCase):
         )
         self.assertEqual([], a1.detect(data))
 
+    def test_a1_02_negative_explicitly_negates_old_open_state(self):
+        data = snapshot(
+            coordination=[coord(
+                type="Seguimiento",
+                github_ref="PR #12 ya no está abierto/draft; quedó fusionado",
+                next_step="",
+                last_edited="2026-08-25T01:00:00Z",
+            )],
+            prs={"12": pr(
+                state="closed",
+                merged=True,
+                merged_at="2026-08-25T00:30:00Z",
+                closed_at="2026-08-25T00:30:00Z",
+            )},
+        )
+        self.assertEqual([], [alert for alert in a1.detect(data) if alert.signal == "A1-02"])
+
+    def test_a1_02_negative_explicitly_negates_old_ci_state(self):
+        data = snapshot(
+            coordination=[coord(
+                type="Seguimiento",
+                github_ref="PR #12 · Android CI #88 PENDING; ya no está pendiente",
+                next_step="",
+                last_edited="2026-08-25T01:00:00Z",
+            )],
+            prs={"12": pr()},
+            runs={"88": {
+                "status": "completed",
+                "conclusion": "success",
+                "head_sha": OLD,
+                "created_at": "2026-08-25T00:10:00Z",
+                "updated_at": "2026-08-25T00:30:00Z",
+            }},
+        )
+        self.assertEqual([], [alert for alert in a1.detect(data) if alert.signal == "A1-02"])
+
     def test_a1_03_positive_active_source_reuses_old_qa_as_new_head_gate(self):
         data = snapshot(
             coordination=[qa_gate_for_new_head()],
@@ -191,6 +227,18 @@ class A1SignalTests(unittest.TestCase):
 
     def test_a1_03_negative_old_qa_and_new_head_without_gate_reuse(self):
         data = snapshot(
+            qa_rows=[qa()],
+            prs={"12": pr(head_sha=NEW)},
+            comparisons={f"{OLD}..{NEW}": ["scripts/automation/a1.py"]},
+        )
+        self.assertEqual([], [alert for alert in a1.detect(data) if alert.signal == "A1-03"])
+
+    def test_a1_03_negative_explicitly_denies_qa_gate_reuse(self):
+        data = snapshot(
+            coordination=[qa_gate_for_new_head(
+                summary="La validación física QA anterior NO se usa como gate del HEAD actual; requiere revalidación.",
+                next_step="Revalidar QA para el HEAD actual",
+            )],
             qa_rows=[qa()],
             prs={"12": pr(head_sha=NEW)},
             comparisons={f"{OLD}..{NEW}": ["scripts/automation/a1.py"]},
@@ -249,12 +297,29 @@ class A1SignalTests(unittest.TestCase):
         )
         self.assertEqual([], a1.detect(data))
 
-    def test_reactivation_with_active_coordination_trigger_is_not_a1_04(self):
+    def test_a1_04_active_coordination_does_not_justify_reactivation(self):
         closed = coord(state="Resuelto", type="Seguimiento", github_ref="PR #12", next_step="", last_edited="2026-08-25T00:00:00Z")
         active = coord(github_ref="PR #12", last_edited="2026-08-25T00:30:00Z")
         active_pr = pr(state="open", head_sha=NEW, events=[])
         data = snapshot(
-            coordination=[closed, active], prs={"12": active_pr},
+            coordination=[closed, active],
+            prs={"12": active_pr},
+        )
+        self.assertEqual(["A1-04"], [alert.signal for alert in a1.detect(data) if alert.signal == "A1-04"])
+
+    def test_a1_04_negative_explicit_decision_justifies_reactivation(self):
+        closed = coord(state="Resuelto", type="Seguimiento", github_ref="PR #12", next_step="", last_edited="2026-08-25T00:00:00Z")
+        decision = coord(
+            type="Decisión",
+            state="En curso",
+            github_ref="PR #12",
+            summary="Decisión explícita: reactivar el trabajo de PR #12.",
+            next_step="",
+            last_edited="2026-08-25T00:30:00Z",
+        )
+        active_pr = pr(state="open", head_sha=NEW, events=[])
+        data = snapshot(
+            coordination=[closed, decision], prs={"12": active_pr},
             head_runs={NEW: [head_run(run_number=91, created_at="2026-08-25T01:00:00Z")]},
         )
         self.assertEqual([], [alert for alert in a1.detect(data) if alert.signal == "A1-04"])

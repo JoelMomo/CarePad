@@ -59,11 +59,31 @@ STALE_MERGE_ACTION_PATTERN = re.compile(
     r"\b(fusionar|mergear|hacer\s+merge|aprobar\s+(?:el\s+)?merge)\b",
     re.IGNORECASE,
 )
+STALE_OPEN_NEGATION_PATTERN = re.compile(
+    r"\b(?:ya\s+)?no\s+(?:(?:est[aá]|sigue)\s+)?"
+    r"(?:abiert[oa]|open|draft|no\s+fusionad[oa]|sin\s+fusionar|"
+    r"pendiente\s+de\s+(?:merge|fusionar)|merge\s+pendiente)\b",
+    re.IGNORECASE,
+)
+STALE_MERGE_ACTION_NEGATION_PATTERN = re.compile(
+    r"\b(?:no|sin)\s+(?:(?:hay\s+que|se\s+debe|debe)\s+)?"
+    r"(?:fusionar|mergear|hacer\s+merge|aprobar\s+(?:el\s+)?merge)\b",
+    re.IGNORECASE,
+)
 QA_GATE_PATTERN = re.compile(
     r"(?:\b(?:QA|validaci[oó]n(?:\s+f[ií]sica)?|prueba(?:\s+f[ií]sica)?)\b.{0,100}"
     r"\b(?:PASS|valid(?:ad[oa]|aci[oó]n)|aprob(?:ad[oa]|aci[oó]n)|gate)\b)"
     r"|(?:\b(?:PASS|valid(?:ad[oa]|aci[oó]n)|aprob(?:ad[oa]|aci[oó]n)|gate)\b.{0,100}"
     r"\b(?:QA|validaci[oó]n(?:\s+f[ií]sica)?)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+QA_GATE_NEGATION_PATTERN = re.compile(
+    r"(?:\b(?:QA|validaci[oó]n(?:\s+f[ií]sica)?|prueba(?:\s+f[ií]sica)?|PASS|gate)\b.{0,120}"
+    r"\b(?:no|sin)\s+(?:se\s+)?(?:reutiliz\w*|us(?:a|ar|ando|ada|ado|adas|ados)?|"
+    r"aplic\w*|consider\w*|tom\w*)\b)"
+    r"|(?:\b(?:no|sin)\s+(?:se\s+)?(?:reutiliz\w*|us(?:a|ar|ando|ada|ado|adas|ados)?|"
+    r"aplic\w*|consider\w*|tom\w*)\b.{0,120}"
+    r"\b(?:QA|validaci[oó]n(?:\s+f[ií]sica)?|prueba(?:\s+f[ií]sica)?|PASS|gate)\b)",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -161,6 +181,17 @@ def parse_ci_claims(*texts: str | None) -> list[tuple[int, str | None]]:
         if claim not in deduped:
             deduped.append(claim)
     return deduped
+
+
+def ci_pending_claim_is_negated(record: Mapping[str, Any], run_number: int) -> bool:
+    text = text_of(record)
+    ci = rf"(?:Android\s+)?CI\s*#{run_number}\b"
+    old_state = r"(?:pendiente|en\s+curso|pending|in[_\s-]?progress)"
+    negated = r"(?:ya\s+)?no\s+(?:(?:est[aá]|sigue)\s+)?"
+    return bool(
+        re.search(rf"{ci}.{{0,100}}\b{negated}{old_state}\b", text, re.IGNORECASE | re.DOTALL)
+        or re.search(rf"\b{negated}{old_state}\b.{{0,100}}{ci}", text, re.IGNORECASE | re.DOTALL)
+    )
 
 
 def is_historical(record: Mapping[str, Any]) -> bool:
@@ -308,7 +339,10 @@ def qa_gate_reuse_record(
         claimed_head = parse_claimed_head(source.get("github_ref"), source.get("summary"), source.get("next_step"))
         if claimed_head != current_head:
             continue
-        if QA_GATE_PATTERN.search(text_of(source)):
+        source_text = text_of(source)
+        if QA_GATE_NEGATION_PATTERN.search(source_text):
+            continue
+        if QA_GATE_PATTERN.search(source_text):
             matches.append(source)
     return matches[0] if len(matches) == 1 else None
 
@@ -331,6 +365,29 @@ def latest_material_head_activity_after(
     return max(candidates, key=lambda item: parse_time(item.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc))
 
 
+def active_coordination_activity_after(
+    snapshot: Mapping[str, Any],
+    closed_record: Mapping[str, Any],
+    pr_number: int,
+    after: datetime,
+) -> Mapping[str, Any] | None:
+    candidates: list[Mapping[str, Any]] = []
+    for other in snapshot.get("coordination", []):
+        if other is closed_record or other.get("type") == "Decisión":
+            continue
+        edited = parse_time(other.get("last_edited"))
+        if not edited or edited <= after:
+            continue
+        if other.get("state") in ACTIVE_COORDINATION_STATES and same_pr(other, pr_number):
+            candidates.append(other)
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda item: parse_time(item.get("last_edited")) or datetime.min.replace(tzinfo=timezone.utc),
+    )
+
+
 def has_canonical_reactivation(
     snapshot: Mapping[str, Any],
     closed_record: Mapping[str, Any],
@@ -350,11 +407,9 @@ def has_canonical_reactivation(
         edited = parse_time(other.get("last_edited"))
         if not edited or edited <= closed_at:
             continue
-        if same_pr(other, pr_number) and (
-            other.get("state") in ACTIVE_COORDINATION_STATES or other.get("type") == "Decisión"
+        if other.get("type") == "Decisión" and (
+            same_pr(other, pr_number) or same_area(closed_record, other)
         ):
-            return True
-        if other.get("type") == "Decisión" and same_area(closed_record, other):
             return True
 
     for item in snapshot.get("qa", []):
@@ -440,9 +495,16 @@ def detect_a1_02(snapshot: Mapping[str, Any]) -> list[Alert]:
         if pr:
             terminal_raw = pr.get("merged_at") or (pr.get("closed_at") if pr.get("state") == "closed" else None)
             terminal_at = parse_time(terminal_raw)
+            next_step = str(record.get("next_step") or "")
             stale_pr_claim = bool(
-                STALE_OPEN_PATTERN.search(combined)
-                or STALE_MERGE_ACTION_PATTERN.search(str(record.get("next_step") or ""))
+                (
+                    STALE_OPEN_PATTERN.search(combined)
+                    and not STALE_OPEN_NEGATION_PATTERN.search(combined)
+                )
+                or (
+                    STALE_MERGE_ACTION_PATTERN.search(next_step)
+                    and not STALE_MERGE_ACTION_NEGATION_PATTERN.search(next_step)
+                )
             )
             if terminal_at and edited > terminal_at and stale_pr_claim:
                 alert = make_alert(
@@ -460,6 +522,8 @@ def detect_a1_02(snapshot: Mapping[str, Any]) -> list[Alert]:
             record.get("github_ref"), record.get("summary"), record.get("next_step")
         ):
             if claimed_status not in {"PENDING", "IN_PROGRESS", "EN_CURSO", "PENDIENTE"}:
+                continue
+            if ci_pending_claim_is_negated(record, run_number):
                 continue
             run = run_for(snapshot, run_number)
             completed_at = parse_time(run.get("updated_at")) if run and run.get("status") == "completed" else None
@@ -522,17 +586,32 @@ def detect_a1_04(snapshot: Mapping[str, Any]) -> list[Alert]:
         current_head = str(pr.get("head_sha") or "").lower()
         if not closed_at or not current_head:
             continue
-        activity = latest_material_head_activity_after(snapshot, current_head, closed_at)
-        if not activity:
+        github_activity = latest_material_head_activity_after(snapshot, current_head, closed_at)
+        coordination_activity = active_coordination_activity_after(
+            snapshot, record, pr_number, closed_at
+        )
+        if not github_activity and not coordination_activity:
             continue
         if has_canonical_reactivation(snapshot, record, pr_number, closed_at):
             continue
+        if github_activity:
+            evidence = (
+                f"cierre={record.get('last_edited')}; HEAD={current_head}; "
+                f"Android CI #{github_activity.get('run_number')} event={github_activity.get('event')} "
+                f"created={github_activity.get('created_at')}"
+            )
+        else:
+            evidence = (
+                f"cierre={record.get('last_edited')}; coordinación activa="
+                f"{coordination_activity.get('subject') or coordination_activity.get('id')} "
+                f"updated={coordination_activity.get('last_edited')}"
+            )
         alert = make_alert(
             "A1-04",
             record,
             specialists,
-            f"El trabajo de PR #{pr_number} volvió a tener actividad GitHub después del cierre canónico, mientras las fuentes propietarias siguen cerradas y no hay trigger canónico de reactivación.",
-            f"cierre={record.get('last_edited')}; HEAD={current_head}; Android CI #{activity.get('run_number')} event={activity.get('event')} created={activity.get('created_at')}",
+            f"El trabajo de PR #{pr_number} volvió a aparecer activo después del cierre canónico, mientras las fuentes propietarias siguen cerradas y no hay trigger canónico de reactivación.",
+            evidence,
         )
         if alert:
             alerts.append(alert)
@@ -541,8 +620,8 @@ def detect_a1_04(snapshot: Mapping[str, Any]) -> list[Alert]:
 
 def detect(snapshot: Mapping[str, Any]) -> list[Alert]:
     alerts = []
-    for detector in (detect_a1_01, detect_a1_02, detect_a1_03, detect_a1_04):
-        alerts.extend(detector(snapshot))
+    for detector_fn in (detect_a1_01, detect_a1_02, detect_a1_03, detect_a1_04):
+        alerts.extend(detector_fn(snapshot))
     unique: dict[tuple[str, str, str], Alert] = {}
     for alert in alerts:
         unique[(alert.signal, alert.area, alert.evidence)] = alert
