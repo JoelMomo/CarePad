@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,6 +43,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private const val CUE_BIN_QA_LOG_TAG = "CarePadCueBin"
 
 private enum class AppScreen {
     MAIN,
@@ -155,9 +158,21 @@ private fun ThorDoctorApp(
 
         scope.launch {
             try {
-                val result =
+                val (result, cueBinDiagnostics) =
                     withContext(Dispatchers.IO) {
-                        GameLibraryStorage.scan(context)
+                        val scanResult =
+                            GameLibraryStorage.scan(context)
+
+                        val diagnosticResult =
+                            runCatching {
+                                GameLibraryCueBinDiagnostics.evaluate(
+                                    context = context,
+                                    rootUri = scanRootUri,
+                                )
+                            }
+                                .getOrNull()
+
+                        scanResult to diagnosticResult
                     }
 
                 if (
@@ -169,6 +184,20 @@ private fun ThorDoctorApp(
                         GameLibraryStorage.folderDisplayName(context)
                     hasValidGameFolder =
                         GameLibraryStorage.hasValidRootFolder(context)
+
+                    if (cueBinDiagnostics != null) {
+                        Log.i(
+                            CUE_BIN_QA_LOG_TAG,
+                            GameLibraryCueBinDiagnostics.qaLogMessage(
+                                cueBinDiagnostics
+                            )
+                        )
+                    } else {
+                        Log.w(
+                            CUE_BIN_QA_LOG_TAG,
+                            "evaluation_failed"
+                        )
+                    }
                 }
 
             } finally {
