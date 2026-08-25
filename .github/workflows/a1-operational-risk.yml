@@ -53,11 +53,16 @@ jobs:
 
       - name: Run A1 detector
         id: detector
-        continue-on-error: true
-        run: python3 scripts/automation/a1_operational_risk.py
+        shell: bash
+        run: |
+          set +e
+          python3 scripts/automation/a1_operational_risk.py
+          status=$?
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Upload A1 alert
-        if: hashFiles('a1-alert.json') != ''
+        if: steps.detector.outputs.exit_code == '2' && hashFiles('a1-alert.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: a1-alert
@@ -66,5 +71,11 @@ jobs:
           retention-days: 7
 
       - name: Make detected contradiction visible
-        if: hashFiles('a1-alert.json') != ''
+        if: steps.detector.outputs.exit_code == '2' && hashFiles('a1-alert.json') != ''
         run: exit 1
+
+      - name: Fail on detector implementation error
+        if: steps.detector.outputs.exit_code != '0' && steps.detector.outputs.exit_code != '2'
+        run: |
+          echo "A1 detector failed without emitting a health signal." >&2
+          exit 1
