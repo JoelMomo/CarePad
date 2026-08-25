@@ -2,10 +2,6 @@ package com.joel.thordoctor.modules.gamesbios.diagnostics
 
 import com.joel.thordoctor.modules.gamesbios.library.GameLibraryEntry
 import com.joel.thordoctor.modules.gamesbios.library.GameLibraryScanResult
-import com.joel.thordoctor.modules.gamesbios.organization.ClassificationConfidence
-import com.joel.thordoctor.modules.gamesbios.organization.RomClassification
-import com.joel.thordoctor.modules.gamesbios.organization.RomPlatform
-import com.joel.thordoctor.modules.gamesbios.organization.RomPlatformCandidate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -24,7 +20,7 @@ class GameLibraryPlatformDiagnosticEvaluatorTest {
     }
 
     @Test
-    fun unresolvedClassificationProducesDiagnostic() {
+    fun unresolvedClassificationProducesUnresolvedDiagnostic() {
         val entry = entry("disc.iso")
 
         val diagnostic = GameLibraryPlatformDiagnosticEvaluator.evaluate(entry)
@@ -38,35 +34,7 @@ class GameLibraryPlatformDiagnosticEvaluatorTest {
     }
 
     @Test
-    fun nonConclusiveCandidateIsReportedAsInsufficientEvidence() {
-        val entry = entry("ambiguous.rom")
-        val classification = RomClassification(
-            fileName = entry.name,
-            candidates = listOf(
-                RomPlatformCandidate(
-                    platform = RomPlatform.PLAYSTATION,
-                    confidence = ClassificationConfidence.LOW,
-                    reason = "insufficient evidence",
-                )
-            ),
-        )
-
-        val diagnostic = GameLibraryPlatformDiagnosticEvaluator.diagnosticFor(
-            entry = entry,
-            classification = classification,
-        )
-
-        assertNotNull(diagnostic)
-        requireNotNull(diagnostic)
-        assertEquals(
-            GameLibraryPlatformDiagnosticKind.INSUFFICIENT_EVIDENCE,
-            diagnostic.kind,
-        )
-        assertEquals(classification, diagnostic.classification)
-    }
-
-    @Test
-    fun scanEvaluationIsDeterministicAndUsesOnlyExistingEntries() {
+    fun mixedScanReturnsOnlyUnresolvedEntriesDeterministically() {
         val scanResult = GameLibraryScanResult(
             folderName = "Games",
             gameCount = 3,
@@ -86,6 +54,7 @@ class GameLibraryPlatformDiagnosticEvaluatorTest {
             listOf("Sony/disc.iso", "Arcade/archive.chd"),
             first.map { it.entry.relativePath },
         )
+        assertTrue(first.all { it.kind == GameLibraryPlatformDiagnosticKind.UNRESOLVED })
         assertEquals(3, scanResult.games.size)
         assertEquals(3, scanResult.gameCount)
     }

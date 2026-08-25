@@ -7,7 +7,6 @@ import com.joel.thordoctor.modules.gamesbios.organization.RomPlatformClassifier
 
 enum class GameLibraryPlatformDiagnosticKind {
     UNRESOLVED,
-    INSUFFICIENT_EVIDENCE,
 }
 
 data class GameLibraryPlatformDiagnostic(
@@ -31,31 +30,16 @@ object GameLibraryPlatformDiagnosticEvaluator {
 
     fun evaluate(
         entry: GameLibraryEntry,
-    ): GameLibraryPlatformDiagnostic? =
-        diagnosticFor(
-            entry = entry,
-            classification = RomPlatformClassifier.classify(entry.name),
-        )
-
-    internal fun diagnosticFor(
-        entry: GameLibraryEntry,
-        classification: RomClassification,
     ): GameLibraryPlatformDiagnostic? {
+        val classification = RomPlatformClassifier.classify(entry.name)
         if (classification.isUnambiguous) {
             return null
         }
 
-        val kind =
-            if (classification.candidates.isEmpty()) {
-                GameLibraryPlatformDiagnosticKind.UNRESOLVED
-            } else {
-                GameLibraryPlatformDiagnosticKind.INSUFFICIENT_EVIDENCE
-            }
-
         return GameLibraryPlatformDiagnostic(
             entry = entry,
             classification = classification,
-            kind = kind,
+            kind = GameLibraryPlatformDiagnosticKind.UNRESOLVED,
         )
     }
 }
