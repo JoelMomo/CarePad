@@ -3,7 +3,8 @@
 
 A1 never diagnoses specialist health. It only emits REVISAR SALUD when one of
 four cross-source contradictions is demonstrable. Missing/ambiguous evidence is
-silence by design.
+silence by design. Infrastructure unavailability is a separate technical
+failure and is never a health signal.
 """
 
 from __future__ import annotations
@@ -25,6 +26,10 @@ COORDINATION_DATA_SOURCE = "280e1e03-d9a1-4eb1-8c45-56e0e1b066b9"
 QA_DATA_SOURCE = "e1136a36-aba5-41dc-bca5-4cf1d392e0a3"
 SPECIALISTS_DATA_SOURCE = "53098d95-2f24-40ff-930a-26ef65aab673"
 ANDROID_CI_WORKFLOW = "android-ci.yml"
+
+EXIT_OK = 0
+EXIT_ALERT = 2
+EXIT_UNAVAILABLE = 3
 
 ACTIVE_COORDINATION_STATES = {"Abierto", "En curso", "Esperando"}
 CLOSED_COORDINATION_STATES = {"Resuelto", "Archivado"}
@@ -54,9 +59,12 @@ STALE_MERGE_ACTION_PATTERN = re.compile(
     r"\b(fusionar|mergear|hacer\s+merge|aprobar\s+(?:el\s+)?merge)\b",
     re.IGNORECASE,
 )
-GATE_ACTION_PATTERN = re.compile(
-    r"\b(validar|revalidar|probar|qa|fusionar|mergear|merge|aprobar|revisar)\b",
-    re.IGNORECASE,
+QA_GATE_PATTERN = re.compile(
+    r"(?:\b(?:QA|validaci[oó]n(?:\s+f[ií]sica)?|prueba(?:\s+f[ií]sica)?)\b.{0,100}"
+    r"\b(?:PASS|valid(?:ad[oa]|aci[oó]n)|aprob(?:ad[oa]|aci[oó]n)|gate)\b)"
+    r"|(?:\b(?:PASS|valid(?:ad[oa]|aci[oó]n)|aprob(?:ad[oa]|aci[oó]n)|gate)\b.{0,100}"
+    r"\b(?:QA|validaci[oó]n(?:\s+f[ií]sica)?)\b)",
+    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -191,6 +199,12 @@ def run_for(snapshot: Mapping[str, Any], number: int) -> Mapping[str, Any] | Non
     return snapshot.get("runs", {}).get(str(number)) or snapshot.get("runs", {}).get(number)
 
 
+def head_runs_for(snapshot: Mapping[str, Any], head_sha: str | None) -> list[Mapping[str, Any]]:
+    if not head_sha:
+        return []
+    return list(snapshot.get("head_runs", {}).get(head_sha.lower(), []))
+
+
 def same_pr(record: Mapping[str, Any], pr_number: int) -> bool:
     return parse_pr_number(record.get("github_ref"), record.get("pr_url"), record.get("version")) == pr_number
 
@@ -198,6 +212,12 @@ def same_pr(record: Mapping[str, Any], pr_number: int) -> bool:
 def area_of(record: Mapping[str, Any]) -> str | None:
     value = record.get("owner") or record.get("area")
     return str(value).strip() if value else None
+
+
+def same_area(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
+    left_area = area_of(left)
+    right_area = area_of(right)
+    return bool(left_area and right_area and left_area.casefold() == right_area.casefold())
 
 
 def resolve_target(area: str, specialists: Iterable[Mapping[str, Any]]) -> str:
@@ -211,11 +231,139 @@ def resolve_target(area: str, specialists: Iterable[Mapping[str, Any]]) -> str:
     return matches[0] if len(matches) == 1 else area
 
 
-def make_alert(signal: str, record: Mapping[str, Any], specialists: Iterable[Mapping[str, Any]], reason: str, evidence: str) -> Alert | None:
+def make_alert(
+    signal: str,
+    record: Mapping[str, Any],
+    specialists: Iterable[Mapping[str, Any]],
+    reason: str,
+    evidence: str,
+) -> Alert | None:
     area = area_of(record)
     if not area:
         return None
     return Alert(signal=signal, area=area, target=resolve_target(area, specialists), reason=reason, evidence=evidence)
+
+
+def head_existed_by(snapshot: Mapping[str, Any], pr: Mapping[str, Any], head_sha: str, when: datetime) -> bool:
+    pr_updated = parse_time(pr.get("updated_at"))
+    if pr_updated and pr_updated <= when:
+        return True
+    for run in head_runs_for(snapshot, head_sha):
+        created = parse_time(run.get("created_at"))
+        if created and created <= when:
+            return True
+    return False
+
+
+def ci_success_claim_invalid_at(
+    run: Mapping[str, Any],
+    expected_head: str | None,
+    handoff_time: datetime,
+) -> str | None:
+    created = parse_time(run.get("created_at"))
+    if not created:
+        return None
+
+    if created > handoff_time:
+        return "la ejecución citada todavía no existía cuando se actualizó el handoff"
+
+    run_head = str(run.get("head_sha") or "").lower() or None
+    if expected_head and run_head and run_head != expected_head:
+        return f"la ejecución ya estaba asociada a HEAD {run_head}, no a {expected_head}"
+
+    actual = str(run.get("conclusion") or run.get("status") or "").upper()
+    if actual == "SUCCESS":
+        return None
+
+    updated = parse_time(run.get("updated_at"))
+    if run.get("status") == "completed" and updated and updated <= handoff_time:
+        return f"la ejecución ya había terminado con estado {actual or 'desconocido'}"
+
+    return None
+
+
+def qa_gate_reuse_record(
+    snapshot: Mapping[str, Any],
+    pr_number: int,
+    qa_sha: str,
+    current_head: str,
+) -> Mapping[str, Any] | None:
+    validated_shas = {
+        parsed
+        for item in snapshot.get("qa", [])
+        if item.get("validated_real")
+        and item.get("state") not in HISTORICAL_QA_STATES
+        and same_pr(item, pr_number)
+        and (parsed := parse_qa_sha(item.get("version")))
+    }
+    if validated_shas != {qa_sha}:
+        return None
+
+    matches: list[Mapping[str, Any]] = []
+    for source in snapshot.get("coordination", []):
+        if source.get("state") not in ACTIVE_COORDINATION_STATES or is_historical(source):
+            continue
+        if not same_pr(source, pr_number):
+            continue
+        claimed_head = parse_claimed_head(source.get("github_ref"), source.get("summary"), source.get("next_step"))
+        if claimed_head != current_head:
+            continue
+        if QA_GATE_PATTERN.search(text_of(source)):
+            matches.append(source)
+    return matches[0] if len(matches) == 1 else None
+
+
+def latest_material_head_activity_after(
+    snapshot: Mapping[str, Any],
+    head_sha: str,
+    after: datetime,
+) -> Mapping[str, Any] | None:
+    candidates = []
+    for run in head_runs_for(snapshot, head_sha):
+        created = parse_time(run.get("created_at"))
+        if not created or created <= after:
+            continue
+        if run.get("event") not in {"pull_request", "push"}:
+            continue
+        candidates.append(run)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: parse_time(item.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc))
+
+
+def has_canonical_reactivation(
+    snapshot: Mapping[str, Any],
+    closed_record: Mapping[str, Any],
+    pr_number: int,
+    closed_at: datetime,
+) -> bool:
+    pr = pr_for(snapshot, pr_number)
+    if pr:
+        for event in pr.get("events", []):
+            event_time = parse_time(event.get("created_at"))
+            if event.get("event") == "reopened" and event_time and event_time > closed_at:
+                return True
+
+    for other in snapshot.get("coordination", []):
+        if other is closed_record:
+            continue
+        edited = parse_time(other.get("last_edited"))
+        if not edited or edited <= closed_at:
+            continue
+        if same_pr(other, pr_number) and (
+            other.get("state") in ACTIVE_COORDINATION_STATES or other.get("type") == "Decisión"
+        ):
+            return True
+        if other.get("type") == "Decisión" and same_area(closed_record, other):
+            return True
+
+    for item in snapshot.get("qa", []):
+        edited = parse_time(item.get("last_edited"))
+        if not edited or edited <= closed_at or item.get("state") in HISTORICAL_QA_STATES:
+            continue
+        if same_pr(item, pr_number) or same_area(closed_record, item):
+            return True
+    return False
 
 
 def detect_a1_01(snapshot: Mapping[str, Any]) -> list[Alert]:
@@ -226,6 +374,10 @@ def detect_a1_01(snapshot: Mapping[str, Any]) -> list[Alert]:
             continue
         if is_historical(record):
             continue
+        handoff_time = parse_time(record.get("last_edited"))
+        if not handoff_time:
+            continue
+
         pr_number = parse_pr_number(record.get("github_ref"), record.get("summary"), record.get("next_step"))
         pr = pr_for(snapshot, pr_number)
         if not pr:
@@ -236,53 +388,40 @@ def detect_a1_01(snapshot: Mapping[str, Any]) -> list[Alert]:
         if claimed_head and current_head and claimed_head != current_head:
             files = comparison_files(snapshot, claimed_head, current_head)
             material = material_files(files)
-            if material:
+            if material and head_existed_by(snapshot, pr, current_head, handoff_time):
                 alert = make_alert(
                     "A1-01",
                     record,
                     specialists,
-                    f"El handoff activo fija HEAD {claimed_head}, pero PR #{pr_number} está en {current_head} con cambios no documentales.",
-                    f"compare {claimed_head}..{current_head}: {', '.join(material[:8])}",
+                    f"El handoff fijó HEAD {claimed_head} cuando PR #{pr_number} ya estaba en {current_head} con cambios no documentales.",
+                    f"handoff={record.get('last_edited')}; compare {claimed_head}..{current_head}: {', '.join(material[:8])}",
                 )
                 if alert:
                     alerts.append(alert)
                 continue
 
-        for run_number, claimed_status in parse_ci_claims(record.get("github_ref"), record.get("summary"), record.get("next_step")):
+        for run_number, claimed_status in parse_ci_claims(
+            record.get("github_ref"), record.get("summary"), record.get("next_step")
+        ):
             if claimed_status != "SUCCESS":
                 continue
             run = run_for(snapshot, run_number)
             if not run:
                 continue
-            actual = str(run.get("conclusion") or run.get("status") or "").upper()
             expected_head = claimed_head or current_head
-            head_mismatch = bool(expected_head and run.get("head_sha") and str(run.get("head_sha")).lower() != expected_head)
-            if actual != "SUCCESS" or head_mismatch:
-                detail = f"CI #{run_number}: estado={actual or 'desconocido'}, head={run.get('head_sha') or 'desconocido'}"
-                alert = make_alert(
-                    "A1-01",
-                    record,
-                    specialists,
-                    f"El handoff usa CI #{run_number} como gate SUCCESS, pero GitHub no confirma ese gate para la identidad esperada.",
-                    detail,
-                )
-                if alert:
-                    alerts.append(alert)
-                break
-        else:
-            edited = parse_time(record.get("last_edited"))
-            terminal_at = parse_time(pr.get("merged_at") or pr.get("closed_at"))
-            next_step = str(record.get("next_step") or "")
-            if edited and terminal_at and terminal_at > edited and GATE_ACTION_PATTERN.search(next_step):
-                alert = make_alert(
-                    "A1-01",
-                    record,
-                    specialists,
-                    f"El gate del handoff quedó invalidado por el cierre/merge posterior de PR #{pr_number}.",
-                    f"registro={record.get('last_edited')}; evento GitHub={pr.get('merged_at') or pr.get('closed_at')}; siguiente paso={next_step}",
-                )
-                if alert:
-                    alerts.append(alert)
+            invalid = ci_success_claim_invalid_at(run, expected_head, handoff_time)
+            if not invalid:
+                continue
+            alert = make_alert(
+                "A1-01",
+                record,
+                specialists,
+                f"El handoff usa CI #{run_number} como gate SUCCESS, pero esa invalidez ya existía al actualizar el handoff: {invalid}.",
+                f"handoff={record.get('last_edited')}; CI #{run_number}: status={run.get('status')}, conclusion={run.get('conclusion')}, head={run.get('head_sha')}, created={run.get('created_at')}, updated={run.get('updated_at')}",
+            )
+            if alert:
+                alerts.append(alert)
+            break
     return alerts
 
 
@@ -301,7 +440,10 @@ def detect_a1_02(snapshot: Mapping[str, Any]) -> list[Alert]:
         if pr:
             terminal_raw = pr.get("merged_at") or (pr.get("closed_at") if pr.get("state") == "closed" else None)
             terminal_at = parse_time(terminal_raw)
-            stale_pr_claim = bool(STALE_OPEN_PATTERN.search(combined) or STALE_MERGE_ACTION_PATTERN.search(str(record.get("next_step") or "")))
+            stale_pr_claim = bool(
+                STALE_OPEN_PATTERN.search(combined)
+                or STALE_MERGE_ACTION_PATTERN.search(str(record.get("next_step") or ""))
+            )
             if terminal_at and edited > terminal_at and stale_pr_claim:
                 alert = make_alert(
                     "A1-02",
@@ -314,7 +456,9 @@ def detect_a1_02(snapshot: Mapping[str, Any]) -> list[Alert]:
                     alerts.append(alert)
                 continue
 
-        for run_number, claimed_status in parse_ci_claims(record.get("github_ref"), record.get("summary"), record.get("next_step")):
+        for run_number, claimed_status in parse_ci_claims(
+            record.get("github_ref"), record.get("summary"), record.get("next_step")
+        ):
             if claimed_status not in {"PENDING", "IN_PROGRESS", "EN_CURSO", "PENDIENTE"}:
                 continue
             run = run_for(snapshot, run_number)
@@ -347,65 +491,48 @@ def detect_a1_03(snapshot: Mapping[str, Any]) -> list[Alert]:
             continue
         files = comparison_files(snapshot, qa_sha, current_head)
         material = material_files(files)
-        if material:
-            alert = make_alert(
-                "A1-03",
-                record,
-                specialists,
-                f"La evidencia QA física está aplicada a {qa_sha}, pero PR #{pr_number} tiene HEAD {current_head} con cambios no documentales.",
-                f"compare {qa_sha}..{current_head}: {', '.join(material[:8])}",
-            )
-            if alert:
-                alerts.append(alert)
+        if not material:
+            continue
+        gate_source = qa_gate_reuse_record(snapshot, pr_number, qa_sha, current_head)
+        if not gate_source:
+            continue
+        alert = make_alert(
+            "A1-03",
+            record,
+            specialists,
+            f"Una fuente activa está reutilizando la validación QA de {qa_sha} como gate de HEAD {current_head} en PR #{pr_number}, pese a cambios no documentales.",
+            f"fuente activa={gate_source.get('subject') or gate_source.get('id')}; compare {qa_sha}..{current_head}: {', '.join(material[:8])}",
+        )
+        if alert:
+            alerts.append(alert)
     return alerts
 
 
 def detect_a1_04(snapshot: Mapping[str, Any]) -> list[Alert]:
     alerts: list[Alert] = []
     specialists = snapshot.get("specialists", [])
-    coordination = snapshot.get("coordination", [])
-    qa = snapshot.get("qa", [])
-    for record in coordination:
+    for record in snapshot.get("coordination", []):
         if record.get("state") not in CLOSED_COORDINATION_STATES or is_historical(record):
             continue
         pr_number = parse_pr_number(record.get("github_ref"), record.get("summary"), record.get("next_step"))
         pr = pr_for(snapshot, pr_number)
         if not pr or pr.get("state") != "open":
             continue
-        edited = parse_time(record.get("last_edited"))
-        reopened_events = [
-            event for event in pr.get("events", [])
-            if event.get("event") == "reopened" and parse_time(event.get("created_at"))
-        ]
-        if not edited or not reopened_events:
+        closed_at = parse_time(record.get("last_edited"))
+        current_head = str(pr.get("head_sha") or "").lower()
+        if not closed_at or not current_head:
             continue
-        reopened = max(reopened_events, key=lambda event: parse_time(event.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc))
-        reopened_at = parse_time(reopened.get("created_at"))
-        if not reopened_at or reopened_at <= edited:
+        activity = latest_material_head_activity_after(snapshot, current_head, closed_at)
+        if not activity:
             continue
-
-        active_coord_trigger = any(
-            other is not record
-            and other.get("state") in ACTIVE_COORDINATION_STATES
-            and same_pr(other, pr_number)
-            and (parse_time(other.get("last_edited")) or datetime.min.replace(tzinfo=timezone.utc)) >= reopened_at
-            for other in coordination
-        )
-        qa_regression_trigger = any(
-            same_pr(item, pr_number)
-            and item.get("regression") == "Sí"
-            and item.get("state") not in HISTORICAL_QA_STATES
-            and (parse_time(item.get("last_edited")) or datetime.min.replace(tzinfo=timezone.utc)) >= reopened_at
-            for item in qa
-        )
-        if active_coord_trigger or qa_regression_trigger:
+        if has_canonical_reactivation(snapshot, record, pr_number, closed_at):
             continue
         alert = make_alert(
             "A1-04",
             record,
             specialists,
-            f"PR #{pr_number} fue reabierto después de que el trabajo quedara cerrado, sin trigger canónico posterior en Coordinación ni QA de regresión.",
-            f"registro cerrado actualizado={record.get('last_edited')}; reopened={reopened.get('created_at')}",
+            f"El trabajo de PR #{pr_number} volvió a tener actividad GitHub después del cierre canónico, mientras las fuentes propietarias siguen cerradas y no hay trigger canónico de reactivación.",
+            f"cierre={record.get('last_edited')}; HEAD={current_head}; Android CI #{activity.get('run_number')} event={activity.get('event')} created={activity.get('created_at')}",
         )
         if alert:
             alerts.append(alert)
@@ -511,6 +638,16 @@ class GitHubClient:
             page += 1
         return None
 
+    def get_workflow_runs_for_head(self, head_sha: str) -> list[Mapping[str, Any]]:
+        encoded = urllib.parse.quote(head_sha, safe="")
+        payload = self.client.request(
+            f"/repos/{self.repository}/actions/workflows/{ANDROID_CI_WORKFLOW}/runs?head_sha={encoded}&per_page=100"
+        )
+        runs = payload.get("workflow_runs", [])
+        if not isinstance(runs, list):
+            raise OperationalDataUnavailable(f"Unexpected workflow-runs payload for HEAD {head_sha}")
+        return runs
+
     def compare_files(self, base: str, head: str) -> list[str] | None:
         path = f"/repos/{self.repository}/compare/{urllib.parse.quote(base, safe='')}...{urllib.parse.quote(head, safe='')}"
         payload = self.client.request(path)
@@ -573,6 +710,18 @@ def normalize_specialist(page: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def normalize_run(raw: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "run_number": raw.get("run_number"),
+        "status": raw.get("status"),
+        "conclusion": raw.get("conclusion"),
+        "head_sha": raw.get("head_sha"),
+        "event": raw.get("event"),
+        "created_at": raw.get("created_at"),
+        "updated_at": raw.get("updated_at"),
+    }
+
+
 def collect_snapshot(env: Mapping[str, str]) -> dict[str, Any]:
     github_token = env.get("GITHUB_TOKEN")
     notion_token = env.get("NOTION_A1_READ_TOKEN")
@@ -626,13 +775,28 @@ def collect_snapshot(env: Mapping[str, str]) -> dict[str, Any]:
     for number in sorted(run_numbers):
         raw = github.get_workflow_run(number)
         if raw:
-            runs[str(number)] = {
-                "run_number": number,
-                "status": raw.get("status"),
-                "conclusion": raw.get("conclusion"),
-                "head_sha": raw.get("head_sha"),
-                "updated_at": raw.get("updated_at"),
-            }
+            runs[str(number)] = normalize_run(raw)
+
+    head_shas_needed: set[str] = set()
+    for record in coordination:
+        pr_number = parse_pr_number(record.get("github_ref"), record.get("summary"), record.get("next_step"))
+        pr = prs.get(str(pr_number)) if pr_number else None
+        current = str(pr.get("head_sha") or "").lower() if pr else ""
+        claimed = parse_claimed_head(record.get("github_ref"), record.get("summary"), record.get("next_step"))
+        needs_a1_01_time = (
+            record.get("type") == "Handoff"
+            and record.get("state") in ACTIVE_COORDINATION_STATES
+            and claimed
+            and current
+            and claimed != current
+        )
+        needs_a1_04_activity = record.get("state") in CLOSED_COORDINATION_STATES and pr and pr.get("state") == "open"
+        if current and (needs_a1_01_time or needs_a1_04_activity):
+            head_shas_needed.add(current)
+
+    head_runs: dict[str, list[dict[str, Any]]] = {}
+    for head_sha in sorted(head_shas_needed):
+        head_runs[head_sha] = [normalize_run(raw) for raw in github.get_workflow_runs_for_head(head_sha)]
 
     comparisons: dict[str, list[str] | None] = {}
     for record in coordination:
@@ -657,6 +821,7 @@ def collect_snapshot(env: Mapping[str, str]) -> dict[str, Any]:
         "specialists": specialists,
         "prs": prs,
         "runs": runs,
+        "head_runs": head_runs,
         "comparisons": comparisons,
     }
 
@@ -686,7 +851,12 @@ def write_outputs(alerts: list[Alert], repository: str, output_path: Path, summa
                 summary.write(alert.text() + "\n\n")
 
 
-def run_live(env: Mapping[str, str] | None = None, *, output_path: Path | None = None, summary_path: Path | None = None) -> int:
+def run_live(
+    env: Mapping[str, str] | None = None,
+    *,
+    output_path: Path | None = None,
+    summary_path: Path | None = None,
+) -> int:
     env = os.environ if env is None else env
     output_path = output_path or Path("a1-alert.json")
     if summary_path is None and env.get("GITHUB_STEP_SUMMARY"):
@@ -696,15 +866,15 @@ def run_live(env: Mapping[str, str] | None = None, *, output_path: Path | None =
         alerts = detect(snapshot)
     except OperationalDataUnavailable as exc:
         print(f"A1 unavailable; no health signal emitted: {exc}", file=sys.stderr)
-        return 0
+        return EXIT_UNAVAILABLE
 
     if not alerts:
-        return 0
+        return EXIT_OK
     write_outputs(alerts, snapshot.get("repository", env.get("GITHUB_REPOSITORY", "")), output_path, summary_path)
     for alert in alerts:
         print(alert.text())
         print()
-    return 2
+    return EXIT_ALERT
 
 
 def main() -> int:
