@@ -1,0 +1,81 @@
+name: A1 Operational Risk
+
+on:
+  workflow_run:
+    workflows:
+      - Android CI
+    types:
+      - completed
+  workflow_dispatch:
+  # Test-only trigger. The live detector never runs for pull_request and
+  # therefore never receives the Notion secret or privileged live context.
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/automation/a1_operational_risk.py
+      - scripts/automation/test_a1_operational_risk.py
+      - .github/workflows/a1-operational-risk.yml
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  tests:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout tested revision without secrets
+        uses: actions/checkout@v4
+
+      - name: Run A1 unit tests
+        run: python3 -m unittest scripts/automation/test_a1_operational_risk.py -v
+
+  live:
+    if: >-
+      github.event_name == 'workflow_run' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      NOTION_A1_READ_TOKEN: ${{ secrets.NOTION_A1_READ_TOKEN }}
+
+    steps:
+      - name: Checkout trusted main only
+        uses: actions/checkout@v4
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+
+      - name: Run A1 detector
+        id: detector
+        shell: bash
+        run: |
+          set +e
+          python3 scripts/automation/a1_operational_risk.py
+          status=$?
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload A1 alert
+        if: steps.detector.outputs.exit_code == '2' && hashFiles('a1-alert.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: a1-alert
+          path: a1-alert.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Make detected contradiction visible
+        if: steps.detector.outputs.exit_code == '2' && hashFiles('a1-alert.json') != ''
+        run: exit 1
+
+      - name: Fail when detector is unavailable or broken
+        if: steps.detector.outputs.exit_code != '0' && steps.detector.outputs.exit_code != '2'
+        run: |
+          echo "A1 detector unavailable or failed; no REVISAR SALUD signal was emitted." >&2
+          exit 1
