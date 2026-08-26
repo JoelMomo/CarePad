@@ -112,7 +112,11 @@ def _explicit_current_open_claim(text: str, pr_number: int) -> bool:
     )
     pr = rf"PR\s*#{pr_number}\b"
     # Deliberately present tense: imperfect forms such as "seguía" describe past evidence.
-    present = r"(?:(?:todav[ií]a\s+)?(?:est[aá]|sigue|permanece|contin[uú]a)\s+)?"
+    present = (
+        r"(?:(?:todav[ií]a\s+)?"
+        r"(?:est[aá]|sigue|permanece|contin[uú]a)"
+        r"(?:\s+todav[ií]a)?\s+)?"
+    )
     separator = r"\s*(?:(?:[:=·—-])\s*)?"
 
     after_pr = re.compile(
@@ -122,8 +126,16 @@ def _explicit_current_open_claim(text: str, pr_number: int) -> bool:
     if after_pr.search(text):
         return True
 
+    current_state = re.compile(
+        rf"\b(?:el\s+)?estado\s+actual\s+(?:del|de\s+el)\s+{pr}"
+        rf"\s*(?:(?:[:=])\s*|(?:es|est[aá])\s+){state}\b",
+        re.IGNORECASE,
+    )
+    if current_state.search(text):
+        return True
+
     before_pr = re.compile(
-        rf"\b(?:est[aá]|sigue|permanece|contin[uú]a)\s+{state}\b.{{0,24}}\b{pr}",
+        rf"\b(?:est[aá]|sigue|permanece|contin[uú]a)(?:\s+todav[ií]a)?\s+{state}\b.{{0,24}}\b{pr}",
         re.IGNORECASE | re.DOTALL,
     )
     for match in before_pr.finditer(text):
@@ -144,7 +156,7 @@ def _has_current_stale_pr_claim(record: Mapping[str, Any], pr_number: int) -> bo
 
     return any(
         _explicit_current_open_claim(str(record.get(field) or ""), pr_number)
-        for field in ("summary", "subject")
+        for field in ("summary", "subject", "next_step")
     )
 
 

@@ -270,6 +270,55 @@ class A1LiveA102ContextTests(unittest.TestCase):
         )
         self.assertEqual(["A1-02"], self.signals(data))
 
+    def test_current_next_step_claim_that_pr_still_open_remains_a1_02(self):
+        data = self.snapshot(
+            12,
+            {
+                "github_ref": "PR #12 MERGED",
+                "summary": "PR #12 quedó fusionado.",
+                "next_step": "PR #12 sigue OPEN/no fusionado; esperar gate.",
+            },
+        )
+        self.assertEqual(["A1-02"], self.signals(data))
+
+    def test_current_claim_pr_is_still_open_with_adverb_remains_a1_02(self):
+        data = self.snapshot(
+            12,
+            {
+                "github_ref": "PR #12 MERGED",
+                "summary": "PR #12 está todavía abierto.",
+            },
+        )
+        self.assertEqual(["A1-02"], self.signals(data))
+
+    def test_explicit_current_state_claim_remains_a1_02(self):
+        data = self.snapshot(
+            12,
+            {
+                "github_ref": "PR #12 MERGED",
+                "summary": "El estado actual del PR #12 es OPEN.",
+            },
+        )
+        self.assertEqual(["A1-02"], self.signals(data))
+
+    def test_completed_ci_still_claimed_pending_remains_a1_02(self):
+        data = self.snapshot(
+            12,
+            {
+                "github_ref": "PR #12 MERGED · CI #129 PENDING",
+                "summary": "PR #12 quedó fusionado; CI #129 sigue pendiente.",
+            },
+        )
+        data["runs"]["129"] = {
+            "run_number": 129,
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "1" * 40,
+            "created_at": "2026-08-24T00:10:00Z",
+            "updated_at": "2026-08-24T00:30:00Z",
+        }
+        self.assertEqual(["A1-02"], self.signals(data))
+
 
 if __name__ == "__main__":
     unittest.main()
