@@ -105,8 +105,6 @@ def get_pr_tolerating_historical_not_found(
 def _explicit_current_open_claim(text: str, pr_number: int) -> bool:
     if not text:
         return False
-    if a1.STALE_OPEN_NEGATION_PATTERN.search(text):
-        return False
 
     state = (
         r"(?:abiert[oa]|open|draft|no\s+fusionad[oa]|sin\s+fusionar|"
@@ -121,11 +119,19 @@ def _explicit_current_open_claim(text: str, pr_number: int) -> bool:
         rf"\b{pr}{separator}{present}{state}\b",
         re.IGNORECASE,
     )
+    if after_pr.search(text):
+        return True
+
     before_pr = re.compile(
         rf"\b(?:est[aá]|sigue|permanece|contin[uú]a)\s+{state}\b.{{0,24}}\b{pr}",
         re.IGNORECASE | re.DOTALL,
     )
-    return bool(after_pr.search(text) or before_pr.search(text))
+    for match in before_pr.finditer(text):
+        prefix = text[max(0, match.start() - 12):match.start()]
+        if re.search(r"\b(?:ya\s+)?no\s+$", prefix, re.IGNORECASE):
+            continue
+        return True
+    return False
 
 
 def _has_current_stale_pr_claim(record: Mapping[str, Any], pr_number: int) -> bool:
