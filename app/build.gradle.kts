@@ -29,7 +29,7 @@ android {
             if (carePadLabHost.get()) {
                 applicationIdSuffix = ".carepadlabhost"
                 versionNameSuffix = "-carepad-lab-host"
-                manifestPlaceholders["docThorMainEnabled"] = false
+                manifestPlaceholders["docThorMainEnabled"] = true
                 manifestPlaceholders["carepadRecoveryLabEnabled"] = true
             }
         }

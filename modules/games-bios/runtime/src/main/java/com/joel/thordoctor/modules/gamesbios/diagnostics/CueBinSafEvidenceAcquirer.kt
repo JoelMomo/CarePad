@@ -31,6 +31,11 @@ internal data class CueBinSafEvidence(
     val complete: Boolean,
 )
 
+data class CueBinSafEvaluationResult(
+    val complete: Boolean,
+    val diagnostics: List<CueBinDiagnostic>,
+)
+
 /**
  * Read-only acquisition of the minimum SAF evidence required by [CueBinDiagnosticEvaluator].
  *
@@ -52,7 +57,16 @@ object CueBinSafEvidenceAcquirer {
         context: Context,
         root: DocumentFile,
     ): List<CueBinDiagnostic> =
-        evaluate(
+        evaluateWithStatus(
+            context = context,
+            root = root,
+        ).diagnostics
+
+    fun evaluateWithStatus(
+        context: Context,
+        root: DocumentFile,
+    ): CueBinSafEvaluationResult =
+        evaluateWithStatus(
             DocumentFileCueBinSafNode(
                 context = context,
                 document = root,
@@ -61,21 +75,33 @@ object CueBinSafEvidenceAcquirer {
 
     internal fun evaluate(
         root: CueBinSafNode,
-    ): List<CueBinDiagnostic> {
+    ): List<CueBinDiagnostic> =
+        evaluateWithStatus(root).diagnostics
+
+    internal fun evaluateWithStatus(
+        root: CueBinSafNode,
+    ): CueBinSafEvaluationResult {
         val evidence =
             acquire(root)
 
         if (!evidence.complete) {
-            return emptyList()
-        }
-
-        return evidence.cues.flatMap { cue ->
-            CueBinDiagnosticEvaluator.evaluate(
-                cueEntry = cue.entry,
-                cueContents = cue.contents,
-                availableRelativePaths = evidence.availableRelativePaths,
+            return CueBinSafEvaluationResult(
+                complete = false,
+                diagnostics = emptyList(),
             )
         }
+
+        return CueBinSafEvaluationResult(
+            complete = true,
+            diagnostics =
+                evidence.cues.flatMap { cue ->
+                    CueBinDiagnosticEvaluator.evaluate(
+                        cueEntry = cue.entry,
+                        cueContents = cue.contents,
+                        availableRelativePaths = evidence.availableRelativePaths,
+                    )
+                },
+        )
     }
 
     internal fun acquire(
