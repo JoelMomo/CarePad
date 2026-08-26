@@ -113,6 +113,7 @@ def _explicit_current_open_claim(text: str, pr_number: int) -> bool:
         r"pendiente\s+de\s+(?:merge|fusionar)|merge\s+pendiente)"
     )
     pr = rf"PR\s*#{pr_number}\b"
+    # Deliberately present tense: imperfect forms such as "seguía" describe past evidence.
     present = r"(?:(?:todav[ií]a\s+)?(?:est[aá]|sigue|permanece|contin[uú]a)\s+)?"
     separator = r"\s*(?:(?:[:=·—-])\s*)?"
 
