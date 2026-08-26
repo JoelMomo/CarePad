@@ -133,5 +133,133 @@ class A1MissingPrReferenceTests(unittest.TestCase):
                 live.get_pr_tolerating_historical_not_found(self.client, 22)
 
 
+class A1LiveA102ContextTests(unittest.TestCase):
+    def snapshot(self, number, record, *, merged_at="2026-08-24T00:00:00Z"):
+        item = {
+            "subject": "Seguimiento",
+            "type": "Seguimiento",
+            "state": "Resuelto",
+            "owner": "Código y arquitectura",
+            "github_ref": f"PR #{number}",
+            "summary": "",
+            "next_step": "",
+            "last_edited": "2026-08-24T01:00:00Z",
+        }
+        item.update(record)
+        return {
+            "repository": "JoelMomo/CarePad",
+            "coordination": [item],
+            "qa": [],
+            "specialists": [],
+            "prs": {
+                str(number): {
+                    "number": number,
+                    "state": "closed",
+                    "merged": True,
+                    "head_sha": "1" * 40,
+                    "merged_at": merged_at,
+                    "closed_at": merged_at,
+                    "updated_at": merged_at,
+                    "events": [],
+                }
+            },
+            "runs": {},
+            "head_runs": {},
+            "comparisons": {},
+        }
+
+    def signals(self, data):
+        return [alert.signal for alert in live.detect_a1_02_contextual(data)]
+
+    def test_pr7_closed_handoff_word_open_is_not_a_pr_state_claim(self):
+        data = self.snapshot(
+            7,
+            {
+                "github_ref": (
+                    "CarePad PR #7 MERGED · source HEAD " + "0" * 40 +
+                    " · merge commit " + "2" * 40 + " · CI #82 SUCCESS · QA PASS 16/16"
+                ),
+                "summary": (
+                    "PR #7 está fusionado en main tras CI pre-merge completa y QA PASS 16/16. "
+                    "No queda bloqueo ni handoff transversal abierto por recuperación de módulos."
+                ),
+                "next_step": "Ninguno en Coordinación. Reabrir solo si aparece una regresión real.",
+                "last_edited": "2026-08-24T03:26:00Z",
+            },
+            merged_at="2026-08-24T02:45:04Z",
+        )
+        self.assertEqual([], self.signals(data))
+
+    def test_pr5_closed_handoff_word_open_is_not_a_pr_state_claim(self):
+        data = self.snapshot(
+            5,
+            {
+                "github_ref": (
+                    "CarePad PR #5 · head " + "3" * 40 +
+                    " · merge " + "4" * 40 + " · QA físico BUG-2 PASS 3/3"
+                ),
+                "summary": (
+                    "BUG-2 quedó validado físicamente en Pixel 6 con PASS en los tres casos SAF "
+                    "y PR #5 fue fusionado en main. No queda bloqueo ni handoff transversal abierto por este defecto."
+                ),
+                "next_step": "Ninguno en Coordinación. Reabrir solo si aparece una regresión real.",
+                "last_edited": "2026-08-25T01:23:00Z",
+            },
+            merged_at="2026-08-24T23:35:27Z",
+        )
+        self.assertEqual([], self.signals(data))
+
+    def test_pr17_pre_merge_narrative_is_not_a_current_pr_state_claim(self):
+        data = self.snapshot(
+            17,
+            {
+                "state": "En curso",
+                "github_ref": (
+                    "CarePad PR #17 MERGED · merge commit main@" + "5" * 40 +
+                    " · HEAD fusionado " + "6" * 40 +
+                    " · A1 Operational Risk #27 SUCCESS · Android CI #125 SUCCESS"
+                ),
+                "summary": (
+                    "Joël autorizó explícitamente el merge de PR #17 y Coordinación revalidó inmediatamente "
+                    "que el PR seguía OPEN/no fusionado, mergeable, antes de ejecutar el merge autorizado."
+                ),
+                "last_edited": "2026-08-26T14:28:00Z",
+            },
+            merged_at="2026-08-26T14:26:25Z",
+        )
+        self.assertEqual([], self.signals(data))
+
+    def test_current_summary_claim_that_pr_still_open_remains_a1_02(self):
+        data = self.snapshot(
+            12,
+            {
+                "github_ref": "PR #12 · HEAD " + "7" * 40,
+                "summary": "PR #12 sigue OPEN/no fusionado y pendiente del gate final.",
+            },
+        )
+        self.assertEqual(["A1-02"], self.signals(data))
+
+    def test_current_github_reference_that_pr_is_open_remains_a1_02(self):
+        data = self.snapshot(
+            12,
+            {
+                "github_ref": "PR #12 sigue abierto/draft",
+                "summary": "",
+            },
+        )
+        self.assertEqual(["A1-02"], self.signals(data))
+
+    def test_post_merge_next_step_to_merge_remains_a1_02(self):
+        data = self.snapshot(
+            12,
+            {
+                "github_ref": "PR #12 MERGED",
+                "summary": "PR #12 quedó fusionado.",
+                "next_step": "Fusionar PR #12.",
+            },
+        )
+        self.assertEqual(["A1-02"], self.signals(data))
+
+
 if __name__ == "__main__":
     unittest.main()
