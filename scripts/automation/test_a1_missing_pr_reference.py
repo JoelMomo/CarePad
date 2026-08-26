@@ -239,6 +239,16 @@ class A1LiveA102ContextTests(unittest.TestCase):
         )
         self.assertEqual(["A1-02"], self.signals(data))
 
+    def test_unrelated_negation_does_not_hide_current_pr_state_claim(self):
+        data = self.snapshot(
+            12,
+            {
+                "github_ref": "PR #12 · HEAD " + "8" * 40,
+                "summary": "PR #12 sigue abierto. El handoff ya no está abierto.",
+            },
+        )
+        self.assertEqual(["A1-02"], self.signals(data))
+
     def test_current_github_reference_that_pr_is_open_remains_a1_02(self):
         data = self.snapshot(
             12,
