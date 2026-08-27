@@ -11,7 +11,7 @@ data class DeviceInfo(val deviceId:Int,val descriptor:String?,val vendorId:Int,v
 
 object CandidateClassifier {
     private val axes=setOf(Axes.X,Axes.Y,Axes.Z,Axes.RZ,Axes.RX,Axes.RY,Axes.HAT_X,Axes.HAT_Y)
-    fun isCandidate(d:DeviceInfo)=d.deviceId!=0&&!d.virtual&&d.sources.control&&(d.keys.isNotEmpty()||d.ranges.any{it.axis in axes&&it.source.joystick})
+    fun isCandidate(d:DeviceInfo)=d.deviceId!=0&&!d.virtual&&(d.sources.gamepad||d.sources.joystick)&&(d.keys.isNotEmpty()||d.ranges.any{it.axis in axes&&it.source.joystick})
     fun candidates(devices:Iterable<DeviceInfo>)=devices.filter(::isCandidate).sortedBy{it.deviceId}
 }
 
