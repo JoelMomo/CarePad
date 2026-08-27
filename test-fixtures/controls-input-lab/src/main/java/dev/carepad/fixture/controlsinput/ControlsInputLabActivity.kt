@@ -17,7 +17,7 @@ import java.util.Locale
 class ControlsInputLabActivity:Activity(),InputManager.InputDeviceListener{
     private lateinit var input:InputManager;private lateinit var catalog:AndroidDeviceCatalog;private lateinit var devices:LinearLayout;private lateinit var output:TextView;private var session:ControlsSession?=null
     override fun onCreate(state:Bundle?){super.onCreate(state);input=getSystemService(InputManager::class.java);catalog=AndroidDeviceCatalog(input);setContentView(content());refresh();render()}
-    override fun onStart(){super.onStart();input.registerInputDeviceListener(this,null);refresh()}
+    override fun onStart(){super.onStart();input.registerInputDeviceListener(this,null);refresh();render()}
     override fun onStop(){session?.interrupt();input.unregisterInputDeviceListener(this);super.onStop()}
     override fun dispatchKeyEvent(e:KeyEvent):Boolean{val s=session?:return super.dispatchKeyEvent(e);val sample=AndroidEventMapper.key(e)?:return super.dispatchKeyEvent(e);val r=s.acceptKey(sample);if(r.changed)render();return if(r.consumeInTestMode)true else super.dispatchKeyEvent(e)}
     override fun dispatchGenericMotionEvent(e:MotionEvent):Boolean{val s=session?:return super.dispatchGenericMotionEvent(e);if(e.deviceId!=s.device.deviceId)return super.dispatchGenericMotionEvent(e);val frames=AndroidEventMapper.motion(e,AndroidEventMapper.axes(s.mapping));var consume=false;var changed=false;frames.forEach{val r=s.acceptMotion(it);consume=consume||r.consumeInTestMode;changed=changed||r.changed};if(changed)render();return if(consume)true else super.dispatchGenericMotionEvent(e)}
