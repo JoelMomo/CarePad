@@ -1,0 +1,30 @@
+package dev.carepad.module.controls.runtime
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class ControlsInputModelTest {
+    private val joy=Sources(joystick=true); private val game=Sources(gamepad=true); private val both=Sources(gamepad=true,joystick=true,dpad=true)
+    private fun r(a:Int,min:Float=-1f,max:Float=1f)=RangeInfo(a,joy,min,max)
+    private fun complete(ranges:List<RangeInfo> = listOf(r(Axes.X),r(Axes.Y),r(Axes.Z),r(Axes.RZ),r(Axes.HAT_X),r(Axes.HAT_Y)),keys:Set<Button> = setOf(Button.A,Button.B,Button.DPAD_UP,Button.DPAD_DOWN,Button.DPAD_LEFT,Button.DPAD_RIGHT))=DeviceInfo(12,"descriptor",1,2,"Pad",1,false,true,both,keys,ranges)
+
+    @Test fun candidateRulesAreConservative(){assertFalse(CandidateClassifier.isCandidate(complete().copy(virtual=true)));assertFalse(CandidateClassifier.isCandidate(complete().copy(deviceId=0)));assertTrue(CandidateClassifier.isCandidate(complete().copy(sources=joy,keys=emptySet(),ranges=listOf(r(Axes.X),r(Axes.Y)))))}
+    @Test fun standardMappingUsesXYAndZRZ(){val m=MappingResolver.resolve(complete());assertEquals(Resolution.STANDARD,m.left.state);assertEquals(Axes.X,m.left.pair!!.x);assertEquals(Resolution.STANDARD,m.right.state);assertEquals(Axes.Z,m.right.pair!!.x);assertTrue(m.right.guidedConfirmation);assertEquals(DpadMode.DUAL,m.dpad)}
+    @Test fun rxRyOnlyIsInconclusive(){val d=complete(ranges=listOf(r(Axes.X),r(Axes.Y),r(Axes.RX),r(Axes.RY),r(Axes.HAT_X),r(Axes.HAT_Y)));val m=MappingResolver.resolve(d);assertEquals(Resolution.INCONCLUSIVE,m.right.state);assertNull(m.right.pair);assertTrue(MappingIssue.RIGHT_ALTERNATIVE_ONLY in m.right.issues)}
+    @Test fun multiplePlausibleRightPairsAreAmbiguous(){val d=complete(ranges=complete().ranges+listOf(r(Axes.RX),r(Axes.RY)));val m=MappingResolver.resolve(d);assertEquals(Resolution.AMBIGUOUS,m.right.state);assertNull(m.right.pair)}
+    @Test fun invalidRangeFailsClosed(){val d=complete(ranges=listOf(r(Axes.X,1f,1f),r(Axes.Y),r(Axes.Z),r(Axes.RZ),r(Axes.HAT_X),r(Axes.HAT_Y)));assertEquals(Resolution.INCONCLUSIVE,MappingResolver.resolve(d).left.state)}
+    @Test fun normalizationUsesDeclaredMidpointOnly(){val range=r(Axes.X,0f,1024f);assertEquals(-1f,Normalizer.normalize(0f,range)!!,0.0001f);assertEquals(0f,Normalizer.normalize(512f,range)!!,0.0001f);assertEquals(1f,Normalizer.normalize(1024f,range)!!,0.0001f);assertNull(Normalizer.normalize(2f,range.copy(source=game)));assertNull(Normalizer.normalize(2f,range.copy(min=1f,max=1f)))}
+    @Test fun metricsAreDescriptive(){val m=Metrics.axis(listOf(AxisSample(0,0f,0f),AxisSample(10,0.2f,0.2f),AxisSample(20,-0.1f,-0.1f)),r(Axes.X))!!;assertEquals(3,m.count);assertEquals(20,m.durationMs);assertEquals(0.0,m.median,0.0001);assertEquals(-0.1f,m.min,0.0001f);assertEquals(0.2f,m.max,0.0001f);assertEquals(0.15,m.coverage!!,0.0001)}
+    @Test fun selectedDeviceIdFiltersEvents(){val s=ControlsSession(complete());val result=s.acceptKey(KeySample(99,game,1,1,Button.A,KeyAction.DOWN));assertEquals(Disposition.OTHER_DEVICE,result.disposition);assertTrue(s.rawKeys.isEmpty())}
+    @Test fun incompatibleSourceIsNotADeviceDefect(){val s=ControlsSession(complete());val result=s.acceptKey(KeySample(12,Sources(),1,1,Button.A,KeyAction.DOWN));assertEquals(Disposition.INCOMPATIBLE_SOURCE,result.disposition);assertTrue(result.consumeInTestMode);assertEquals(SessionState.INCONCLUSIVE,s.state);assertTrue(SessionIssue.INCOMPATIBLE_SOURCE in s.issues)}
+    @Test fun repeatsDoNotCountAsNewPhysicalPresses(){val s=ControlsSession(complete());s.acceptKey(KeySample(12,game,1,1,Button.A,KeyAction.DOWN));s.acceptKey(KeySample(12,game,2,1,Button.A,KeyAction.DOWN,repeatCount=3));s.acceptKey(KeySample(12,game,3,1,Button.A,KeyAction.UP));val m=s.buttonMetrics(Button.A);assertEquals(1,m.presses);assertEquals(1,m.releases);assertFalse(m.pressed)}
+    @Test fun canceledSequenceIsIncomplete(){val s=ControlsSession(complete());s.acceptKey(KeySample(12,game,1,1,Button.A,KeyAction.UP,canceled=true));assertEquals(SessionState.INCOMPLETE,s.state);assertTrue(SessionIssue.CANCELED_SEQUENCE in s.issues)}
+    @Test fun coherentDualDpadIsDeduplicated(){val s=ControlsSession(complete());s.acceptKey(KeySample(12,game,1,1,Button.DPAD_UP,KeyAction.DOWN));s.acceptMotion(MotionFrame(12,joy,2,mapOf(Axes.HAT_X to 0f,Axes.HAT_Y to -1f,Axes.X to 0f,Axes.Y to 0f,Axes.Z to 0f,Axes.RZ to 0f)));assertEquals(setOf(Direction.UP),s.dpadPath.last().directions);assertEquals(1,s.dpadPath.count{it.directions==setOf(Direction.UP)});assertEquals(SessionState.VALID,s.state)}
+    @Test fun contradictoryDualDpadIsAmbiguous(){val s=ControlsSession(complete());s.acceptKey(KeySample(12,game,1,1,Button.DPAD_UP,KeyAction.DOWN));s.acceptMotion(MotionFrame(12,joy,2,mapOf(Axes.HAT_X to 1f,Axes.HAT_Y to 0f,Axes.X to 0f,Axes.Y to 0f,Axes.Z to 0f,Axes.RZ to 0f)));assertEquals(SessionState.AMBIGUOUS,s.state);assertTrue(SessionIssue.DPAD_CONTRADICTION in s.issues)}
+    @Test fun rawAndNormalizedStickSamplesArePreserved(){val s=ControlsSession(complete());s.acceptMotion(MotionFrame(12,joy,100,mapOf(Axes.X to 0.25f,Axes.Y to -0.5f,Axes.Z to 0.5f,Axes.RZ to -0.25f,Axes.HAT_X to 0f,Axes.HAT_Y to 0f)));assertEquals(1,s.rawMotion.size);val left=s.leftMetrics();assertEquals(1,left.trajectory.size);assertEquals(0.25f,left.trajectory.single().rawX,0.0001f);assertEquals(0.25f,left.trajectory.single().normalizedX!!,0.0001f)}
+    @Test fun deviceChangeRemovalAndInterruptionInvalidate(){val a=ControlsSession(complete());a.onChanged(12);assertEquals(SessionState.INVALIDATED,a.state);val b=ControlsSession(complete());b.onRemoved(12);assertEquals(SessionState.INVALIDATED,b.state);val c=ControlsSession(complete());c.interrupt();assertEquals(SessionState.INVALIDATED,c.state)}
+    @Test fun incompleteMappingNeverBecomesDefect(){val d=complete(ranges=listOf(r(Axes.X),r(Axes.Y)),keys=setOf(Button.A));val s=ControlsSession(d);assertEquals(SessionState.INCONCLUSIVE,s.state);assertTrue(SessionIssue.MAPPING_INCOMPLETE in s.issues)}
+}
