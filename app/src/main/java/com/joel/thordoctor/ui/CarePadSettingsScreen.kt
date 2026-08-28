@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -40,6 +41,7 @@ internal fun carePadGlobalSettings(): List<CarePadGlobalSetting> =
 fun CarePadSettingsScreen(
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
+    onControllerThemeFocusChanged: (AppThemeMode, Boolean) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -79,18 +81,36 @@ fun CarePadSettingsScreen(
                                     icon = Icons.Rounded.SettingsBrightness,
                                     title = stringResource(R.string.theme_system),
                                     selected = themeMode == AppThemeMode.SYSTEM,
+                                    onFocusChanged = { focused ->
+                                        onControllerThemeFocusChanged(
+                                            AppThemeMode.SYSTEM,
+                                            focused,
+                                        )
+                                    },
                                     onClick = { onThemeModeChange(AppThemeMode.SYSTEM) },
                                 )
                                 CarePadThemeChoice(
                                     icon = Icons.Rounded.LightMode,
                                     title = stringResource(R.string.theme_light),
                                     selected = themeMode == AppThemeMode.LIGHT,
+                                    onFocusChanged = { focused ->
+                                        onControllerThemeFocusChanged(
+                                            AppThemeMode.LIGHT,
+                                            focused,
+                                        )
+                                    },
                                     onClick = { onThemeModeChange(AppThemeMode.LIGHT) },
                                 )
                                 CarePadThemeChoice(
                                     icon = Icons.Rounded.DarkMode,
                                     title = stringResource(R.string.theme_dark),
                                     selected = themeMode == AppThemeMode.DARK,
+                                    onFocusChanged = { focused ->
+                                        onControllerThemeFocusChanged(
+                                            AppThemeMode.DARK,
+                                            focused,
+                                        )
+                                    },
                                     onClick = { onThemeModeChange(AppThemeMode.DARK) },
                                 )
                             }
@@ -107,11 +127,13 @@ private fun CarePadThemeChoice(
     icon: ImageVector,
     title: String,
     selected: Boolean,
+    onFocusChanged: (Boolean) -> Unit,
     onClick: () -> Unit,
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .onFocusChanged { state -> onFocusChanged(state.isFocused) }
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = if (selected) {
@@ -142,7 +164,7 @@ private fun CarePadThemeChoice(
             )
             RadioButton(
                 selected = selected,
-                onClick = onClick,
+                onClick = null,
             )
         }
     }

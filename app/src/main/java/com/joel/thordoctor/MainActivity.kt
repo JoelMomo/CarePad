@@ -382,10 +382,12 @@ private fun ThorDoctorApp(
     }
 
     CarePadShellScreen(
-        settingsContent = { _ ->
+        onThemeModeChange = onThemeModeChange,
+        settingsContent = { _, onThemeFocusChanged ->
             CarePadSettingsScreen(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
+                onControllerThemeFocusChanged = onThemeFocusChanged,
             )
         }
     )
