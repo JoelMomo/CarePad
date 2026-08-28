@@ -6,18 +6,10 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -33,10 +25,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.joel.thordoctor.core.diagnostics.CoreDiagnosticStorage
+import com.joel.thordoctor.ui.CarePadShellScreen
 import com.joel.thordoctor.ui.GameLibrarySetupScreen
 import com.joel.thordoctor.ui.PermissionSetupScreen
 import com.joel.thordoctor.ui.StorageSetupScreen
-import com.joel.thordoctor.ui.ThorDoctorHomeScreen
 import com.joel.thordoctor.ui.ThorDoctorSettingsScreen
 import com.joel.thordoctor.ui.theme.ThorDoctorTheme
 import kotlinx.coroutines.Dispatchers
@@ -45,11 +37,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val CUE_BIN_QA_LOG_TAG = "CarePadCueBin"
-
-private enum class AppScreen {
-    MAIN,
-    SETTINGS
-}
 
 class MainActivity : ComponentActivity() {
 
@@ -102,7 +89,6 @@ private fun ThorDoctorApp(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var currentScreen by remember { mutableStateOf(AppScreen.MAIN) }
     var onboardingComplete by remember {
         mutableStateOf(AppPreferences.isOnboardingComplete(context))
     }
@@ -395,79 +381,36 @@ private fun ThorDoctorApp(
         return
     }
 
-    BackHandler(
-        enabled =
-            currentScreen == AppScreen.SETTINGS
-    ) {
-        currentScreen = AppScreen.MAIN
-    }
-
-    AnimatedContent(
-        targetState = currentScreen,
-        transitionSpec = {
-            if (targetState == AppScreen.SETTINGS) {
-                (
-                    fadeIn(tween(220)) +
-                        slideInHorizontally(tween(280)) { width -> width / 5 }
-                    ) togetherWith
-                    (
-                        fadeOut(tween(160)) +
-                            slideOutHorizontally(tween(220)) { width -> -width / 6 }
-                        )
-            } else {
-                (
-                    fadeIn(tween(220)) +
-                        slideInHorizontally(tween(280)) { width -> -width / 5 }
-                    ) togetherWith
-                    (
-                        fadeOut(tween(160)) +
-                            slideOutHorizontally(tween(220)) { width -> width / 6 }
-                        )
-            }
-        },
-        label = "mainSettingsTransition"
-    ) { screen ->
-        when (screen) {
-            AppScreen.MAIN -> {
-                ThorDoctorHomeScreen(
-                    onOpenSettings = {
-                        currentScreen = AppScreen.SETTINGS
-                    }
-                )
-            }
-
-            AppScreen.SETTINGS -> {
-                ThorDoctorSettingsScreen(
-                    status = permissionStatus,
-                    themeMode = themeMode,
-                    diagnosticFolderName = diagnosticFolderName,
-                    gameFolderName = gameFolderName,
-                    gameCount = gameCount,
-                    gameScanInProgress = gameScanInProgress,
-                    onThemeModeChange = onThemeModeChange,
-                    onBack = {
-                        currentScreen = AppScreen.MAIN
-                    },
-                    onChangeDiagnosticFolder = {
-                        diagnosticFolderLauncher.launch(null)
-                    },
-                    onChangeGameFolder = {
-                        gameFolderLauncher.launch(null)
-                    },
-                    onScanGames = {
-                        scanGames()
-                    },
-                    onUsagePermission = {
-                        PermissionManager.openUsageAccessSettings(context)
-                    },
-                    onFilesPermission = {
-                        PermissionManager.openAllFilesAccessSettings(context)
-                    },
-                    onNotificationPermission = {
-                        PermissionManager.openNotificationSettings(context)
-                    }
-                )
-            }
+    CarePadShellScreen(
+        settingsContent = { onBack ->
+            ThorDoctorSettingsScreen(
+                status = permissionStatus,
+                themeMode = themeMode,
+                diagnosticFolderName = diagnosticFolderName,
+                gameFolderName = gameFolderName,
+                gameCount = gameCount,
+                gameScanInProgress = gameScanInProgress,
+                onThemeModeChange = onThemeModeChange,
+                onBack = onBack,
+                onChangeDiagnosticFolder = {
+                    diagnosticFolderLauncher.launch(null)
+                },
+                onChangeGameFolder = {
+                    gameFolderLauncher.launch(null)
+                },
+                onScanGames = {
+                    scanGames()
+                },
+                onUsagePermission = {
+                    PermissionManager.openUsageAccessSettings(context)
+                },
+                onFilesPermission = {
+                    PermissionManager.openAllFilesAccessSettings(context)
+                },
+                onNotificationPermission = {
+                    PermissionManager.openNotificationSettings(context)
+                }
+            )
         }
-    }
+    )
 }
