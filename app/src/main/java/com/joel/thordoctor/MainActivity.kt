@@ -25,11 +25,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.joel.thordoctor.core.diagnostics.CoreDiagnosticStorage
+import com.joel.thordoctor.ui.CarePadSettingsScreen
 import com.joel.thordoctor.ui.CarePadShellScreen
 import com.joel.thordoctor.ui.GameLibrarySetupScreen
 import com.joel.thordoctor.ui.PermissionSetupScreen
 import com.joel.thordoctor.ui.StorageSetupScreen
-import com.joel.thordoctor.ui.ThorDoctorSettingsScreen
 import com.joel.thordoctor.ui.theme.ThorDoctorTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -382,34 +382,10 @@ private fun ThorDoctorApp(
     }
 
     CarePadShellScreen(
-        settingsContent = { onBack ->
-            ThorDoctorSettingsScreen(
-                status = permissionStatus,
+        settingsContent = { _ ->
+            CarePadSettingsScreen(
                 themeMode = themeMode,
-                diagnosticFolderName = diagnosticFolderName,
-                gameFolderName = gameFolderName,
-                gameCount = gameCount,
-                gameScanInProgress = gameScanInProgress,
                 onThemeModeChange = onThemeModeChange,
-                onBack = onBack,
-                onChangeDiagnosticFolder = {
-                    diagnosticFolderLauncher.launch(null)
-                },
-                onChangeGameFolder = {
-                    gameFolderLauncher.launch(null)
-                },
-                onScanGames = {
-                    scanGames()
-                },
-                onUsagePermission = {
-                    PermissionManager.openUsageAccessSettings(context)
-                },
-                onFilesPermission = {
-                    PermissionManager.openAllFilesAccessSettings(context)
-                },
-                onNotificationPermission = {
-                    PermissionManager.openNotificationSettings(context)
-                }
             )
         }
     )
