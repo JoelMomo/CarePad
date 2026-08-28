@@ -42,7 +42,10 @@ class CarePadShellNavigationTest {
         assertEquals(CarePadDestination.SETTINGS, focusState.lastRailDestination)
 
         val targetAfterReturningToRail = focusState.onRailFocused(
-            focusState.lastRailDestination
+            carePadRailRestoreDestination(
+                focusState = focusState,
+                selectedDestination = CarePadDestination.HOME,
+            )
         )
 
         assertEquals(CarePadFocusZone.RAIL, targetAfterReturningToRail.zone)
@@ -50,6 +53,158 @@ class CarePadShellNavigationTest {
             CarePadDestination.SETTINGS,
             targetAfterReturningToRail.lastRailDestination,
         )
+    }
+
+    @Test
+    fun contentTouchSwitchesImmediatelyAndPreservesPageRailAndContentContext() {
+        val rememberedTarget = CarePadPrimaryControllerTarget.Theme(AppThemeMode.LIGHT)
+        val before = CarePadInteractionSnapshot(
+            inputMethod = CarePadInputMethod.CONTROLLER,
+            destination = CarePadDestination.SETTINGS,
+            focusState = CarePadFocusState()
+                .onRailFocused(CarePadDestination.SETTINGS),
+            lastContentTarget = rememberedTarget,
+        )
+
+        val after = carePadContentTouchTransition(before)
+
+        assertEquals(CarePadInputMethod.TOUCH, after.inputMethod)
+        assertEquals(CarePadDestination.SETTINGS, after.destination)
+        assertEquals(CarePadFocusZone.CONTENT, after.focusState.zone)
+        assertEquals(CarePadDestination.SETTINGS, after.focusState.lastRailDestination)
+        assertEquals(rememberedTarget, after.lastContentTarget)
+        assertEquals(
+            CarePadRailVisualState.COMPACT,
+            carePadRailVisualState(after.focusState),
+        )
+    }
+
+    @Test
+    fun actionableTouchBecomesRememberedContentTargetWithoutChangingPageOrRail() {
+        val before = CarePadInteractionSnapshot(
+            inputMethod = CarePadInputMethod.CONTROLLER,
+            destination = CarePadDestination.HOME,
+            focusState = CarePadFocusState()
+                .onRailFocused(CarePadDestination.ADD_MODULES),
+            lastContentTarget = CarePadPrimaryControllerTarget.Theme(AppThemeMode.DARK),
+        )
+        val touchedTarget = CarePadPrimaryControllerTarget.Module(modulePackage)
+
+        val after = carePadContentTouchTransition(before, touchedTarget)
+
+        assertEquals(CarePadInputMethod.TOUCH, after.inputMethod)
+        assertEquals(CarePadDestination.HOME, after.destination)
+        assertEquals(CarePadFocusZone.CONTENT, after.focusState.zone)
+        assertEquals(CarePadDestination.ADD_MODULES, after.focusState.lastRailDestination)
+        assertEquals(touchedTarget, after.lastContentTarget)
+    }
+
+    @Test
+    fun nonActionableTouchDoesNotEraseRememberedContentTarget() {
+        val rememberedTarget = CarePadPrimaryControllerTarget.Module(modulePackage)
+        val before = CarePadInteractionSnapshot(
+            inputMethod = CarePadInputMethod.CONTROLLER,
+            destination = CarePadDestination.HOME,
+            focusState = CarePadFocusState(),
+            lastContentTarget = rememberedTarget,
+        )
+
+        val after = carePadContentTouchTransition(before, touchedTarget = null)
+
+        assertEquals(rememberedTarget, after.lastContentTarget)
+    }
+
+    @Test
+    fun firstControllerInputSynchronizesModeWithoutChangingPageOrRememberedContext() {
+        val rememberedTarget = CarePadPrimaryControllerTarget.Theme(AppThemeMode.DARK)
+        val touchState = carePadContentTouchTransition(
+            CarePadInteractionSnapshot(
+                inputMethod = CarePadInputMethod.CONTROLLER,
+                destination = CarePadDestination.SETTINGS,
+                focusState = CarePadFocusState()
+                    .onRailFocused(CarePadDestination.SETTINGS),
+                lastContentTarget = rememberedTarget,
+            )
+        )
+
+        val controllerState = carePadControllerInputTransition(touchState)
+
+        assertEquals(CarePadInputMethod.CONTROLLER, controllerState.inputMethod)
+        assertEquals(CarePadDestination.SETTINGS, controllerState.destination)
+        assertEquals(CarePadFocusZone.CONTENT, controllerState.focusState.zone)
+        assertEquals(
+            CarePadDestination.SETTINGS,
+            controllerState.focusState.lastRailDestination,
+        )
+        assertEquals(rememberedTarget, controllerState.lastContentTarget)
+    }
+
+    @Test
+    fun l1RestoresLastActuallyFocusedRailDestination() {
+        val focusState = CarePadFocusState()
+            .onRailFocused(CarePadDestination.ADD_MODULES)
+            .onContentFocused()
+
+        val destination = carePadRailRestoreDestination(
+            focusState = focusState,
+            selectedDestination = CarePadDestination.SETTINGS,
+        )
+
+        assertEquals(CarePadDestination.ADD_MODULES, destination)
+    }
+
+    @Test
+    fun l1FallbackIsSelectedDestinationAndThereIsNoImplicitHomeRailTarget() {
+        val focusState = CarePadFocusState()
+
+        assertEquals(null, focusState.lastRailDestination)
+        assertEquals(
+            CarePadDestination.SETTINGS,
+            carePadRailRestoreDestination(
+                focusState = focusState,
+                selectedDestination = CarePadDestination.SETTINGS,
+            ),
+        )
+        assertFalse(
+            carePadRailRestoreDestination(
+                focusState = focusState,
+                selectedDestination = CarePadDestination.SETTINGS,
+            ) == CarePadDestination.HOME
+        )
+    }
+
+    @Test
+    fun firstControllerRecoveryUsesRememberedContentTargetForDpadContext() {
+        val target = carePadRestoredContentTarget(
+            destination = CarePadDestination.SETTINGS,
+            lastContentTarget = CarePadPrimaryControllerTarget.Theme(AppThemeMode.LIGHT),
+            focusedModulePackage = null,
+            visiblePackages = emptyList(),
+        )
+
+        assertEquals(CarePadPrimaryControllerTarget.Theme(AppThemeMode.LIGHT), target)
+        assertFalse(target is CarePadPrimaryControllerTarget.Rail)
+    }
+
+    @Test
+    fun dpadContentRecoveryNeverFallsBackToRail() {
+        val homeTarget = carePadRestoredContentTarget(
+            destination = CarePadDestination.HOME,
+            lastContentTarget = CarePadPrimaryControllerTarget.None,
+            focusedModulePackage = null,
+            visiblePackages = emptyList(),
+        )
+        val addModulesTarget = carePadRestoredContentTarget(
+            destination = CarePadDestination.ADD_MODULES,
+            lastContentTarget = CarePadPrimaryControllerTarget.Rail(CarePadDestination.HOME),
+            focusedModulePackage = null,
+            visiblePackages = emptyList(),
+        )
+
+        assertEquals(CarePadPrimaryControllerTarget.None, homeTarget)
+        assertEquals(CarePadPrimaryControllerTarget.None, addModulesTarget)
+        assertFalse(homeTarget is CarePadPrimaryControllerTarget.Rail)
+        assertFalse(addModulesTarget is CarePadPrimaryControllerTarget.Rail)
     }
 
     @Test
@@ -85,10 +240,12 @@ class CarePadShellNavigationTest {
             lastRailDestination = CarePadDestination.SETTINGS,
         )
 
-        val railState = contentState.onRailFocused(contentState.lastRailDestination)
-        primaryTarget = CarePadPrimaryControllerTarget.Rail(
-            railState.lastRailDestination
+        val railDestination = carePadRailRestoreDestination(
+            focusState = contentState,
+            selectedDestination = CarePadDestination.SETTINGS,
         )
+        val railState = contentState.onRailFocused(railDestination)
+        primaryTarget = CarePadPrimaryControllerTarget.Rail(railDestination)
 
         assertEquals(CarePadFocusZone.RAIL, railState.zone)
         assertEquals(CarePadRailVisualState.EXPANDED, carePadRailVisualState(railState))
