@@ -35,7 +35,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run JVM unit tests
-        run: ./gradlew :app:testDebugUnitTest :performance-runtime:testDebugUnitTest :games-bios-runtime:testDebugUnitTest --stacktrace
+        run: ./gradlew :app:testDebugUnitTest :performance-runtime:testDebugUnitTest :games-bios-runtime:testDebugUnitTest :controls-runtime:testDebugUnitTest --stacktrace
 
   build:
     needs: unit-tests
@@ -64,7 +64,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build debug APKs
-        run: ./gradlew :app:assembleDebug :module-lab:assembleDebug :performance-module:assembleDebug :performance-emulator-fixture:assembleDebug --stacktrace
+        run: ./gradlew :app:assembleDebug :module-lab:assembleDebug :performance-module:assembleDebug :performance-emulator-fixture:assembleDebug :controls-input-lab:assembleDebug --stacktrace
 
       - name: Build Performance release APK for LAB isolation
         run: ./gradlew :performance-module:assembleRelease --stacktrace
@@ -157,6 +157,14 @@ jobs:
         with:
           name: CarePad-performance-emulator-fixture-debug
           path: test-fixtures/performance-emulator/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload Controls input lab APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-controls-input-lab-debug
+          path: test-fixtures/controls-input-lab/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 3
 
