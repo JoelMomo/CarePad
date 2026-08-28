@@ -53,6 +53,100 @@ class CarePadShellNavigationTest {
     }
 
     @Test
+    fun railVisualStateIsExpandedForRealRailFocus() {
+        val focusState = CarePadFocusState()
+            .onRailFocused(CarePadDestination.SETTINGS)
+
+        assertEquals(
+            CarePadRailVisualState.EXPANDED,
+            carePadRailVisualState(focusState),
+        )
+    }
+
+    @Test
+    fun railVisualStateIsCompactForRealContentFocus() {
+        val focusState = CarePadFocusState()
+            .onRailFocused(CarePadDestination.SETTINGS)
+            .onContentFocused()
+
+        assertEquals(
+            CarePadRailVisualState.COMPACT,
+            carePadRailVisualState(focusState),
+        )
+    }
+
+    @Test
+    fun contentToRailRoundTripExpandsWithoutChangingRememberedContentTarget() {
+        val rememberedContentTarget =
+            CarePadPrimaryControllerTarget.Theme(AppThemeMode.LIGHT)
+        var primaryTarget: CarePadPrimaryControllerTarget = rememberedContentTarget
+        val contentState = CarePadFocusState(
+            zone = CarePadFocusZone.CONTENT,
+            lastRailDestination = CarePadDestination.SETTINGS,
+        )
+
+        val railState = contentState.onRailFocused(contentState.lastRailDestination)
+        primaryTarget = CarePadPrimaryControllerTarget.Rail(
+            railState.lastRailDestination
+        )
+
+        assertEquals(CarePadFocusZone.RAIL, railState.zone)
+        assertEquals(CarePadRailVisualState.EXPANDED, carePadRailVisualState(railState))
+        assertEquals(CarePadDestination.SETTINGS, railState.lastRailDestination)
+        assertEquals(
+            CarePadPrimaryControllerTarget.Rail(CarePadDestination.SETTINGS),
+            primaryTarget,
+        )
+        assertEquals(
+            CarePadPrimaryControllerTarget.Theme(AppThemeMode.LIGHT),
+            rememberedContentTarget,
+        )
+    }
+
+    @Test
+    fun railToContentRoundTripCompactsWithoutChangingControllerTargets() {
+        val rememberedContentTarget =
+            CarePadPrimaryControllerTarget.Theme(AppThemeMode.DARK)
+        val primaryTarget = rememberedContentTarget
+        val railState = CarePadFocusState()
+            .onRailFocused(CarePadDestination.SETTINGS)
+
+        val contentState = railState.onContentFocused()
+        val visualState = carePadRailVisualState(contentState)
+
+        assertEquals(CarePadFocusZone.CONTENT, contentState.zone)
+        assertEquals(CarePadRailVisualState.COMPACT, visualState)
+        assertEquals(CarePadDestination.SETTINGS, contentState.lastRailDestination)
+        assertEquals(
+            CarePadPrimaryControllerTarget.Theme(AppThemeMode.DARK),
+            rememberedContentTarget,
+        )
+        assertEquals(
+            CarePadPrimaryControllerTarget.Theme(AppThemeMode.DARK),
+            primaryTarget,
+        )
+    }
+
+    @Test
+    fun compactRailKeepsSelectedDestinationIdentifiable() {
+        val focusState = CarePadFocusState().onContentFocused()
+
+        assertEquals(CarePadRailVisualState.COMPACT, carePadRailVisualState(focusState))
+        assertTrue(
+            carePadRailItemSelected(
+                selected = CarePadDestination.SETTINGS,
+                candidate = CarePadDestination.SETTINGS,
+            )
+        )
+        assertFalse(
+            carePadRailItemSelected(
+                selected = CarePadDestination.SETTINGS,
+                candidate = CarePadDestination.HOME,
+            )
+        )
+    }
+
+    @Test
     fun contentHomePrimaryActionStillTargetsFocusedModule() {
         val target = carePadPrimaryControllerTarget(
             focusState = CarePadFocusState(),

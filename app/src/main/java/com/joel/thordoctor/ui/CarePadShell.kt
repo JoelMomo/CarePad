@@ -8,6 +8,8 @@ import android.view.InputDevice
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.MotionEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -91,6 +94,11 @@ internal enum class CarePadFocusZone {
     CONTENT,
 }
 
+internal enum class CarePadRailVisualState {
+    EXPANDED,
+    COMPACT,
+}
+
 internal data class CarePadFocusState(
     val zone: CarePadFocusZone = CarePadFocusZone.CONTENT,
     val lastRailDestination: CarePadDestination = CarePadDestination.HOME,
@@ -102,6 +110,22 @@ internal data class CarePadFocusState(
 
     fun onContentFocused(): CarePadFocusState = copy(zone = CarePadFocusZone.CONTENT)
 }
+
+internal fun carePadRailVisualState(
+    focusState: CarePadFocusState,
+): CarePadRailVisualState = when (focusState.zone) {
+    CarePadFocusZone.RAIL -> CarePadRailVisualState.EXPANDED
+    CarePadFocusZone.CONTENT -> CarePadRailVisualState.COMPACT
+}
+
+internal fun carePadRailItemSelected(
+    selected: CarePadDestination,
+    candidate: CarePadDestination,
+): Boolean = selected == candidate
+
+private val CarePadRailCompactWidth = 80.dp
+private val CarePadRailExpandedWidth = 176.dp
+private const val CarePadRailTransitionMillis = 180
 
 internal sealed interface CarePadPrimaryControllerTarget {
     data class Rail(val destination: CarePadDestination) : CarePadPrimaryControllerTarget
@@ -556,6 +580,7 @@ fun CarePadShellScreen(
     ) {
         CarePadNavigationRail(
             selected = destination,
+            visualState = carePadRailVisualState(focusState),
             focusRequesters = railFocusRequesters,
             onFocused = { focusedDestination ->
                 focusState = focusState.onRailFocused(focusedDestination)
@@ -662,18 +687,27 @@ fun CarePadShellScreen(
 @Composable
 private fun CarePadNavigationRail(
     selected: CarePadDestination,
+    visualState: CarePadRailVisualState,
     focusRequesters: Map<CarePadDestination, FocusRequester>,
     onFocused: (CarePadDestination) -> Unit,
     onSelected: (CarePadDestination) -> Unit,
 ) {
+    val expanded = visualState == CarePadRailVisualState.EXPANDED
+    val animatedWidth by animateDpAsState(
+        targetValue = if (expanded) CarePadRailExpandedWidth else CarePadRailCompactWidth,
+        animationSpec = tween(durationMillis = CarePadRailTransitionMillis),
+    )
+
     NavigationRail(
-        modifier = Modifier.fillMaxHeight(),
+        modifier = Modifier
+            .width(animatedWidth)
+            .fillMaxHeight(),
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Spacer(Modifier.height(18.dp))
         railItems().forEach { item ->
             NavigationRailItem(
-                selected = selected == item.destination,
+                selected = carePadRailItemSelected(selected, item.destination),
                 onClick = { onSelected(item.destination) },
                 icon = {
                     Icon(
@@ -681,9 +715,14 @@ private fun CarePadNavigationRail(
                         contentDescription = stringResource(item.labelRes),
                     )
                 },
-                label = { Text(stringResource(item.labelRes)) },
-                alwaysShowLabel = true,
+                label = if (expanded) {
+                    { Text(stringResource(item.labelRes)) }
+                } else {
+                    null
+                },
+                alwaysShowLabel = expanded,
                 modifier = Modifier
+                    .fillMaxWidth()
                     .focusRequester(focusRequesters.getValue(item.destination))
                     .onFocusChanged { state ->
                         if (state.isFocused) {
