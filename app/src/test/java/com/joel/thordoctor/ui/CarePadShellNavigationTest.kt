@@ -111,6 +111,67 @@ class CarePadShellNavigationTest {
     }
 
     @Test
+    fun settingsRoundTripRestoresLastFocusedThemeWithoutPrimaryAction() {
+        val target = carePadRestoredContentTarget(
+            destination = CarePadDestination.SETTINGS,
+            lastContentTarget = CarePadPrimaryControllerTarget.Theme(AppThemeMode.LIGHT),
+            focusedModulePackage = modulePackage,
+            visiblePackages = visiblePackages,
+        )
+
+        assertEquals(CarePadPrimaryControllerTarget.Theme(AppThemeMode.LIGHT), target)
+    }
+
+    @Test
+    fun settingsWithoutPreviousContentTargetFallsBackToSystem() {
+        val target = carePadRestoredContentTarget(
+            destination = CarePadDestination.SETTINGS,
+            lastContentTarget = CarePadPrimaryControllerTarget.None,
+            focusedModulePackage = null,
+            visiblePackages = emptyList(),
+        )
+
+        assertEquals(CarePadPrimaryControllerTarget.Theme(AppThemeMode.SYSTEM), target)
+    }
+
+    @Test
+    fun homeRoundTripRestoresRememberedVisibleModule() {
+        val target = carePadRestoredContentTarget(
+            destination = CarePadDestination.HOME,
+            lastContentTarget = CarePadPrimaryControllerTarget.Module(modulePackage),
+            focusedModulePackage = modulePackage,
+            visiblePackages = visiblePackages,
+        )
+
+        assertEquals(CarePadPrimaryControllerTarget.Module(modulePackage), target)
+    }
+
+    @Test
+    fun staleHomeTargetUsesRememberedVisibleModuleInstead() {
+        val replacementPackage = "dev.carepad.module.gamesbios"
+        val target = carePadRestoredContentTarget(
+            destination = CarePadDestination.HOME,
+            lastContentTarget = CarePadPrimaryControllerTarget.Module("removed.package"),
+            focusedModulePackage = replacementPackage,
+            visiblePackages = listOf(replacementPackage),
+        )
+
+        assertEquals(CarePadPrimaryControllerTarget.Module(replacementPackage), target)
+    }
+
+    @Test
+    fun addModulesUsesSafeContentFallbackWhenNoActionableTargetExists() {
+        val target = carePadRestoredContentTarget(
+            destination = CarePadDestination.ADD_MODULES,
+            lastContentTarget = CarePadPrimaryControllerTarget.Theme(AppThemeMode.DARK),
+            focusedModulePackage = modulePackage,
+            visiblePackages = visiblePackages,
+        )
+
+        assertEquals(CarePadPrimaryControllerTarget.None, target)
+    }
+
+    @Test
     fun detailsActionIsLimitedToHomeContent() {
         val contentHome = CarePadFocusState()
         val railHome = contentHome.onRailFocused(CarePadDestination.HOME)

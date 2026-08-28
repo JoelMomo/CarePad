@@ -22,6 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -42,6 +44,7 @@ fun CarePadSettingsScreen(
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
     onControllerThemeFocusChanged: (AppThemeMode, Boolean) -> Unit,
+    controllerFocusRequesters: Map<AppThemeMode, FocusRequester>,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -81,6 +84,8 @@ fun CarePadSettingsScreen(
                                     icon = Icons.Rounded.SettingsBrightness,
                                     title = stringResource(R.string.theme_system),
                                     selected = themeMode == AppThemeMode.SYSTEM,
+                                    focusRequester =
+                                        controllerFocusRequesters.getValue(AppThemeMode.SYSTEM),
                                     onFocusChanged = { focused ->
                                         onControllerThemeFocusChanged(
                                             AppThemeMode.SYSTEM,
@@ -93,6 +98,8 @@ fun CarePadSettingsScreen(
                                     icon = Icons.Rounded.LightMode,
                                     title = stringResource(R.string.theme_light),
                                     selected = themeMode == AppThemeMode.LIGHT,
+                                    focusRequester =
+                                        controllerFocusRequesters.getValue(AppThemeMode.LIGHT),
                                     onFocusChanged = { focused ->
                                         onControllerThemeFocusChanged(
                                             AppThemeMode.LIGHT,
@@ -105,6 +112,8 @@ fun CarePadSettingsScreen(
                                     icon = Icons.Rounded.DarkMode,
                                     title = stringResource(R.string.theme_dark),
                                     selected = themeMode == AppThemeMode.DARK,
+                                    focusRequester =
+                                        controllerFocusRequesters.getValue(AppThemeMode.DARK),
                                     onFocusChanged = { focused ->
                                         onControllerThemeFocusChanged(
                                             AppThemeMode.DARK,
@@ -127,12 +136,14 @@ private fun CarePadThemeChoice(
     icon: ImageVector,
     title: String,
     selected: Boolean,
+    focusRequester: FocusRequester,
     onFocusChanged: (Boolean) -> Unit,
     onClick: () -> Unit,
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .focusRequester(focusRequester)
             .onFocusChanged { state -> onFocusChanged(state.isFocused) }
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
