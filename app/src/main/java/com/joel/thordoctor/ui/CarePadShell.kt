@@ -74,7 +74,7 @@ import com.joel.thordoctor.R
 import com.joel.thordoctor.modules.host.DiscoveredCarePadModule
 import com.joel.thordoctor.modules.host.ModuleManager
 
-private enum class CarePadDestination {
+internal enum class CarePadDestination {
     HOME,
     ADD_MODULES,
     SETTINGS,
@@ -85,10 +85,60 @@ private enum class CarePadInputMethod {
     CONTROLLER,
 }
 
-private enum class CarePadFocusZone {
+internal enum class CarePadFocusZone {
     RAIL,
     CONTENT,
 }
+
+internal data class CarePadFocusState(
+    val zone: CarePadFocusZone = CarePadFocusZone.CONTENT,
+    val lastRailDestination: CarePadDestination = CarePadDestination.HOME,
+) {
+    fun onRailFocused(destination: CarePadDestination): CarePadFocusState = copy(
+        zone = CarePadFocusZone.RAIL,
+        lastRailDestination = destination,
+    )
+
+    fun onContentFocused(): CarePadFocusState = copy(zone = CarePadFocusZone.CONTENT)
+}
+
+internal sealed interface CarePadPrimaryControllerTarget {
+    data class Rail(val destination: CarePadDestination) : CarePadPrimaryControllerTarget
+    data class Module(val packageName: String) : CarePadPrimaryControllerTarget
+    data object None : CarePadPrimaryControllerTarget
+}
+
+internal fun carePadPrimaryControllerTarget(
+    focusState: CarePadFocusState,
+    destination: CarePadDestination,
+    focusedModulePackage: String?,
+    visiblePackages: Collection<String>,
+): CarePadPrimaryControllerTarget {
+    if (focusState.zone == CarePadFocusZone.RAIL) {
+        return CarePadPrimaryControllerTarget.Rail(focusState.lastRailDestination)
+    }
+
+    val packageName = focusedModulePackage
+    return if (
+        destination == CarePadDestination.HOME &&
+        packageName != null &&
+        packageName in visiblePackages
+    ) {
+        CarePadPrimaryControllerTarget.Module(packageName)
+    } else {
+        CarePadPrimaryControllerTarget.None
+    }
+}
+
+internal fun carePadDetailsControllerActionAllowed(
+    focusState: CarePadFocusState,
+    destination: CarePadDestination,
+    focusedModulePackage: String?,
+    visiblePackages: Collection<String>,
+): Boolean =
+    focusState.zone == CarePadFocusZone.CONTENT &&
+        destination == CarePadDestination.HOME &&
+        focusedModulePackage?.let { it in visiblePackages } == true
 
 private data class VisibleModule(
     val module: DiscoveredCarePadModule,
@@ -111,9 +161,8 @@ fun CarePadShellScreen(
     val context = LocalContext.current
     var discovery by remember { mutableStateOf(ModuleManager.discover(context)) }
     var destination by remember { mutableStateOf(CarePadDestination.HOME) }
-    var lastRailDestination by remember { mutableStateOf(CarePadDestination.HOME) }
     var inputMethod by remember { mutableStateOf(CarePadInputMethod.TOUCH) }
-    var focusZone by remember { mutableStateOf(CarePadFocusZone.CONTENT) }
+    var focusState by remember { mutableStateOf(CarePadFocusState()) }
     var expandedPackage by remember { mutableStateOf<String?>(null) }
     var focusedModulePackage by remember { mutableStateOf<String?>(null) }
     var pendingUninstall by remember { mutableStateOf<VisibleModule?>(null) }
@@ -182,7 +231,6 @@ fun CarePadShellScreen(
     fun goTo(next: CarePadDestination) {
         expandedPackage = null
         destination = next
-        lastRailDestination = next
     }
 
     fun handleBack(): Boolean {
@@ -210,17 +258,25 @@ fun CarePadShellScreen(
     }
 
     fun toggleFocusZone() {
-        if (focusZone == CarePadFocusZone.RAIL) {
+        if (focusState.zone == CarePadFocusZone.RAIL) {
             requestContentFocus()
         } else {
-            railFocusRequesters[lastRailDestination]?.requestFocus()
+            railFocusRequesters[focusState.lastRailDestination]?.requestFocus()
         }
     }
 
     fun toggleFocusedDetails() {
-        if (destination != CarePadDestination.HOME) return
+        if (
+            !carePadDetailsControllerActionAllowed(
+                focusState = focusState,
+                destination = destination,
+                focusedModulePackage = focusedModulePackage,
+                visiblePackages = visiblePackages,
+            )
+        ) {
+            return
+        }
         val packageName = focusedModulePackage ?: return
-        if (packageName !in visiblePackages) return
         expandedPackage = if (expandedPackage == packageName) null else packageName
     }
 
@@ -289,25 +345,46 @@ fun CarePadShellScreen(
                     AndroidKeyEvent.KEYCODE_BUTTON_B -> handleBack()
 
                     glyphs.detailsKeyCode -> {
-                        toggleFocusedDetails()
-                        destination == CarePadDestination.HOME &&
-                            focusedModulePackage?.let { it in visiblePackages } == true
+                        val allowed = carePadDetailsControllerActionAllowed(
+                            focusState = focusState,
+                            destination = destination,
+                            focusedModulePackage = focusedModulePackage,
+                            visiblePackages = visiblePackages,
+                        )
+                        if (allowed) {
+                            toggleFocusedDetails()
+                        }
+                        allowed
                     }
 
                     AndroidKeyEvent.KEYCODE_BUTTON_A -> {
-                        if (destination != CarePadDestination.HOME) {
-                            false
-                        } else {
-                            val item = visibleModules.firstOrNull {
-                                it.module.packageName == focusedModulePackage
-                            }
-                            if (item == null) {
-                                false
-                            } else {
-                                expandedPackage = null
-                                ModuleManager.open(context, item.module)
+                        when (
+                            val target = carePadPrimaryControllerTarget(
+                                focusState = focusState,
+                                destination = destination,
+                                focusedModulePackage = focusedModulePackage,
+                                visiblePackages = visiblePackages,
+                            )
+                        ) {
+                            is CarePadPrimaryControllerTarget.Rail -> {
+                                goTo(target.destination)
                                 true
                             }
+
+                            is CarePadPrimaryControllerTarget.Module -> {
+                                val item = visibleModules.firstOrNull {
+                                    it.module.packageName == target.packageName
+                                }
+                                if (item == null) {
+                                    false
+                                } else {
+                                    expandedPackage = null
+                                    ModuleManager.open(context, item.module)
+                                    true
+                                }
+                            }
+
+                            CarePadPrimaryControllerTarget.None -> false
                         }
                     }
 
@@ -318,8 +395,8 @@ fun CarePadShellScreen(
         CarePadNavigationRail(
             selected = destination,
             focusRequesters = railFocusRequesters,
-            onFocusChanged = { focused ->
-                focusZone = if (focused) CarePadFocusZone.RAIL else CarePadFocusZone.CONTENT
+            onFocused = { focusedDestination ->
+                focusState = focusState.onRailFocused(focusedDestination)
             },
             onSelected = ::goTo,
         )
@@ -336,6 +413,11 @@ fun CarePadShellScreen(
                         .weight(1f)
                         .fillMaxWidth()
                         .focusRequester(contentFallbackRequester)
+                        .onFocusChanged { state ->
+                            if (state.isFocused) {
+                                focusState = focusState.onContentFocused()
+                            }
+                        }
                         .focusable(),
                 ) {
                     when (destination) {
@@ -347,7 +429,7 @@ fun CarePadShellScreen(
                             listState = homeListState,
                             onFocused = { packageName ->
                                 focusedModulePackage = packageName
-                                focusZone = CarePadFocusZone.CONTENT
+                                focusState = focusState.onContentFocused()
                             },
                             onOpen = { item ->
                                 expandedPackage = null
@@ -385,7 +467,7 @@ fun CarePadShellScreen(
 private fun CarePadNavigationRail(
     selected: CarePadDestination,
     focusRequesters: Map<CarePadDestination, FocusRequester>,
-    onFocusChanged: (Boolean) -> Unit,
+    onFocused: (CarePadDestination) -> Unit,
     onSelected: (CarePadDestination) -> Unit,
 ) {
     NavigationRail(
@@ -407,7 +489,11 @@ private fun CarePadNavigationRail(
                 alwaysShowLabel = true,
                 modifier = Modifier
                     .focusRequester(focusRequesters.getValue(item.destination))
-                    .onFocusChanged { state -> onFocusChanged(state.isFocused) },
+                    .onFocusChanged { state ->
+                        if (state.isFocused) {
+                            onFocused(item.destination)
+                        }
+                    },
             )
         }
     }
