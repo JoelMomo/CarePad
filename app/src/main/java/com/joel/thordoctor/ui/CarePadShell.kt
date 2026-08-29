@@ -13,6 +13,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,6 +61,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -701,6 +703,10 @@ fun CarePadShellScreen(
 
         Surface(
             modifier = Modifier
+                .focusProperties {
+                    onExit = { cancelFocusChange() }
+                }
+                .focusGroup()
                 .weight(1f)
                 .fillMaxHeight()
                 .pointerInteropFilter { event ->
@@ -834,6 +840,10 @@ private fun CarePadNavigationRail(
 
     NavigationRail(
         modifier = Modifier
+            .focusProperties {
+                onExit = { cancelFocusChange() }
+            }
+            .focusGroup()
             .width(animatedWidth)
             .fillMaxHeight(),
         containerColor = MaterialTheme.colorScheme.surface,
