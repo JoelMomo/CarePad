@@ -704,7 +704,15 @@ fun CarePadShellScreen(
         Surface(
             modifier = Modifier
                 .focusProperties {
-                    onExit = { cancelFocusChange() }
+                    onExit = {
+                        when (requestedFocusDirection) {
+                            FocusDirection.Up,
+                            FocusDirection.Down,
+                            FocusDirection.Left,
+                            FocusDirection.Right -> cancelFocusChange()
+                            else -> Unit
+                        }
+                    }
                 }
                 .focusGroup()
                 .weight(1f)
@@ -841,7 +849,15 @@ private fun CarePadNavigationRail(
     NavigationRail(
         modifier = Modifier
             .focusProperties {
-                onExit = { cancelFocusChange() }
+                onExit = {
+                    when (requestedFocusDirection) {
+                        FocusDirection.Up,
+                        FocusDirection.Down,
+                        FocusDirection.Left,
+                        FocusDirection.Right -> cancelFocusChange()
+                        else -> Unit
+                    }
+                }
             }
             .focusGroup()
             .width(animatedWidth)
