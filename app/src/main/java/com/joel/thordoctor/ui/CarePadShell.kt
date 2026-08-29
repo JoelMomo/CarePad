@@ -63,12 +63,14 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -299,6 +301,7 @@ fun CarePadShellScreen(
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val inputModeManager = LocalInputModeManager.current
     var discovery by remember { mutableStateOf(ModuleManager.discover(context)) }
     var destination by remember { mutableStateOf(CarePadDestination.HOME) }
     var inputMethod by remember { mutableStateOf(CarePadInputMethod.TOUCH) }
@@ -585,6 +588,9 @@ fun CarePadShellScreen(
 
                 val wasTouch = inputMethod == CarePadInputMethod.TOUCH
                 val wasContent = focusState.zone == CarePadFocusZone.CONTENT
+                if (wasTouch) {
+                    inputModeManager.requestInputMode(InputMode.Keyboard)
+                }
                 applyInteractionSnapshot(
                     carePadControllerInputTransition(currentInteractionSnapshot())
                 )
