@@ -80,6 +80,33 @@ class CarePadShellNavigationTest {
     }
 
     @Test
+    fun railTouchSwitchesImmediatelyAndPreservesTouchedRailAndContentContext() {
+        val rememberedTarget = CarePadPrimaryControllerTarget.Theme(AppThemeMode.LIGHT)
+        val before = CarePadInteractionSnapshot(
+            inputMethod = CarePadInputMethod.CONTROLLER,
+            destination = CarePadDestination.SETTINGS,
+            focusState = CarePadFocusState()
+                .onRailFocused(CarePadDestination.HOME),
+            lastContentTarget = rememberedTarget,
+        )
+
+        val after = carePadRailTouchTransition(
+            snapshot = before,
+            touchedDestination = CarePadDestination.SETTINGS,
+        )
+
+        assertEquals(CarePadInputMethod.TOUCH, after.inputMethod)
+        assertEquals(CarePadDestination.SETTINGS, after.destination)
+        assertEquals(CarePadFocusZone.RAIL, after.focusState.zone)
+        assertEquals(CarePadDestination.SETTINGS, after.focusState.lastRailDestination)
+        assertEquals(rememberedTarget, after.lastContentTarget)
+        assertEquals(
+            CarePadRailVisualState.EXPANDED,
+            carePadRailVisualState(after.focusState),
+        )
+    }
+
+    @Test
     fun actionableTouchBecomesRememberedContentTargetWithoutChangingPageOrRail() {
         val before = CarePadInteractionSnapshot(
             inputMethod = CarePadInputMethod.CONTROLLER,
