@@ -455,6 +455,7 @@ fun CarePadShellScreen(
             )
         )
         primaryControllerTarget = CarePadPrimaryControllerTarget.None
+        contentFallbackRequester.requestFocus()
         when (touchedTarget) {
             is CarePadPrimaryControllerTarget.Module ->
                 focusedModulePackage = touchedTarget.packageName
