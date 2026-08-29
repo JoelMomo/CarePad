@@ -162,6 +162,14 @@ internal fun carePadContentTouchTransition(
     lastContentTarget = touchedTarget ?: snapshot.lastContentTarget,
 )
 
+internal fun carePadRailTouchTransition(
+    snapshot: CarePadInteractionSnapshot,
+    touchedDestination: CarePadDestination,
+): CarePadInteractionSnapshot = snapshot.copy(
+    inputMethod = CarePadInputMethod.TOUCH,
+    focusState = snapshot.focusState.onRailFocused(touchedDestination),
+)
+
 internal fun carePadControllerInputTransition(
     snapshot: CarePadInteractionSnapshot,
 ): CarePadInteractionSnapshot = snapshot.copy(
@@ -452,6 +460,17 @@ fun CarePadShellScreen(
         lastContentControllerTarget = snapshot.lastContentTarget
     }
 
+    fun enterTouchRail(touchedDestination: CarePadDestination) {
+        applyInteractionSnapshot(
+            carePadRailTouchTransition(
+                snapshot = currentInteractionSnapshot(),
+                touchedDestination = touchedDestination,
+            )
+        )
+        primaryControllerTarget = CarePadPrimaryControllerTarget.Rail(touchedDestination)
+        railFocusRequesters[touchedDestination]?.requestFocus()
+    }
+
     fun enterTouchContent(touchedTarget: CarePadPrimaryControllerTarget? = null) {
         applyInteractionSnapshot(
             carePadContentTouchTransition(
@@ -698,7 +717,12 @@ fun CarePadShellScreen(
                 primaryControllerTarget =
                     CarePadPrimaryControllerTarget.Rail(focusedDestination)
             },
-            onSelected = ::goTo,
+            onSelected = { selectedDestination ->
+                goTo(selectedDestination)
+                if (inputMethod == CarePadInputMethod.TOUCH) {
+                    enterTouchRail(selectedDestination)
+                }
+            },
         )
 
         Surface(
