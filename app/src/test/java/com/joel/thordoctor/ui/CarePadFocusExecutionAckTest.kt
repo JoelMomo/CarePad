@@ -10,7 +10,7 @@ class CarePadFocusExecutionAckTest {
     private val system = CarePadFocusKey.Theme(AppThemeMode.SYSTEM)
 
     @Test
-    fun acceptedRequestAckAdvancesContinuationWithoutInventingObservation() {
+    fun acceptedRequestAckWaitsForObservedTargetBeforeAdvancingContinuation() {
         val touched = reduceCarePadFocus(
             CarePadFocusControllerState(
                 activeZone = CarePadFocusZone.CONTENT,
@@ -42,22 +42,27 @@ class CarePadFocusExecutionAckTest {
         )
 
         assertNull(acknowledged.observedFocus)
+        assertEquals(requestToken, acknowledged.pendingFocus?.token)
         assertEquals(
-            CarePadFocusIntent.MoveWithinZone(CarePadDirection.DOWN),
+            CarePadFocusIntent.RequestTarget(system),
             acknowledged.pendingFocus?.intent,
         )
-        assertTrue(acknowledged.pendingFocus!!.token > requestToken)
+        assertEquals(CarePadDirection.DOWN, acknowledged.pendingFocus?.moveAfterConfirmation)
 
-        val moveToken = acknowledged.pendingFocus!!.token
-        val observedLater = reduceCarePadFocus(
+        val observed = reduceCarePadFocus(
             acknowledged,
             CarePadFocusEvent.FocusObserved(system),
         )
-        assertEquals(system, observedLater.observedFocus)
-        assertEquals(moveToken, observedLater.pendingFocus?.token)
+        assertEquals(system, observed.observedFocus)
+        assertEquals(
+            CarePadFocusIntent.MoveWithinZone(CarePadDirection.DOWN),
+            observed.pendingFocus?.intent,
+        )
+        assertTrue(observed.pendingFocus!!.token > requestToken)
 
+        val moveToken = observed.pendingFocus!!.token
         val staleAck = reduceCarePadFocus(
-            observedLater,
+            observed,
             CarePadFocusEvent.FocusExecutionResult(requestToken, accepted = true),
         )
         assertEquals(moveToken, staleAck.pendingFocus?.token)
