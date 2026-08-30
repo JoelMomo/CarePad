@@ -244,14 +244,62 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-      - name: Build parallel CarePad lab host
-        run: ./gradlew :app:assembleDebug -PcarepadLabHost=true --stacktrace
+      - name: Build parallel CarePad lab host and focus androidTest
+        run: ./gradlew :app:clean :app:assembleDebug :app:assembleDebugAndroidTest -PcarepadLabHost=true --stacktrace
+
+      - name: Verify parallel CarePad lab focus androidTest target
+        run: |
+          LAB_HOST_APK="$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          LAB_TEST_APK="$(find app/build/outputs/apk/androidTest/debug -name '*-androidTest.apk' -print -quit)"
+          test -n "$LAB_HOST_APK"
+          test -n "$LAB_TEST_APK"
+
+          APKANALYZER="$(command -v apkanalyzer || true)"
+          if [ -z "$APKANALYZER" ]; then
+            APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -print -quit)"
+          fi
+          test -n "$APKANALYZER"
+          test -x "$APKANALYZER"
+
+          "$APKANALYZER" manifest print "$LAB_HOST_APK" > "$RUNNER_TEMP/carepad-lab-host-manifest.xml"
+          "$APKANALYZER" manifest print "$LAB_TEST_APK" > "$RUNNER_TEMP/carepad-lab-androidTest-manifest.xml"
+
+          python3 - \
+            "$RUNNER_TEMP/carepad-lab-host-manifest.xml" \
+            "$RUNNER_TEMP/carepad-lab-androidTest-manifest.xml" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          ANDROID = "{http://schemas.android.com/apk/res/android}"
+          EXPECTED = "com.joel.thordoctor.carepadlabhost"
+
+          host = ET.parse(sys.argv[1]).getroot()
+          test = ET.parse(sys.argv[2]).getroot()
+          instrumentation = test.find("instrumentation")
+          if instrumentation is None:
+              raise AssertionError("instrumentation missing from LAB androidTest manifest")
+
+          host_package = host.attrib.get("package")
+          target_package = instrumentation.attrib.get(ANDROID + "targetPackage")
+          assert host_package == EXPECTED, (host_package, EXPECTED)
+          assert target_package == EXPECTED, (target_package, EXPECTED)
+
+          print(f"CarePad LAB pair verified: hostPackage={host_package}, targetPackage={target_package}")
+          PY
 
       - name: Upload parallel CarePad lab host
         uses: actions/upload-artifact@v4
         with:
           name: CarePad-host-lab-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload parallel CarePad lab focus androidTest APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-focus-androidTest-lab-debug
+          path: app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 3
 
