@@ -19,7 +19,6 @@ class CarePadFocusExecutionAckTest {
                 railPreferredDestination = CarePadDestination.SETTINGS,
                 contentPreferredTargets = mapOf(CarePadDestination.SETTINGS to system),
                 contentFallbackTarget = system,
-                observedFocus = system,
             ),
             CarePadFocusEvent.TouchContent(system),
         )
