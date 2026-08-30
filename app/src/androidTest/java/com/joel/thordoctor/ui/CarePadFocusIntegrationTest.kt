@@ -35,7 +35,6 @@ class CarePadFocusIntegrationTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     private val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
-    private val focusTrace = mutableListOf<String>()
 
     private lateinit var inputModeManager: InputModeManager
     private lateinit var navHome: String
@@ -49,7 +48,6 @@ class CarePadFocusIntegrationTest {
     @Before
     fun setUp() {
         themeMode.value = AppThemeMode.SYSTEM
-        focusTrace.clear()
         navHome = composeRule.activity.getString(R.string.carepad_nav_home)
         navAddModules = composeRule.activity.getString(R.string.carepad_nav_add_modules)
         navSettings = composeRule.activity.getString(R.string.carepad_nav_settings)
@@ -63,7 +61,6 @@ class CarePadFocusIntegrationTest {
             MaterialTheme {
                 CarePadShellScreen(
                     onThemeModeChange = { mode -> themeMode.value = mode },
-                    focusTrace = { entry -> focusTrace += entry },
                     settingsContent = {
                             _,
                             onThemeFocusChanged,
@@ -213,34 +210,11 @@ class CarePadFocusIntegrationTest {
         touchHint().assertExists()
         railNode(navHome).assertIsSelected()
 
-        // Capture only the causal window for this first L1. The production hook is passive
-        // and no-op by default; this test merely records callbacks already emitted by the shell.
-        focusTrace.clear()
-        val probe = pressL1WithFocusTimingProbe()
+        pressL1()
         controllerHint().assertExists()
         railNode(navHome).assertIsSelected()
-
-        val traceMessage = buildString {
-            appendLine("CAREFPAD_FOCUS_PROBE_V2")
-            probe.traceAfterDown.forEach(::appendLine)
-            append(
-                "PHYSICAL_AFTER_DOWN controller=${probe.controllerHintAfterDown} " +
-                    "settings=${probe.settingsFocusedAfterDown} " +
-                    "home=${probe.homeFocusedAfterDown}"
-            )
-            appendLine()
-            append(
-                "PHYSICAL_AFTER_UP settings=${probe.settingsFocusedAfterUp} " +
-                    "home=${probe.homeFocusedAfterUp}"
-            )
-        }
-        println(traceMessage)
-
-        if (!probe.settingsFocusedAfterUp) {
-            throw AssertionError(traceMessage)
-        }
-
         railNode(navSettings).assertIsFocused()
+        textNode(appearance).assertDoesNotExist()
     }
 
     @Test
@@ -378,63 +352,6 @@ class CarePadFocusIntegrationTest {
 
     private fun pressA() {
         injectControllerKey(KeyEvent.KEYCODE_BUTTON_A, InputDevice.SOURCE_GAMEPAD)
-    }
-
-    private data class L1FocusTimingProbe(
-        val controllerHintAfterDown: Boolean,
-        val settingsFocusedAfterDown: Boolean,
-        val homeFocusedAfterDown: Boolean,
-        val settingsFocusedAfterUp: Boolean,
-        val homeFocusedAfterUp: Boolean,
-        val traceAfterDown: List<String>,
-    )
-
-    private fun pressL1WithFocusTimingProbe(): L1FocusTimingProbe {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val downTime = SystemClock.uptimeMillis()
-        val down = KeyEvent(
-            downTime,
-            downTime,
-            KeyEvent.ACTION_DOWN,
-            KeyEvent.KEYCODE_BUTTON_L1,
-            0,
-            0,
-            KeyCharacterMap.VIRTUAL_KEYBOARD,
-            0,
-            0,
-            InputDevice.SOURCE_GAMEPAD,
-        )
-        val up = KeyEvent(
-            downTime,
-            SystemClock.uptimeMillis(),
-            KeyEvent.ACTION_UP,
-            KeyEvent.KEYCODE_BUTTON_L1,
-            0,
-            0,
-            KeyCharacterMap.VIRTUAL_KEYBOARD,
-            0,
-            0,
-            InputDevice.SOURCE_GAMEPAD,
-        )
-
-        check(instrumentation.uiAutomation.injectInputEvent(down, true))
-        composeRule.waitForIdle()
-        val controllerAfterDown = runCatching { controllerHint().assertExists() }.isSuccess
-        val settingsAfterDown = runCatching { railNode(navSettings).assertIsFocused() }.isSuccess
-        val homeAfterDown = runCatching { railNode(navHome).assertIsFocused() }.isSuccess
-        val traceAfterDown = focusTrace.toList()
-
-        check(instrumentation.uiAutomation.injectInputEvent(up, true))
-        composeRule.waitForIdle()
-        return L1FocusTimingProbe(
-            controllerHintAfterDown = controllerAfterDown,
-            settingsFocusedAfterDown = settingsAfterDown,
-            homeFocusedAfterDown = homeAfterDown,
-            settingsFocusedAfterUp =
-                runCatching { railNode(navSettings).assertIsFocused() }.isSuccess,
-            homeFocusedAfterUp = runCatching { railNode(navHome).assertIsFocused() }.isSuccess,
-            traceAfterDown = traceAfterDown,
-        )
     }
 
     private fun injectControllerKey(keyCode: Int, source: Int) {
