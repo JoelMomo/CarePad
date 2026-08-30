@@ -66,7 +66,11 @@ class CarePadFocusControllerTest {
         )
         assertEquals(CarePadFocusZone.CONTENT, after.activeZone)
         assertEquals(CarePadDestination.SETTINGS, after.selectedDestination)
-        assertEquals(CarePadDestination.HOME, after.railPreferredDestination)
+        assertEquals(
+            CarePadFocusKey.Rail(CarePadDestination.HOME),
+            after.observedFocus,
+        )
+        assertEquals(CarePadDestination.SETTINGS, after.railPreferredDestination)
     }
 
     @Test
