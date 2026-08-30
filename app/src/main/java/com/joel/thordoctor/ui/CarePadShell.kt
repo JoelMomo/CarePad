@@ -138,7 +138,6 @@ private data class ControllerGlyphs(
 @Composable
 fun CarePadShellScreen(
     onThemeModeChange: (AppThemeMode) -> Unit,
-    focusTrace: ((String) -> Unit)? = null,
     settingsContent: @Composable (
         onBack: () -> Unit,
         onThemeFocusChanged: (AppThemeMode, Boolean) -> Unit,
@@ -153,19 +152,6 @@ fun CarePadShellScreen(
     var focusControllerState by remember { mutableStateOf(CarePadFocusControllerState()) }
     var expandedPackage by remember { mutableStateOf<String?>(null) }
     var pendingUninstall by remember { mutableStateOf<VisibleModule?>(null) }
-    val focusTraceSequence = remember { longArrayOf(0L) }
-
-    fun traceFocus(message: String) {
-        val trace = focusTrace ?: return
-        focusTraceSequence[0] += 1
-        trace("${focusTraceSequence[0]} $message")
-    }
-
-    fun focusStateTrace(state: CarePadFocusControllerState): String =
-        "zone=${state.activeZone} modality=${state.modality} " +
-            "selected=${state.selectedDestination} railPreferred=${state.railPreferredDestination} " +
-            "observed=${state.observedFocus} pending=${state.pendingFocus} " +
-            "nextToken=${state.nextFocusToken}"
 
     val destination = focusControllerState.selectedDestination
     val inputMethod = focusControllerState.modality
@@ -206,12 +192,7 @@ fun CarePadShellScreen(
     val contentFallbackRequester = remember { FocusRequester() }
 
     fun dispatchFocus(event: CarePadFocusEvent) {
-        val before = focusControllerState
-        val after = reduceCarePadFocus(before, event)
-        focusControllerState = after
-        traceFocus(
-            "EVENT $event | before=${focusStateTrace(before)} | after=${focusStateTrace(after)}"
-        )
+        focusControllerState = reduceCarePadFocus(focusControllerState, event)
     }
 
     fun refreshModules() {
@@ -270,14 +251,12 @@ fun CarePadShellScreen(
     val pendingFocus = focusControllerState.pendingFocus
     LaunchedEffect(pendingFocus?.token) {
         val pending = pendingFocus ?: return@LaunchedEffect
-        traceFocus("EXECUTE token=${pending.token} intent=${pending.intent}")
         val accepted = when (val intent = pending.intent) {
             is CarePadFocusIntent.RequestTarget -> {
                 val requester = when (val target = intent.target) {
                     is CarePadFocusKey.Rail -> railFocusRequesters[target.destination]
                     is CarePadFocusKey.Module -> moduleFocusRequesters[target.packageName]
-                    is CarePadFocusKey.Uninstall ->
-                        uninstallFocusRequesters[target.packageName]
+                    is CarePadFocusKey.Uninstall -> uninstallFocusRequesters[target.packageName]
                     is CarePadFocusKey.Theme -> themeFocusRequesters[target.mode]
                     is CarePadFocusKey.ContentFallback -> {
                         if (target.destination == destination) {
@@ -287,24 +266,7 @@ fun CarePadShellScreen(
                         }
                     }
                 }
-                traceFocus(
-                    "REQUESTER token=${pending.token} target=${intent.target} " +
-                        "resolved=${requester != null}"
-                )
-                if (requester == null) {
-                    traceFocus(
-                        "REQUEST_FOCUS token=${pending.token} target=${intent.target} skipped=null"
-                    )
-                    false
-                } else {
-                    traceFocus("REQUEST_FOCUS token=${pending.token} target=${intent.target} call")
-                    val requestAccepted = requester.requestFocus()
-                    traceFocus(
-                        "REQUEST_FOCUS token=${pending.token} target=${intent.target} " +
-                            "return=$requestAccepted"
-                    )
-                    requestAccepted
-                }
+                requester?.requestFocus() ?: false
             }
 
             is CarePadFocusIntent.MoveWithinZone ->
@@ -334,6 +296,7 @@ fun CarePadShellScreen(
         }
         return false
     }
+
     fun enterTouchRail(touchedDestination: CarePadDestination) {
         dispatchFocus(CarePadFocusEvent.TouchRail(touchedDestination))
     }
@@ -428,20 +391,10 @@ fun CarePadShellScreen(
                 val wasTouch = focusControllerState.modality == CarePadInputMethod.TOUCH
                 when {
                     native.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_L1 -> {
-                        traceFocus(
-                            "KEYDOWN L1 start state=${focusStateTrace(focusControllerState)} " +
-                                "wasTouch=$wasTouch"
-                        )
                         dispatchFocus(CarePadFocusEvent.ControllerL1())
                         if (wasTouch) {
-                            traceFocus("INPUT_MODE Keyboard call reason=L1")
-                            val modeAccepted =
-                                inputModeManager.requestInputMode(InputMode.Keyboard)
-                            traceFocus("INPUT_MODE Keyboard return=$modeAccepted reason=L1")
+                            inputModeManager.requestInputMode(InputMode.Keyboard)
                         }
-                        traceFocus(
-                            "KEYDOWN L1 handler-return state=${focusStateTrace(focusControllerState)}"
-                        )
                         true
                     }
 
@@ -997,57 +950,3 @@ private fun moduleIcon(moduleId: String): ImageVector = when (
     0 -> Icons.Rounded.Speed
     else -> Icons.Rounded.SportsEsports
 }
-
-private fun controllerGlyphs(profile: ControlGlyphProfile): ControllerGlyphs = when (profile) {
-    ControlGlyphProfile.GENERIC -> ControllerGlyphs(
-        primary = "A",
-        details = "Superior",
-        back = "B",
-        navigation = "L1",
-        detailsKeyCode = AndroidKeyEvent.KEYCODE_BUTTON_Y,
-    )
-
-    ControlGlyphProfile.ABXY_Y_TOP -> ControllerGlyphs(
-        primary = "A",
-        details = "Y",
-        back = "B",
-        navigation = "LB",
-        detailsKeyCode = AndroidKeyEvent.KEYCODE_BUTTON_Y,
-    )
-
-    ControlGlyphProfile.ABXY_X_TOP -> ControllerGlyphs(
-        primary = "A",
-        details = "X",
-        back = "B",
-        navigation = "L",
-        detailsKeyCode = AndroidKeyEvent.KEYCODE_BUTTON_X,
-    )
-
-    ControlGlyphProfile.SYMBOLS_TRIANGLE_TOP -> ControllerGlyphs(
-        primary = "✕",
-        details = "△",
-        back = "○",
-        navigation = "L1",
-        detailsKeyCode = AndroidKeyEvent.KEYCODE_BUTTON_Y,
-    )
-}
-
-private fun controllerDirection(keyCode: Int): CarePadDirection? = when (keyCode) {
-    AndroidKeyEvent.KEYCODE_DPAD_UP -> CarePadDirection.UP
-    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> CarePadDirection.DOWN
-    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> CarePadDirection.LEFT
-    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> CarePadDirection.RIGHT
-    else -> null
-}
-
-private fun CarePadDirection.toComposeFocusDirection(): FocusDirection = when (this) {
-    CarePadDirection.UP -> FocusDirection.Up
-    CarePadDirection.DOWN -> FocusDirection.Down
-    CarePadDirection.LEFT -> FocusDirection.Left
-    CarePadDirection.RIGHT -> FocusDirection.Right
-}
-
-private fun isControllerSource(source: Int): Boolean =
-    (source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
-        (source and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD ||
-        (source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
