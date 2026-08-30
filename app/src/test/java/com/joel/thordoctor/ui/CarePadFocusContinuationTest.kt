@@ -99,7 +99,6 @@ class CarePadFocusContinuationTest {
             railPreferredDestination = CarePadDestination.SETTINGS,
             contentPreferredTargets = mapOf(CarePadDestination.SETTINGS to system),
             contentFallbackTarget = system,
-            observedFocus = system,
         )
         val touched = reduceCarePadFocus(
             initial,
