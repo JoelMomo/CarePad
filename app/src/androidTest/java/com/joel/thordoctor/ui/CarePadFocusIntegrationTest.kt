@@ -10,8 +10,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNode
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -233,8 +236,10 @@ class CarePadFocusIntegrationTest {
         composeRule.waitForIdle()
     }
 
-    private fun railNode(label: String) =
-        composeRule.onNodeWithContentDescription(label, useUnmergedTree = true)
+    private fun railNode(label: String) = composeRule.onNode(
+        matcher = hasClickAction() and hasAnyDescendant(hasContentDescription(label)),
+        useUnmergedTree = true,
+    )
 
     private fun textNode(text: String) = composeRule.onNodeWithText(text)
 
