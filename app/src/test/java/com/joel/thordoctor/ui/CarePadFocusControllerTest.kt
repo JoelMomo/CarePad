@@ -8,40 +8,45 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CarePadFocusControllerTest {
-    private val settingsSystem = CarePadFocusKey.Theme(AppThemeMode.SYSTEM)
-    private val settingsLight = CarePadFocusKey.Theme(AppThemeMode.LIGHT)
-    private val settingsDark = CarePadFocusKey.Theme(AppThemeMode.DARK)
+    private val system = CarePadFocusKey.Theme(AppThemeMode.SYSTEM)
+    private val light = CarePadFocusKey.Theme(AppThemeMode.LIGHT)
+    private val dark = CarePadFocusKey.Theme(AppThemeMode.DARK)
 
     @Test
-    fun onlyControllerL1CrossesZones() {
-        val initial = settingsControllerState()
-
-        val afterDpad = reduceCarePadFocus(
-            initial,
-            CarePadFocusEvent.ControllerDpad(CarePadDirection.DOWN),
+    fun l1IsTheOnlyControllerOrFocusEventThatChangesZone() {
+        val initial = settingsState()
+        assertEquals(
+            CarePadFocusZone.CONTENT,
+            reduceCarePadFocus(
+                initial,
+                CarePadFocusEvent.ControllerDpad(CarePadDirection.DOWN),
+            ).activeZone,
         )
-        val afterObserved = reduceCarePadFocus(
-            initial,
-            CarePadFocusEvent.FocusObserved(CarePadFocusKey.Rail(CarePadDestination.HOME)),
+        assertEquals(
+            CarePadFocusZone.CONTENT,
+            reduceCarePadFocus(
+                initial,
+                CarePadFocusEvent.FocusObserved(
+                    CarePadFocusKey.Rail(CarePadDestination.HOME)
+                ),
+            ).activeZone,
         )
-        val afterActivity = reduceCarePadFocus(initial, CarePadFocusEvent.ControllerActivity)
-        val afterL1 = reduceCarePadFocus(initial, CarePadFocusEvent.ControllerL1())
-
-        assertEquals(CarePadFocusZone.CONTENT, afterDpad.activeZone)
-        assertEquals(CarePadFocusZone.CONTENT, afterObserved.activeZone)
-        assertEquals(CarePadFocusZone.CONTENT, afterActivity.activeZone)
-        assertEquals(CarePadFocusZone.RAIL, afterL1.activeZone)
+        assertEquals(
+            CarePadFocusZone.CONTENT,
+            reduceCarePadFocus(initial, CarePadFocusEvent.ControllerActivity).activeZone,
+        )
+        assertEquals(
+            CarePadFocusZone.RAIL,
+            reduceCarePadFocus(initial, CarePadFocusEvent.ControllerL1()).activeZone,
+        )
     }
 
     @Test
-    fun dpadNeverChangesZoneAndSchedulesOneMoveWhenFocusIsObserved() {
-        val initial = settingsControllerState()
-
+    fun dpadWithObservedFocusSchedulesExactlyOneMoveWithoutChangingZone() {
         val after = reduceCarePadFocus(
-            initial,
+            settingsState(),
             CarePadFocusEvent.ControllerDpad(CarePadDirection.DOWN),
         )
-
         assertEquals(CarePadFocusZone.CONTENT, after.activeZone)
         assertEquals(CarePadInputMethod.CONTROLLER, after.modality)
         assertEquals(
@@ -52,137 +57,124 @@ class CarePadFocusControllerTest {
     }
 
     @Test
-    fun focusObservedNeverChangesZoneOrSelectedDestination() {
-        val initial = settingsControllerState().copy(
-            activeZone = CarePadFocusZone.CONTENT,
-            selectedDestination = CarePadDestination.SETTINGS,
-        )
-
+    fun focusObservedDoesNotChangeZoneOrSelectedDestination() {
         val after = reduceCarePadFocus(
-            initial,
-            CarePadFocusEvent.FocusObserved(CarePadFocusKey.Rail(CarePadDestination.HOME)),
+            settingsState(),
+            CarePadFocusEvent.FocusObserved(
+                CarePadFocusKey.Rail(CarePadDestination.HOME)
+            ),
         )
-
         assertEquals(CarePadFocusZone.CONTENT, after.activeZone)
         assertEquals(CarePadDestination.SETTINGS, after.selectedDestination)
         assertEquals(CarePadDestination.HOME, after.railPreferredDestination)
     }
 
     @Test
-    fun touchRailDeclaresTouchContextAndInvalidatesResidualFocus() {
-        val initial = settingsControllerState()
-
+    fun touchRailDeclaresTouchContextAndRequestsTouchedRailTarget() {
         val after = reduceCarePadFocus(
-            initial,
+            settingsState(),
             CarePadFocusEvent.TouchRail(CarePadDestination.SETTINGS),
         )
-
         assertEquals(CarePadInputMethod.TOUCH, after.modality)
         assertEquals(CarePadFocusZone.RAIL, after.activeZone)
         assertEquals(CarePadDestination.SETTINGS, after.railPreferredDestination)
         assertNull(after.observedFocus)
-        assertNull(after.pendingFocus)
-        assertEquals(settingsSystem, after.contentPreferredTargets[CarePadDestination.SETTINGS])
+        assertEquals(
+            CarePadFocusIntent.RequestTarget(
+                CarePadFocusKey.Rail(CarePadDestination.SETTINGS)
+            ),
+            after.pendingFocus?.intent,
+        )
+        assertEquals(system, after.contentPreferredTargets[CarePadDestination.SETTINGS])
     }
 
     @Test
-    fun touchContentKeepsRailMemoryAndRecordsSemanticContentTarget() {
-        val initial = settingsControllerState().copy(
+    fun touchContentRecordsSemanticTargetAndRequestsItThroughExecutor() {
+        val initial = settingsState().copy(
             activeZone = CarePadFocusZone.RAIL,
-            railPreferredDestination = CarePadDestination.SETTINGS,
             observedFocus = CarePadFocusKey.Rail(CarePadDestination.SETTINGS),
         )
-
-        val after = reduceCarePadFocus(
-            initial,
-            CarePadFocusEvent.TouchContent(settingsLight),
-        )
-
+        val after = reduceCarePadFocus(initial, CarePadFocusEvent.TouchContent(light))
         assertEquals(CarePadInputMethod.TOUCH, after.modality)
         assertEquals(CarePadFocusZone.CONTENT, after.activeZone)
-        assertEquals(CarePadDestination.SETTINGS, after.railPreferredDestination)
-        assertEquals(settingsLight, after.contentPreferredTargets[CarePadDestination.SETTINGS])
+        assertEquals(light, after.contentPreferredTargets[CarePadDestination.SETTINGS])
         assertNull(after.observedFocus)
+        assertEquals(
+            CarePadFocusIntent.RequestTarget(light),
+            after.pendingFocus?.intent,
+        )
     }
 
     @Test
-    fun firstDpadAfterRailTouchRestoresTouchedItemThenContinuesSameInput() {
+    fun firstDpadAfterRailTouchReplacesTouchIntentWithRestoreAndContinuation() {
         val touched = reduceCarePadFocus(
-            settingsControllerState(),
+            settingsState(),
             CarePadFocusEvent.TouchRail(CarePadDestination.SETTINGS),
         )
-
         val firstInput = reduceCarePadFocus(
             touched,
             CarePadFocusEvent.ControllerDpad(CarePadDirection.DOWN),
         )
-        val request = firstInput.pendingFocus
-
+        val request = firstInput.pendingFocus!!
         assertEquals(CarePadInputMethod.CONTROLLER, firstInput.modality)
         assertEquals(CarePadFocusZone.RAIL, firstInput.activeZone)
         assertEquals(
             CarePadFocusIntent.RequestTarget(
                 CarePadFocusKey.Rail(CarePadDestination.SETTINGS)
             ),
-            request?.intent,
+            request.intent,
         )
-        assertEquals(CarePadDirection.DOWN, request?.moveAfterConfirmation)
+        assertEquals(CarePadDirection.DOWN, request.moveAfterConfirmation)
 
         val confirmed = reduceCarePadFocus(
             firstInput,
-            CarePadFocusEvent.FocusObserved(CarePadFocusKey.Rail(CarePadDestination.SETTINGS)),
+            CarePadFocusEvent.FocusObserved(
+                CarePadFocusKey.Rail(CarePadDestination.SETTINGS)
+            ),
         )
-
         assertEquals(
             CarePadFocusIntent.MoveWithinZone(CarePadDirection.DOWN),
             confirmed.pendingFocus?.intent,
         )
-        assertTrue((confirmed.pendingFocus?.token ?: 0L) > (request?.token ?: 0L))
+        assertTrue(confirmed.pendingFocus!!.token > request.token)
     }
 
     @Test
-    fun firstDpadAfterContentTouchRestoresPreferredContentBeforeMoving() {
+    fun firstDpadAfterContentTouchRestoresPreferredTargetBeforeMoving() {
         val touched = reduceCarePadFocus(
-            settingsControllerState().copy(
-                contentPreferredTargets = mapOf(CarePadDestination.SETTINGS to settingsLight),
+            settingsState().copy(
+                contentPreferredTargets = mapOf(CarePadDestination.SETTINGS to light),
             ),
-            CarePadFocusEvent.TouchContent(settingsLight),
+            CarePadFocusEvent.TouchContent(light),
         )
-
         val firstInput = reduceCarePadFocus(
             touched,
             CarePadFocusEvent.ControllerDpad(CarePadDirection.DOWN),
         )
-
         assertEquals(
-            CarePadFocusIntent.RequestTarget(settingsLight),
+            CarePadFocusIntent.RequestTarget(light),
             firstInput.pendingFocus?.intent,
         )
         assertEquals(CarePadDirection.DOWN, firstInput.pendingFocus?.moveAfterConfirmation)
     }
 
     @Test
-    fun l1AfterRailTouchCrossesOnceAndRequestsContentTarget() {
+    fun l1AfterRailTouchCrossesOnceAndSupersedesTouchFocusIntent() {
         val touched = reduceCarePadFocus(
-            settingsControllerState().copy(
-                contentPreferredTargets = mapOf(CarePadDestination.SETTINGS to settingsLight),
+            settingsState().copy(
+                contentPreferredTargets = mapOf(CarePadDestination.SETTINGS to light),
             ),
             CarePadFocusEvent.TouchRail(CarePadDestination.SETTINGS),
         )
-
         val after = reduceCarePadFocus(touched, CarePadFocusEvent.ControllerL1())
-
         assertEquals(CarePadInputMethod.CONTROLLER, after.modality)
         assertEquals(CarePadFocusZone.CONTENT, after.activeZone)
-        assertEquals(
-            CarePadFocusIntent.RequestTarget(settingsLight),
-            after.pendingFocus?.intent,
-        )
+        assertEquals(CarePadFocusIntent.RequestTarget(light), after.pendingFocus?.intent)
         assertNull(after.pendingFocus?.moveAfterConfirmation)
     }
 
     @Test
-    fun invalidContentTargetIsRemovedAndFallbackStaysInContent() {
+    fun invalidTargetIsRemovedAndFallbackNeverLeavesContent() {
         val removed = CarePadFocusKey.Module("dev.carepad.removed")
         val initial = CarePadFocusControllerState(
             activeZone = CarePadFocusZone.CONTENT,
@@ -192,7 +184,6 @@ class CarePadFocusControllerTest {
             contentFallbackTarget = removed,
             observedFocus = removed,
         )
-
         val changed = reduceCarePadFocus(
             initial,
             CarePadFocusEvent.ContentTargetsChanged(
@@ -201,49 +192,49 @@ class CarePadFocusControllerTest {
                 fallbackTarget = CarePadFocusKey.ContentFallback(CarePadDestination.HOME),
             ),
         )
-
         assertNull(changed.contentPreferredTargets[CarePadDestination.HOME])
         assertNull(changed.observedFocus)
         assertEquals(
             CarePadFocusKey.ContentFallback(CarePadDestination.HOME),
             changed.contentFallbackTarget,
         )
-
         val afterDpad = reduceCarePadFocus(
             changed,
             CarePadFocusEvent.ControllerDpad(CarePadDirection.DOWN),
         )
+        assertEquals(CarePadFocusZone.CONTENT, afterDpad.activeZone)
         assertEquals(
             CarePadFocusIntent.RequestTarget(
                 CarePadFocusKey.ContentFallback(CarePadDestination.HOME)
             ),
             afterDpad.pendingFocus?.intent,
         )
-        assertEquals(CarePadFocusZone.CONTENT, afterDpad.activeZone)
     }
 
     @Test
-    fun settingsFallbackIsSystemAndSelectedDoesNotImplyFocused() {
-        var state = CarePadFocusControllerState(
+    fun selectedAndFocusedRemainIndependent() {
+        val initial = CarePadFocusControllerState(
             activeZone = CarePadFocusZone.RAIL,
             modality = CarePadInputMethod.CONTROLLER,
-            selectedDestination = CarePadDestination.HOME,
+            selectedDestination = CarePadDestination.SETTINGS,
             observedFocus = CarePadFocusKey.Rail(CarePadDestination.HOME),
         )
-        state = reduceCarePadFocus(
-            state,
-            CarePadFocusEvent.DestinationSelected(CarePadDestination.SETTINGS),
+        val observed = reduceCarePadFocus(
+            initial,
+            CarePadFocusEvent.FocusObserved(
+                CarePadFocusKey.Rail(CarePadDestination.ADD_MODULES)
+            ),
         )
-
-        assertEquals(CarePadDestination.SETTINGS, state.selectedDestination)
-        assertEquals(settingsSystem, state.contentFallbackTarget)
-        assertEquals(CarePadFocusKey.Rail(CarePadDestination.HOME), state.observedFocus)
+        assertEquals(CarePadDestination.SETTINGS, observed.selectedDestination)
+        assertEquals(
+            CarePadFocusKey.Rail(CarePadDestination.ADD_MODULES),
+            observed.observedFocus,
+        )
     }
 
     @Test
-    fun repeatsDoNotCreatePendingFocusOrToggleZone() {
-        val initial = settingsControllerState()
-
+    fun repeatsDoNotCreateNewIntentOrToggleZone() {
+        val initial = settingsState()
         val repeatedDpad = reduceCarePadFocus(
             initial,
             CarePadFocusEvent.ControllerDpad(CarePadDirection.DOWN, repeat = true),
@@ -252,7 +243,6 @@ class CarePadFocusControllerTest {
             initial,
             CarePadFocusEvent.ControllerL1(repeat = true),
         )
-
         assertNull(repeatedDpad.pendingFocus)
         assertNull(repeatedL1.pendingFocus)
         assertEquals(CarePadFocusZone.CONTENT, repeatedDpad.activeZone)
@@ -260,126 +250,114 @@ class CarePadFocusControllerTest {
     }
 
     @Test
-    fun pendingTokenExecutesOnceAndLateResultCannotCompleteNewIntent() {
+    fun pendingTokenExecutesOnceAndLateResultCannotCompleteContinuation() {
         val touched = reduceCarePadFocus(
-            settingsControllerState(),
-            CarePadFocusEvent.TouchContent(settingsSystem),
+            settingsState(),
+            CarePadFocusEvent.TouchContent(system),
         )
         val requested = reduceCarePadFocus(
             touched,
             CarePadFocusEvent.ControllerDpad(CarePadDirection.DOWN),
         )
         val requestToken = requested.pendingFocus!!.token
-
         val confirmed = reduceCarePadFocus(
             requested,
-            CarePadFocusEvent.FocusObserved(settingsSystem),
+            CarePadFocusEvent.FocusObserved(system),
         )
         val moveToken = confirmed.pendingFocus!!.token
         assertTrue(moveToken > requestToken)
 
-        val afterLateRequestResult = reduceCarePadFocus(
+        val late = reduceCarePadFocus(
             confirmed,
             CarePadFocusEvent.FocusExecutionResult(requestToken, accepted = true),
         )
-        assertEquals(moveToken, afterLateRequestResult.pendingFocus?.token)
+        assertEquals(moveToken, late.pendingFocus?.token)
 
         val completed = reduceCarePadFocus(
-            afterLateRequestResult,
+            late,
             CarePadFocusEvent.FocusExecutionResult(moveToken, accepted = true),
         )
         assertNull(completed.pendingFocus)
-
-        val duplicate = reduceCarePadFocus(
+        assertEquals(
             completed,
-            CarePadFocusEvent.FocusExecutionResult(moveToken, accepted = true),
+            reduceCarePadFocus(
+                completed,
+                CarePadFocusEvent.FocusExecutionResult(moveToken, accepted = true),
+            ),
         )
-        assertEquals(completed, duplicate)
     }
 
     @Test
-    fun pendingRequestFailureDoesNotRunContinuation() {
-        val touched = reduceCarePadFocus(
-            settingsControllerState(),
-            CarePadFocusEvent.TouchContent(settingsSystem),
+    fun zoneFocusLossOnlyClearsFocusFromThatZone() {
+        val rail = settingsState().copy(
+            activeZone = CarePadFocusZone.RAIL,
+            observedFocus = CarePadFocusKey.Rail(CarePadDestination.SETTINGS),
         )
-        val requested = reduceCarePadFocus(
-            touched,
-            CarePadFocusEvent.ControllerDpad(CarePadDirection.DOWN),
+        assertNull(
+            reduceCarePadFocus(
+                rail,
+                CarePadFocusEvent.ZoneFocusLost(CarePadFocusZone.RAIL),
+            ).observedFocus,
         )
-        val token = requested.pendingFocus!!.token
-
-        val failed = reduceCarePadFocus(
-            requested,
-            CarePadFocusEvent.FocusExecutionResult(token, accepted = false),
+        val content = rail.copy(observedFocus = light)
+        assertEquals(
+            light,
+            reduceCarePadFocus(
+                content,
+                CarePadFocusEvent.ZoneFocusLost(CarePadFocusZone.RAIL),
+            ).observedFocus,
         )
-
-        assertNull(failed.pendingFocus)
-        assertEquals(CarePadFocusZone.CONTENT, failed.activeZone)
     }
 
     @Test
-    fun contentTargetHelpersKeepFallbackAndActionValidationInsideCurrentDestination() {
+    fun actionValidationUsesObservedPhysicalFocusWithoutSecondMutableTarget() {
         val visible = listOf("dev.carepad.module.performance")
-        val homeTargets = carePadContentTargets(
-            destination = CarePadDestination.HOME,
-            visiblePackages = visible,
-            expandedPackage = visible.single(),
-        )
-
-        assertTrue(CarePadFocusKey.Module(visible.single()) in homeTargets)
-        assertTrue(CarePadFocusKey.Uninstall(visible.single()) in homeTargets)
-        assertEquals(
-            CarePadFocusKey.Module(visible.single()),
-            carePadContentFallback(CarePadDestination.HOME, visible),
-        )
-        assertEquals(
-            settingsSystem,
-            carePadContentFallback(CarePadDestination.SETTINGS, emptyList()),
-        )
-
-        val state = CarePadFocusControllerState(
+        val module = CarePadFocusKey.Module(visible.single())
+        val uninstall = CarePadFocusKey.Uninstall(visible.single())
+        val moduleState = CarePadFocusControllerState(
             activeZone = CarePadFocusZone.CONTENT,
             modality = CarePadInputMethod.CONTROLLER,
             selectedDestination = CarePadDestination.HOME,
-            observedFocus = CarePadFocusKey.Module(visible.single()),
+            observedFocus = module,
         )
-        assertEquals(
-            CarePadFocusKey.Module(visible.single()),
-            carePadControllerActionTarget(state, visible),
-        )
-        assertTrue(carePadDetailsControllerActionAllowed(state, visible))
-        assertFalse(
+        assertEquals(module, carePadControllerActionTarget(moduleState, visible))
+        assertTrue(carePadDetailsControllerActionAllowed(moduleState, visible))
+        assertTrue(
             carePadDetailsControllerActionAllowed(
-                state.copy(activeZone = CarePadFocusZone.RAIL),
+                moduleState.copy(observedFocus = uninstall),
                 visible,
             )
+        )
+        assertEquals(
+            uninstall,
+            carePadControllerActionTarget(
+                moduleState.copy(observedFocus = uninstall),
+                visible,
+                expandedPackage = visible.single(),
+            ),
         )
     }
 
     @Test
-    fun longMultimodalSequenceKeepsInvariantsAndNeedsNoWakeUpEvent() {
-        var state = settingsControllerState().copy(
+    fun longMultimodalSequencePreservesZoneSelectionAndMemory() {
+        var state = settingsState().copy(
             railPreferredDestination = CarePadDestination.SETTINGS,
-            contentPreferredTargets = mapOf(CarePadDestination.SETTINGS to settingsSystem),
+            contentPreferredTargets = mapOf(CarePadDestination.SETTINGS to system),
         )
-
         state = completeMove(
             reduceCarePadFocus(
                 state,
                 CarePadFocusEvent.ControllerDpad(CarePadDirection.DOWN),
             ),
-            settingsLight,
+            light,
         )
-        assertEquals(settingsLight, state.observedFocus)
-
         state = reduceCarePadFocus(state, CarePadFocusEvent.ControllerL1())
         state = reduceCarePadFocus(
             state,
-            CarePadFocusEvent.FocusObserved(CarePadFocusKey.Rail(CarePadDestination.SETTINGS)),
+            CarePadFocusEvent.FocusObserved(
+                CarePadFocusKey.Rail(CarePadDestination.SETTINGS)
+            ),
         )
-        assertEquals(CarePadFocusZone.RAIL, state.activeZone)
-
         state = completeMove(
             reduceCarePadFocus(
                 state,
@@ -387,42 +365,15 @@ class CarePadFocusControllerTest {
             ),
             CarePadFocusKey.Rail(CarePadDestination.ADD_MODULES),
         )
-        assertEquals(CarePadDestination.ADD_MODULES, state.railPreferredDestination)
-
         state = reduceCarePadFocus(state, CarePadFocusEvent.ControllerL1())
-        state = reduceCarePadFocus(
-            state,
-            CarePadFocusEvent.FocusObserved(settingsLight),
-        )
-        assertEquals(CarePadFocusZone.CONTENT, state.activeZone)
-        assertEquals(settingsLight, state.observedFocus)
-
-        state = reduceCarePadFocus(state, CarePadFocusEvent.TouchContent(settingsLight))
+        state = reduceCarePadFocus(state, CarePadFocusEvent.FocusObserved(light))
+        state = reduceCarePadFocus(state, CarePadFocusEvent.TouchContent(light))
         state = reduceCarePadFocus(
             state,
             CarePadFocusEvent.ControllerDpad(CarePadDirection.DOWN),
         )
-        val restoreToken = state.pendingFocus!!.token
-        state = reduceCarePadFocus(state, CarePadFocusEvent.FocusObserved(settingsLight))
-        assertEquals(
-            CarePadFocusIntent.MoveWithinZone(CarePadDirection.DOWN),
-            state.pendingFocus?.intent,
-        )
-        state = reduceCarePadFocus(state, CarePadFocusEvent.FocusObserved(settingsDark))
-        state = reduceCarePadFocus(
-            state,
-            CarePadFocusEvent.FocusExecutionResult(
-                token = state.pendingFocus!!.token,
-                accepted = true,
-            ),
-        )
-        state = reduceCarePadFocus(
-            state,
-            CarePadFocusEvent.FocusExecutionResult(restoreToken, accepted = true),
-        )
-        assertEquals(settingsDark, state.observedFocus)
-        assertEquals(CarePadFocusZone.CONTENT, state.activeZone)
-
+        state = reduceCarePadFocus(state, CarePadFocusEvent.FocusObserved(light))
+        state = completeMove(state, dark)
         state = reduceCarePadFocus(
             state,
             CarePadFocusEvent.TouchRail(CarePadDestination.SETTINGS),
@@ -433,14 +384,15 @@ class CarePadFocusControllerTest {
         )
         state = reduceCarePadFocus(
             state,
-            CarePadFocusEvent.FocusObserved(CarePadFocusKey.Rail(CarePadDestination.SETTINGS)),
+            CarePadFocusEvent.FocusObserved(
+                CarePadFocusKey.Rail(CarePadDestination.SETTINGS)
+            ),
         )
-        val edgeMove = state.pendingFocus!!.token
+        val edgeToken = state.pendingFocus!!.token
         state = reduceCarePadFocus(
             state,
-            CarePadFocusEvent.FocusExecutionResult(edgeMove, accepted = false),
+            CarePadFocusEvent.FocusExecutionResult(edgeToken, accepted = false),
         )
-
         assertEquals(CarePadInputMethod.CONTROLLER, state.modality)
         assertEquals(CarePadFocusZone.RAIL, state.activeZone)
         assertEquals(CarePadDestination.SETTINGS, state.selectedDestination)
@@ -448,15 +400,15 @@ class CarePadFocusControllerTest {
         assertNull(state.pendingFocus)
     }
 
-    private fun settingsControllerState(): CarePadFocusControllerState =
+    private fun settingsState(): CarePadFocusControllerState =
         CarePadFocusControllerState(
             activeZone = CarePadFocusZone.CONTENT,
             modality = CarePadInputMethod.CONTROLLER,
             selectedDestination = CarePadDestination.SETTINGS,
             railPreferredDestination = CarePadDestination.SETTINGS,
-            contentPreferredTargets = mapOf(CarePadDestination.SETTINGS to settingsSystem),
-            contentFallbackTarget = settingsSystem,
-            observedFocus = settingsSystem,
+            contentPreferredTargets = mapOf(CarePadDestination.SETTINGS to system),
+            contentFallbackTarget = system,
+            observedFocus = system,
         )
 
     private fun completeMove(

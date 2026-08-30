@@ -60,6 +60,7 @@ internal sealed interface CarePadFocusEvent {
     ) : CarePadFocusEvent
 
     data class FocusObserved(val key: CarePadFocusKey?) : CarePadFocusEvent
+    data class ZoneFocusLost(val zone: CarePadFocusZone) : CarePadFocusEvent
     data class FocusExecutionResult(
         val token: Long,
         val accepted: Boolean,
@@ -82,25 +83,34 @@ internal fun reduceCarePadFocus(
         railPreferredDestination = event.destination,
         observedFocus = null,
         pendingFocus = null,
+    ).scheduleFocus(
+        CarePadFocusIntent.RequestTarget(CarePadFocusKey.Rail(event.destination))
     )
 
     is CarePadFocusEvent.TouchContent -> {
-        val preferredTargets = if (
-            event.target != null &&
-            carePadFocusKeyMatchesDestination(event.target, state.selectedDestination) &&
-            carePadFocusZone(event.target) == CarePadFocusZone.CONTENT &&
-            event.target !is CarePadFocusKey.ContentFallback
-        ) {
-            state.contentPreferredTargets + (state.selectedDestination to event.target)
+        val touchedTarget = event.target?.takeIf {
+            carePadFocusZone(it) == CarePadFocusZone.CONTENT &&
+                it !is CarePadFocusKey.ContentFallback &&
+                carePadFocusKeyMatchesDestination(it, state.selectedDestination)
+        }
+        val preferredTargets = if (touchedTarget != null) {
+            state.contentPreferredTargets + (state.selectedDestination to touchedTarget)
         } else {
             state.contentPreferredTargets
         }
-        state.copy(
+        val next = state.copy(
             activeZone = CarePadFocusZone.CONTENT,
             modality = CarePadInputMethod.TOUCH,
             contentPreferredTargets = preferredTargets,
             observedFocus = null,
             pendingFocus = null,
+        )
+        next.scheduleFocus(
+            CarePadFocusIntent.RequestTarget(
+                touchedTarget
+                    ?: next.contentPreferredTargets[next.selectedDestination]
+                    ?: next.contentFallbackTarget
+            )
         )
     }
 
@@ -124,7 +134,7 @@ internal fun reduceCarePadFocus(
 
     is CarePadFocusEvent.ControllerL1 -> {
         val controllerState = state.copy(modality = CarePadInputMethod.CONTROLLER)
-        if (event.repeat || controllerState.pendingFocus != null) {
+        if (event.repeat) {
             controllerState
         } else {
             val nextZone = when (controllerState.activeZone) {
@@ -135,6 +145,7 @@ internal fun reduceCarePadFocus(
             controllerState.copy(
                 activeZone = nextZone,
                 observedFocus = null,
+                pendingFocus = null,
             ).scheduleFocus(
                 intent = CarePadFocusIntent.RequestTarget(target),
             )
@@ -143,17 +154,17 @@ internal fun reduceCarePadFocus(
 
     is CarePadFocusEvent.ControllerDpad -> {
         val controllerState = state.copy(modality = CarePadInputMethod.CONTROLLER)
-        if (event.repeat || controllerState.pendingFocus != null) {
+        if (event.repeat) {
             controllerState
         } else if (
             controllerState.observedFocus?.let(::carePadFocusZone) ==
             controllerState.activeZone
         ) {
-            controllerState.scheduleFocus(
+            controllerState.copy(pendingFocus = null).scheduleFocus(
                 intent = CarePadFocusIntent.MoveWithinZone(event.direction),
             )
         } else {
-            controllerState.scheduleFocus(
+            controllerState.copy(pendingFocus = null).scheduleFocus(
                 intent = CarePadFocusIntent.RequestTarget(
                     carePadEntryTarget(controllerState, controllerState.activeZone)
                 ),
@@ -163,6 +174,14 @@ internal fun reduceCarePadFocus(
     }
 
     is CarePadFocusEvent.FocusObserved -> reduceFocusObserved(state, event.key)
+
+    is CarePadFocusEvent.ZoneFocusLost -> {
+        if (state.observedFocus?.let(::carePadFocusZone) == event.zone) {
+            state.copy(observedFocus = null)
+        } else {
+            state
+        }
+    }
 
     is CarePadFocusEvent.FocusExecutionResult ->
         reduceFocusExecutionResult(state, event)
@@ -272,10 +291,14 @@ internal fun carePadDetailsControllerActionAllowed(
     state: CarePadFocusControllerState,
     visiblePackages: Collection<String>,
 ): Boolean {
-    val focused = state.observedFocus as? CarePadFocusKey.Module ?: return false
+    val packageName = when (val focused = state.observedFocus) {
+        is CarePadFocusKey.Module -> focused.packageName
+        is CarePadFocusKey.Uninstall -> focused.packageName
+        else -> return false
+    }
     return state.activeZone == CarePadFocusZone.CONTENT &&
         state.selectedDestination == CarePadDestination.HOME &&
-        focused.packageName in visiblePackages
+        packageName in visiblePackages
 }
 
 private fun reduceContentTargetsChanged(
@@ -296,6 +319,7 @@ private fun reduceContentTargetsChanged(
         state.contentPreferredTargets
     }
     val selectedContext = state.selectedDestination == event.destination
+    val observed = state.observedFocus
     var next = state.copy(
         contentPreferredTargets = preferredTargets,
         contentFallbackTarget = if (selectedContext) {
@@ -305,13 +329,14 @@ private fun reduceContentTargetsChanged(
         },
         observedFocus = if (
             selectedContext &&
-            state.observedFocus?.let(::carePadFocusZone) == CarePadFocusZone.CONTENT &&
-            state.observedFocus != event.fallbackTarget &&
-            state.observedFocus !in event.validTargets
+            observed != null &&
+            carePadFocusZone(observed) == CarePadFocusZone.CONTENT &&
+            observed != event.fallbackTarget &&
+            observed !in event.validTargets
         ) {
             null
         } else {
-            state.observedFocus
+            observed
         },
     )
 

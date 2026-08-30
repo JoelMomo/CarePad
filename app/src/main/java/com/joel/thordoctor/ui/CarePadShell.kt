@@ -105,21 +105,9 @@ internal enum class CarePadRailVisualState {
     COMPACT,
 }
 
-internal data class CarePadFocusState(
-    val zone: CarePadFocusZone = CarePadFocusZone.CONTENT,
-    val lastRailDestination: CarePadDestination? = null,
-) {
-    fun onRailFocused(destination: CarePadDestination): CarePadFocusState = copy(
-        zone = CarePadFocusZone.RAIL,
-        lastRailDestination = destination,
-    )
-
-    fun onContentFocused(): CarePadFocusState = copy(zone = CarePadFocusZone.CONTENT)
-}
-
 internal fun carePadRailVisualState(
-    focusState: CarePadFocusState,
-): CarePadRailVisualState = when (focusState.zone) {
+    zone: CarePadFocusZone,
+): CarePadRailVisualState = when (zone) {
     CarePadFocusZone.RAIL -> CarePadRailVisualState.EXPANDED
     CarePadFocusZone.CONTENT -> CarePadRailVisualState.COMPACT
 }
@@ -129,161 +117,9 @@ internal fun carePadRailItemSelected(
     candidate: CarePadDestination,
 ): Boolean = selected == candidate
 
-internal fun carePadRailRestoreDestination(
-    focusState: CarePadFocusState,
-    selectedDestination: CarePadDestination,
-): CarePadDestination = focusState.lastRailDestination ?: selectedDestination
-
 private val CarePadRailCompactWidth = 80.dp
 private val CarePadRailExpandedWidth = 176.dp
 private const val CarePadRailTransitionMillis = 180
-
-internal sealed interface CarePadPrimaryControllerTarget {
-    data class Rail(val destination: CarePadDestination) : CarePadPrimaryControllerTarget
-    data class Module(val packageName: String) : CarePadPrimaryControllerTarget
-    data class Uninstall(val packageName: String) : CarePadPrimaryControllerTarget
-    data class Theme(val mode: AppThemeMode) : CarePadPrimaryControllerTarget
-    data object None : CarePadPrimaryControllerTarget
-}
-
-internal data class CarePadInteractionSnapshot(
-    val inputMethod: CarePadInputMethod,
-    val destination: CarePadDestination,
-    val focusState: CarePadFocusState,
-    val lastContentTarget: CarePadPrimaryControllerTarget,
-)
-
-internal fun carePadContentTouchTransition(
-    snapshot: CarePadInteractionSnapshot,
-    touchedTarget: CarePadPrimaryControllerTarget? = null,
-): CarePadInteractionSnapshot = snapshot.copy(
-    inputMethod = CarePadInputMethod.TOUCH,
-    focusState = snapshot.focusState.onContentFocused(),
-    lastContentTarget = touchedTarget ?: snapshot.lastContentTarget,
-)
-
-internal fun carePadRailTouchTransition(
-    snapshot: CarePadInteractionSnapshot,
-    touchedDestination: CarePadDestination,
-): CarePadInteractionSnapshot = snapshot.copy(
-    inputMethod = CarePadInputMethod.TOUCH,
-    focusState = snapshot.focusState.onRailFocused(touchedDestination),
-)
-
-internal fun carePadControllerInputTransition(
-    snapshot: CarePadInteractionSnapshot,
-): CarePadInteractionSnapshot = snapshot.copy(
-    inputMethod = CarePadInputMethod.CONTROLLER,
-)
-
-internal fun carePadPrimaryControllerTarget(
-    focusState: CarePadFocusState,
-    destination: CarePadDestination,
-    focusedTarget: CarePadPrimaryControllerTarget,
-    visiblePackages: Collection<String>,
-    expandedPackage: String? = null,
-): CarePadPrimaryControllerTarget {
-    if (focusState.zone == CarePadFocusZone.RAIL) {
-        return if (focusedTarget is CarePadPrimaryControllerTarget.Rail) {
-            focusedTarget
-        } else {
-            CarePadPrimaryControllerTarget.None
-        }
-    }
-
-    if (focusState.zone != CarePadFocusZone.CONTENT) {
-        return CarePadPrimaryControllerTarget.None
-    }
-
-    return when (focusedTarget) {
-        is CarePadPrimaryControllerTarget.Module -> {
-            if (
-                destination == CarePadDestination.HOME &&
-                focusedTarget.packageName in visiblePackages
-            ) {
-                focusedTarget
-            } else {
-                CarePadPrimaryControllerTarget.None
-            }
-        }
-
-        is CarePadPrimaryControllerTarget.Uninstall -> {
-            if (
-                destination == CarePadDestination.HOME &&
-                focusedTarget.packageName in visiblePackages &&
-                expandedPackage == focusedTarget.packageName
-            ) {
-                focusedTarget
-            } else {
-                CarePadPrimaryControllerTarget.None
-            }
-        }
-
-        is CarePadPrimaryControllerTarget.Theme -> {
-            if (destination == CarePadDestination.SETTINGS) {
-                focusedTarget
-            } else {
-                CarePadPrimaryControllerTarget.None
-            }
-        }
-
-        is CarePadPrimaryControllerTarget.Rail,
-        CarePadPrimaryControllerTarget.None -> CarePadPrimaryControllerTarget.None
-    }
-}
-
-internal fun carePadRestoredContentTarget(
-    destination: CarePadDestination,
-    lastContentTarget: CarePadPrimaryControllerTarget,
-    focusedModulePackage: String?,
-    visiblePackages: Collection<String>,
-    expandedPackage: String? = null,
-): CarePadPrimaryControllerTarget = when (destination) {
-    CarePadDestination.HOME -> {
-        when (lastContentTarget) {
-            is CarePadPrimaryControllerTarget.Uninstall -> {
-                if (
-                    lastContentTarget.packageName in visiblePackages &&
-                    expandedPackage == lastContentTarget.packageName
-                ) {
-                    lastContentTarget
-                } else {
-                    null
-                }
-            }
-
-            is CarePadPrimaryControllerTarget.Module -> {
-                if (lastContentTarget.packageName in visiblePackages) {
-                    lastContentTarget
-                } else {
-                    null
-                }
-            }
-
-            else -> null
-        } ?: focusedModulePackage
-            ?.takeIf { it in visiblePackages }
-            ?.let(CarePadPrimaryControllerTarget::Module)
-            ?: visiblePackages.firstOrNull()?.let(CarePadPrimaryControllerTarget::Module)
-            ?: CarePadPrimaryControllerTarget.None
-    }
-
-    CarePadDestination.SETTINGS ->
-        (lastContentTarget as? CarePadPrimaryControllerTarget.Theme)
-            ?: CarePadPrimaryControllerTarget.Theme(AppThemeMode.SYSTEM)
-
-    CarePadDestination.ADD_MODULES -> CarePadPrimaryControllerTarget.None
-}
-
-internal fun carePadDetailsControllerActionAllowed(
-    focusState: CarePadFocusState,
-    destination: CarePadDestination,
-    focusedModulePackage: String?,
-    visiblePackages: Collection<String>,
-): Boolean =
-    focusState.zone == CarePadFocusZone.CONTENT &&
-        destination == CarePadDestination.HOME &&
-        focusedModulePackage?.let { it in visiblePackages } == true
 
 private data class VisibleModule(
     val module: DiscoveredCarePadModule,
@@ -313,18 +149,17 @@ fun CarePadShellScreen(
     val focusManager = LocalFocusManager.current
     val inputModeManager = LocalInputModeManager.current
     var discovery by remember { mutableStateOf(ModuleManager.discover(context)) }
-    var destination by remember { mutableStateOf(CarePadDestination.HOME) }
-    var inputMethod by remember { mutableStateOf(CarePadInputMethod.TOUCH) }
-    var focusState by remember { mutableStateOf(CarePadFocusState()) }
-    var primaryControllerTarget by remember {
-        mutableStateOf<CarePadPrimaryControllerTarget>(CarePadPrimaryControllerTarget.None)
-    }
-    var lastContentControllerTarget by remember {
-        mutableStateOf<CarePadPrimaryControllerTarget>(CarePadPrimaryControllerTarget.None)
-    }
+    var focusControllerState by remember { mutableStateOf(CarePadFocusControllerState()) }
     var expandedPackage by remember { mutableStateOf<String?>(null) }
-    var focusedModulePackage by remember { mutableStateOf<String?>(null) }
     var pendingUninstall by remember { mutableStateOf<VisibleModule?>(null) }
+
+    val destination = focusControllerState.selectedDestination
+    val inputMethod = focusControllerState.modality
+    val focusedModulePackage = when (val focus = focusControllerState.observedFocus) {
+        is CarePadFocusKey.Module -> focus.packageName
+        is CarePadFocusKey.Uninstall -> focus.packageName
+        else -> null
+    }
 
     val glyphProfile = remember { AppPreferences.getControlGlyphProfile(context) }
     val glyphs = remember(glyphProfile) { controllerGlyphs(glyphProfile) }
@@ -356,6 +191,10 @@ fun CarePadShellScreen(
     }
     val contentFallbackRequester = remember { FocusRequester() }
 
+    fun dispatchFocus(event: CarePadFocusEvent) {
+        focusControllerState = reduceCarePadFocus(focusControllerState, event)
+    }
+
     fun refreshModules() {
         discovery = ModuleManager.discover(context)
     }
@@ -384,10 +223,7 @@ fun CarePadShellScreen(
         }
     }
 
-    LaunchedEffect(visiblePackages) {
-        if (focusedModulePackage?.let { it in visiblePackages } != true) {
-            focusedModulePackage = visiblePackages.firstOrNull()
-        }
+    LaunchedEffect(destination, visiblePackages, expandedPackage) {
         if (expandedPackage?.let { it !in visiblePackages } == true) {
             expandedPackage = null
         }
@@ -396,41 +232,58 @@ fun CarePadShellScreen(
         ) {
             pendingUninstall = null
         }
-        when (val target = primaryControllerTarget) {
-            is CarePadPrimaryControllerTarget.Module -> {
-                if (target.packageName !in visiblePackages) {
-                    primaryControllerTarget = CarePadPrimaryControllerTarget.None
+        dispatchFocus(
+            CarePadFocusEvent.ContentTargetsChanged(
+                destination = destination,
+                validTargets = carePadContentTargets(
+                    destination = destination,
+                    visiblePackages = visiblePackages,
+                    expandedPackage = expandedPackage,
+                ),
+                fallbackTarget = carePadContentFallback(
+                    destination = destination,
+                    visiblePackages = visiblePackages,
+                ),
+            )
+        )
+    }
+
+    val pendingFocus = focusControllerState.pendingFocus
+    LaunchedEffect(pendingFocus?.token) {
+        val pending = pendingFocus ?: return@LaunchedEffect
+        val accepted = when (val intent = pending.intent) {
+            is CarePadFocusIntent.RequestTarget -> {
+                val requester = when (val target = intent.target) {
+                    is CarePadFocusKey.Rail -> railFocusRequesters[target.destination]
+                    is CarePadFocusKey.Module -> moduleFocusRequesters[target.packageName]
+                    is CarePadFocusKey.Uninstall ->
+                        uninstallFocusRequesters[target.packageName]
+                    is CarePadFocusKey.Theme -> themeFocusRequesters[target.mode]
+                    is CarePadFocusKey.ContentFallback -> {
+                        if (target.destination == destination) {
+                            contentFallbackRequester
+                        } else {
+                            null
+                        }
+                    }
                 }
+                requester?.requestFocus() == true
             }
 
-            is CarePadPrimaryControllerTarget.Uninstall -> {
-                if (target.packageName !in visiblePackages) {
-                    primaryControllerTarget = CarePadPrimaryControllerTarget.None
-                }
-            }
-
-            else -> Unit
+            is CarePadFocusIntent.MoveWithinZone ->
+                focusManager.moveFocus(intent.direction.toComposeFocusDirection())
         }
-        when (val target = lastContentControllerTarget) {
-            is CarePadPrimaryControllerTarget.Module -> {
-                if (target.packageName !in visiblePackages) {
-                    lastContentControllerTarget = CarePadPrimaryControllerTarget.None
-                }
-            }
-
-            is CarePadPrimaryControllerTarget.Uninstall -> {
-                if (target.packageName !in visiblePackages) {
-                    lastContentControllerTarget = CarePadPrimaryControllerTarget.None
-                }
-            }
-
-            else -> Unit
-        }
+        dispatchFocus(
+            CarePadFocusEvent.FocusExecutionResult(
+                token = pending.token,
+                accepted = accepted,
+            )
+        )
     }
 
     fun goTo(next: CarePadDestination) {
         expandedPackage = null
-        destination = next
+        dispatchFocus(CarePadFocusEvent.DestinationSelected(next))
     }
 
     fun handleBack(): Boolean {
@@ -439,117 +292,39 @@ fun CarePadShellScreen(
             return true
         }
         if (destination != CarePadDestination.HOME) {
-            destination = CarePadDestination.HOME
+            goTo(CarePadDestination.HOME)
             return true
         }
         return false
     }
 
-    fun currentInteractionSnapshot(): CarePadInteractionSnapshot =
-        CarePadInteractionSnapshot(
-            inputMethod = inputMethod,
-            destination = destination,
-            focusState = focusState,
-            lastContentTarget = lastContentControllerTarget,
-        )
-
-    fun applyInteractionSnapshot(snapshot: CarePadInteractionSnapshot) {
-        inputMethod = snapshot.inputMethod
-        destination = snapshot.destination
-        focusState = snapshot.focusState
-        lastContentControllerTarget = snapshot.lastContentTarget
-    }
-
     fun enterTouchRail(touchedDestination: CarePadDestination) {
-        applyInteractionSnapshot(
-            carePadRailTouchTransition(
-                snapshot = currentInteractionSnapshot(),
-                touchedDestination = touchedDestination,
-            )
-        )
-        primaryControllerTarget = CarePadPrimaryControllerTarget.Rail(touchedDestination)
-        railFocusRequesters[touchedDestination]?.requestFocus()
+        dispatchFocus(CarePadFocusEvent.TouchRail(touchedDestination))
     }
 
-    fun enterTouchContent(touchedTarget: CarePadPrimaryControllerTarget? = null) {
-        applyInteractionSnapshot(
-            carePadContentTouchTransition(
-                snapshot = currentInteractionSnapshot(),
-                touchedTarget = touchedTarget,
-            )
-        )
-        primaryControllerTarget = CarePadPrimaryControllerTarget.None
-        contentFallbackRequester.requestFocus()
-        when (touchedTarget) {
-            is CarePadPrimaryControllerTarget.Module ->
-                focusedModulePackage = touchedTarget.packageName
-
-            is CarePadPrimaryControllerTarget.Uninstall ->
-                focusedModulePackage = touchedTarget.packageName
-
-            else -> Unit
-        }
+    fun enterTouchContent(touchedTarget: CarePadFocusKey? = null) {
+        dispatchFocus(CarePadFocusEvent.TouchContent(touchedTarget))
     }
 
-    fun requestContentFocus(): CarePadPrimaryControllerTarget {
-        val target = carePadRestoredContentTarget(
-            destination = destination,
-            lastContentTarget = lastContentControllerTarget,
-            focusedModulePackage = focusedModulePackage,
-            visiblePackages = visiblePackages,
-            expandedPackage = expandedPackage,
-        )
-        val requester = when (target) {
-            is CarePadPrimaryControllerTarget.Module ->
-                moduleFocusRequesters[target.packageName]
-
-            is CarePadPrimaryControllerTarget.Uninstall ->
-                uninstallFocusRequesters[target.packageName]
-
-            is CarePadPrimaryControllerTarget.Theme ->
-                themeFocusRequesters[target.mode]
-
-            is CarePadPrimaryControllerTarget.Rail,
-            CarePadPrimaryControllerTarget.None -> null
-        }
-        (requester ?: contentFallbackRequester).requestFocus()
-        return target
-    }
-
-    fun activateContentControllerContext(): CarePadPrimaryControllerTarget {
-        focusState = focusState.onContentFocused()
-        val target = requestContentFocus()
-        primaryControllerTarget = target
-        return target
-    }
-
-    fun toggleFocusZone() {
-        if (focusState.zone == CarePadFocusZone.RAIL) {
-            activateContentControllerContext()
-        } else {
-            val railDestination = carePadRailRestoreDestination(
-                focusState = focusState,
-                selectedDestination = destination,
-            )
-            focusState = focusState.onRailFocused(railDestination)
-            primaryControllerTarget = CarePadPrimaryControllerTarget.Rail(railDestination)
-            railFocusRequesters[railDestination]?.requestFocus()
-        }
+    fun focusedPackageName(): String? = when (val focused = focusControllerState.observedFocus) {
+        is CarePadFocusKey.Module -> focused.packageName
+        is CarePadFocusKey.Uninstall -> focused.packageName
+        else -> null
     }
 
     fun toggleFocusedDetails() {
-        if (
-            !carePadDetailsControllerActionAllowed(
-                focusState = focusState,
-                destination = destination,
-                focusedModulePackage = focusedModulePackage,
-                visiblePackages = visiblePackages,
-            )
-        ) {
+        if (!carePadDetailsControllerActionAllowed(focusControllerState, visiblePackages)) {
             return
         }
-        val packageName = focusedModulePackage ?: return
+        val packageName = focusedPackageName() ?: return
         expandedPackage = if (expandedPackage == packageName) null else packageName
+    }
+
+    fun markControllerActivity(wasTouch: Boolean) {
+        dispatchFocus(CarePadFocusEvent.ControllerActivity)
+        if (wasTouch) {
+            inputModeManager.requestInputMode(InputMode.Keyboard)
+        }
     }
 
     BackHandler(enabled = expandedPackage != null || destination != CarePadDestination.HOME) {
@@ -593,7 +368,7 @@ fun CarePadShellScreen(
             .fillMaxSize()
             .pointerInteropFilter { event ->
                 if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                    inputMethod = CarePadInputMethod.TOUCH
+                    dispatchFocus(CarePadFocusEvent.TouchContext)
                 }
                 false
             }
@@ -601,53 +376,46 @@ fun CarePadShellScreen(
                 val native = event.nativeKeyEvent
                 if (
                     event.type != KeyEventType.KeyDown ||
-                    native.repeatCount != 0 ||
                     !isControllerSource(native.source)
                 ) {
                     return@onPreviewKeyEvent false
                 }
 
-                val wasTouch = inputMethod == CarePadInputMethod.TOUCH
-                val wasContent = focusState.zone == CarePadFocusZone.CONTENT
-                if (wasTouch) {
-                    inputModeManager.requestInputMode(InputMode.Keyboard)
-                }
-                applyInteractionSnapshot(
-                    carePadControllerInputTransition(currentInteractionSnapshot())
-                )
-
-                val restoreContentForFirstInput =
-                    wasTouch &&
-                        wasContent &&
-                        native.keyCode != AndroidKeyEvent.KEYCODE_BUTTON_L1
-                if (restoreContentForFirstInput) {
-                    activateContentControllerContext()
+                val direction = controllerDirection(native.keyCode)
+                if (native.repeatCount != 0) {
+                    return@onPreviewKeyEvent
+                        native.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_L1 ||
+                            direction != null
                 }
 
-                val focusDirection = controllerFocusDirection(native.keyCode)
+                val wasTouch = focusControllerState.modality == CarePadInputMethod.TOUCH
                 when {
                     native.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_L1 -> {
-                        toggleFocusZone()
+                        dispatchFocus(CarePadFocusEvent.ControllerL1())
+                        if (wasTouch) {
+                            inputModeManager.requestInputMode(InputMode.Keyboard)
+                        }
                         true
                     }
 
-                    focusDirection != null -> {
-                        if (restoreContentForFirstInput) {
-                            focusManager.moveFocus(focusDirection)
-                            true
-                        } else {
-                            false
+                    direction != null -> {
+                        dispatchFocus(CarePadFocusEvent.ControllerDpad(direction))
+                        if (wasTouch) {
+                            inputModeManager.requestInputMode(InputMode.Keyboard)
                         }
+                        true
                     }
 
-                    native.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_B -> handleBack()
+                    native.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_B -> {
+                        markControllerActivity(wasTouch)
+                        handleBack()
+                    }
 
                     native.keyCode == glyphs.detailsKeyCode -> {
+                        markControllerActivity(wasTouch)
                         val allowed = carePadDetailsControllerActionAllowed(
-                            focusState = focusState,
-                            destination = destination,
-                            focusedModulePackage = focusedModulePackage,
-                            visiblePackages = visiblePackages,
+                            focusControllerState,
+                            visiblePackages,
                         )
                         if (allowed) {
                             toggleFocusedDetails()
@@ -656,21 +424,20 @@ fun CarePadShellScreen(
                     }
 
                     native.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_A -> {
+                        markControllerActivity(wasTouch)
                         when (
-                            val target = carePadPrimaryControllerTarget(
-                                focusState = focusState,
-                                destination = destination,
-                                focusedTarget = primaryControllerTarget,
+                            val target = carePadControllerActionTarget(
+                                state = focusControllerState,
                                 visiblePackages = visiblePackages,
                                 expandedPackage = expandedPackage,
                             )
                         ) {
-                            is CarePadPrimaryControllerTarget.Rail -> {
+                            is CarePadFocusKey.Rail -> {
                                 goTo(target.destination)
                                 true
                             }
 
-                            is CarePadPrimaryControllerTarget.Module -> {
+                            is CarePadFocusKey.Module -> {
                                 val item = visibleModules.firstOrNull {
                                     it.module.packageName == target.packageName
                                 }
@@ -683,7 +450,7 @@ fun CarePadShellScreen(
                                 }
                             }
 
-                            is CarePadPrimaryControllerTarget.Uninstall -> {
+                            is CarePadFocusKey.Uninstall -> {
                                 val item = visibleModules.firstOrNull {
                                     it.module.packageName == target.packageName
                                 }
@@ -695,31 +462,40 @@ fun CarePadShellScreen(
                                 }
                             }
 
-                            is CarePadPrimaryControllerTarget.Theme -> {
+                            is CarePadFocusKey.Theme -> {
                                 onThemeModeChange(target.mode)
                                 true
                             }
 
-                            CarePadPrimaryControllerTarget.None -> false
+                            is CarePadFocusKey.ContentFallback,
+                            null -> false
                         }
                     }
 
-                    else -> false
+                    else -> {
+                        markControllerActivity(wasTouch)
+                        false
+                    }
                 }
             },
     ) {
         CarePadNavigationRail(
             selected = destination,
-            visualState = carePadRailVisualState(focusState),
+            visualState = carePadRailVisualState(focusControllerState.activeZone),
             focusRequesters = railFocusRequesters,
             onFocused = { focusedDestination ->
-                focusState = focusState.onRailFocused(focusedDestination)
-                primaryControllerTarget =
-                    CarePadPrimaryControllerTarget.Rail(focusedDestination)
+                dispatchFocus(
+                    CarePadFocusEvent.FocusObserved(
+                        CarePadFocusKey.Rail(focusedDestination)
+                    )
+                )
+            },
+            onZoneFocusLost = {
+                dispatchFocus(CarePadFocusEvent.ZoneFocusLost(CarePadFocusZone.RAIL))
             },
             onSelected = { selectedDestination ->
                 goTo(selectedDestination)
-                if (inputMethod == CarePadInputMethod.TOUCH) {
+                if (focusControllerState.modality == CarePadInputMethod.TOUCH) {
                     enterTouchRail(selectedDestination)
                 }
             },
@@ -727,6 +503,13 @@ fun CarePadShellScreen(
 
         Surface(
             modifier = Modifier
+                .onFocusChanged { state ->
+                    if (!state.hasFocus) {
+                        dispatchFocus(
+                            CarePadFocusEvent.ZoneFocusLost(CarePadFocusZone.CONTENT)
+                        )
+                    }
+                }
                 .focusProperties {
                     onExit = {
                         when (requestedFocusDirection) {
@@ -757,8 +540,11 @@ fun CarePadShellScreen(
                         .focusRequester(contentFallbackRequester)
                         .onFocusChanged { state ->
                             if (state.isFocused) {
-                                focusState = focusState.onContentFocused()
-                                primaryControllerTarget = CarePadPrimaryControllerTarget.None
+                                dispatchFocus(
+                                    CarePadFocusEvent.FocusObserved(
+                                        CarePadFocusKey.ContentFallback(destination)
+                                    )
+                                )
                             }
                         }
                         .focusable(),
@@ -772,49 +558,41 @@ fun CarePadShellScreen(
                             uninstallFocusRequesters = uninstallFocusRequesters,
                             listState = homeListState,
                             onFocusChanged = { packageName, focused ->
-                                val target = CarePadPrimaryControllerTarget.Module(packageName)
                                 if (focused) {
-                                    focusedModulePackage = packageName
-                                    focusState = focusState.onContentFocused()
-                                    primaryControllerTarget = target
-                                    lastContentControllerTarget = target
-                                } else if (primaryControllerTarget == target) {
-                                    primaryControllerTarget = CarePadPrimaryControllerTarget.None
+                                    dispatchFocus(
+                                        CarePadFocusEvent.FocusObserved(
+                                            CarePadFocusKey.Module(packageName)
+                                        )
+                                    )
                                 }
                             },
                             onOpen = { item ->
-                                val target = CarePadPrimaryControllerTarget.Module(
-                                    item.module.packageName
+                                enterTouchContent(
+                                    CarePadFocusKey.Module(item.module.packageName)
                                 )
-                                enterTouchContent(target)
                                 expandedPackage = null
                                 ModuleManager.open(context, item.module)
                             },
                             onToggleDetails = { item ->
                                 val packageName = item.module.packageName
-                                enterTouchContent(
-                                    CarePadPrimaryControllerTarget.Module(packageName)
-                                )
+                                enterTouchContent(CarePadFocusKey.Module(packageName))
                                 expandedPackage =
                                     if (expandedPackage == packageName) null else packageName
                             },
                             onUninstallFocusChanged = { item, focused ->
-                                val packageName = item.module.packageName
-                                val target = CarePadPrimaryControllerTarget.Uninstall(packageName)
                                 if (focused) {
-                                    focusedModulePackage = packageName
-                                    focusState = focusState.onContentFocused()
-                                    primaryControllerTarget = target
-                                    lastContentControllerTarget = target
-                                } else if (primaryControllerTarget == target) {
-                                    primaryControllerTarget = CarePadPrimaryControllerTarget.None
+                                    dispatchFocus(
+                                        CarePadFocusEvent.FocusObserved(
+                                            CarePadFocusKey.Uninstall(
+                                                item.module.packageName
+                                            )
+                                        )
+                                    )
                                 }
                             },
                             onUninstall = { item ->
                                 enterTouchContent(
-                                    CarePadPrimaryControllerTarget.Uninstall(
-                                        item.module.packageName
-                                    )
+                                    CarePadFocusKey.Uninstall(item.module.packageName)
                                 )
                                 pendingUninstall = item
                             },
@@ -823,21 +601,18 @@ fun CarePadShellScreen(
                         CarePadDestination.ADD_MODULES -> CarePadAddModules()
 
                         CarePadDestination.SETTINGS -> settingsContent(
-                            { destination = CarePadDestination.HOME },
+                            { goTo(CarePadDestination.HOME) },
                             { mode, focused ->
-                                val target = CarePadPrimaryControllerTarget.Theme(mode)
                                 if (focused) {
-                                    focusState = focusState.onContentFocused()
-                                    primaryControllerTarget = target
-                                    lastContentControllerTarget = target
-                                } else if (primaryControllerTarget == target) {
-                                    primaryControllerTarget = CarePadPrimaryControllerTarget.None
+                                    dispatchFocus(
+                                        CarePadFocusEvent.FocusObserved(
+                                            CarePadFocusKey.Theme(mode)
+                                        )
+                                    )
                                 }
                             },
                             { mode ->
-                                enterTouchContent(
-                                    CarePadPrimaryControllerTarget.Theme(mode)
-                                )
+                                enterTouchContent(CarePadFocusKey.Theme(mode))
                             },
                             themeFocusRequesters,
                         )
@@ -862,6 +637,7 @@ private fun CarePadNavigationRail(
     visualState: CarePadRailVisualState,
     focusRequesters: Map<CarePadDestination, FocusRequester>,
     onFocused: (CarePadDestination) -> Unit,
+    onZoneFocusLost: () -> Unit,
     onSelected: (CarePadDestination) -> Unit,
 ) {
     val expanded = visualState == CarePadRailVisualState.EXPANDED
@@ -872,6 +648,11 @@ private fun CarePadNavigationRail(
 
     NavigationRail(
         modifier = Modifier
+            .onFocusChanged { state ->
+                if (!state.hasFocus) {
+                    onZoneFocusLost()
+                }
+            }
             .focusProperties {
                 onExit = {
                     when (requestedFocusDirection) {
@@ -1204,12 +985,19 @@ private fun controllerGlyphs(profile: ControlGlyphProfile): ControllerGlyphs = w
     )
 }
 
-private fun controllerFocusDirection(keyCode: Int): FocusDirection? = when (keyCode) {
-    AndroidKeyEvent.KEYCODE_DPAD_UP -> FocusDirection.Up
-    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> FocusDirection.Down
-    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> FocusDirection.Left
-    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> FocusDirection.Right
+private fun controllerDirection(keyCode: Int): CarePadDirection? = when (keyCode) {
+    AndroidKeyEvent.KEYCODE_DPAD_UP -> CarePadDirection.UP
+    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> CarePadDirection.DOWN
+    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> CarePadDirection.LEFT
+    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> CarePadDirection.RIGHT
     else -> null
+}
+
+private fun CarePadDirection.toComposeFocusDirection(): FocusDirection = when (this) {
+    CarePadDirection.UP -> FocusDirection.Up
+    CarePadDirection.DOWN -> FocusDirection.Down
+    CarePadDirection.LEFT -> FocusDirection.Left
+    CarePadDirection.RIGHT -> FocusDirection.Right
 }
 
 private fun isControllerSource(source: Int): Boolean =
