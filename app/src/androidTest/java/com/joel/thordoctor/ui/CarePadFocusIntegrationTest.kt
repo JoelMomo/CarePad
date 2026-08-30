@@ -9,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
@@ -16,6 +17,7 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.requestFocus
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.joel.thordoctor.AppThemeMode
@@ -85,20 +87,20 @@ class CarePadFocusIntegrationTest {
 
     @Test
     fun railTouchesMakeFirstDpadEffectiveAndKeepRailConfined() {
-        tapRail(navSettings)
-        railNode(navSettings).assertIsFocused()
+        establishSettingsRailControllerContext()
+        touchRailAndAssertContext(navSettings)
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
         controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
 
-        tapRail(navHome)
-        railNode(navHome).assertIsFocused()
+        establishRailControllerTarget(navHome, KeyEvent.KEYCODE_DPAD_UP)
+        touchRailAndAssertContext(navHome)
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
         controllerHint().assertExists()
         railNode(navAddModules).assertIsFocused()
 
-        tapRail(navAddModules)
-        railNode(navAddModules).assertIsFocused()
+        establishRailControllerTarget(navAddModules, KeyEvent.KEYCODE_DPAD_RIGHT)
+        touchRailAndAssertContext(navAddModules)
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
         controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
@@ -109,8 +111,9 @@ class CarePadFocusIntegrationTest {
 
     @Test
     fun settingsRailTouchThenFirstL1CrossesExactlyOnce() {
-        tapRail(navSettings)
-        railNode(navSettings).assertIsFocused()
+        establishSettingsRailControllerContext()
+        touchRailAndAssertContext(navSettings)
+        textNode(appearance).assertExists()
 
         pressL1()
         controllerHint().assertExists()
@@ -125,11 +128,11 @@ class CarePadFocusIntegrationTest {
 
     @Test
     fun systemTouchThenFirstDpadIsEffectiveRegardlessOfPriorHistory() {
-        enterSettingsContent()
+        establishSettingsContentControllerContext()
 
         repeat(3) {
-            tapText(themeSystem)
-            touchHint().assertExists()
+            establishContentControllerTarget(themeSystem, KeyEvent.KEYCODE_DPAD_UP)
+            touchContentAndAssertContext(themeSystem)
             pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
             controllerHint().assertExists()
             textNode(themeLight).assertIsFocused()
@@ -138,12 +141,14 @@ class CarePadFocusIntegrationTest {
 
     @Test
     fun systemTouchThenFirstL1ReturnsToRememberedRail() {
-        enterSettingsContent()
-        tapText(themeSystem)
+        establishSettingsContentControllerContext()
+        establishContentControllerTarget(themeSystem, KeyEvent.KEYCODE_DPAD_UP)
+        touchContentAndAssertContext(themeSystem)
 
         pressL1()
         controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
+        railNode(navSettings).assertIsSelected()
 
         pressL1()
         textNode(themeSystem).assertIsFocused()
@@ -151,7 +156,7 @@ class CarePadFocusIntegrationTest {
 
     @Test
     fun contentDpadNeverCrossesToRailAndSelectedRemainsIndependentFromFocused() {
-        enterSettingsContent()
+        establishSettingsContentControllerContext()
         textNode(themeSystem).assertIsFocused()
 
         pressDpad(KeyEvent.KEYCODE_DPAD_LEFT)
@@ -167,16 +172,18 @@ class CarePadFocusIntegrationTest {
         railNode(navHome).assertIsFocused()
 
         textNode(appearance).assertExists()
+        railNode(navSettings).assertIsSelected()
         pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
         railNode(navHome).assertIsFocused()
         textNode(appearance).assertExists()
+        railNode(navSettings).assertIsSelected()
     }
 
     @Test
     fun themeRecompositionPreservesFirstControllerContinuationAndModeHint() {
-        enterSettingsContent()
-        tapText(themeLight)
-        touchHint().assertExists()
+        establishSettingsContentControllerContext()
+        establishContentControllerTarget(themeLight, KeyEvent.KEYCODE_DPAD_RIGHT)
+        touchContentAndAssertContext(themeLight)
 
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
 
@@ -186,7 +193,7 @@ class CarePadFocusIntegrationTest {
 
     @Test
     fun disappearingFocusedSubtreeDoesNotChangeLogicalZone() {
-        enterSettingsContent()
+        establishSettingsContentControllerContext()
         textNode(themeSystem).assertIsFocused()
 
         composeRule.runOnUiThread {
@@ -199,30 +206,90 @@ class CarePadFocusIntegrationTest {
 
         controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
+        railNode(navSettings).assertIsSelected()
     }
 
     @Test
     fun touchAndControllerHintsFollowReducerModality() {
-        tapRail(navSettings)
-        railNode(navSettings).assertIsFocused()
+        establishSettingsRailControllerContext()
+        touchRailAndAssertContext(navSettings)
         touchHint().assertExists()
 
         pressL1()
         controllerHint().assertExists()
+        textNode(themeSystem).assertIsFocused()
 
-        tapText(themeSystem)
+        establishContentControllerTarget(themeSystem, KeyEvent.KEYCODE_DPAD_UP)
+        touchContentAndAssertContext(themeSystem)
         touchHint().assertExists()
 
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
         controllerHint().assertExists()
+        textNode(themeLight).assertIsFocused()
     }
 
-    private fun enterSettingsContent() {
-        tapRail(navSettings)
+    private fun establishSettingsRailControllerContext() {
+        railNode(navSettings).requestFocus()
+        composeRule.waitForIdle()
         railNode(navSettings).assertIsFocused()
+
+        // RequestFocus updates the observed physical target, while the shell starts in CONTENT.
+        // L1 aligns the logical zone with that real rail target through the production pipeline.
+        pressL1()
+        controllerHint().assertExists()
+        railNode(navSettings).assertIsFocused()
+
+        // Select Settings with a real controller action, then use the lower rail edge as a
+        // confined controller-history event that must not move focus or change zones.
+        pressA()
+        controllerHint().assertExists()
+        railNode(navSettings).assertIsFocused()
+        railNode(navSettings).assertIsSelected()
+        textNode(appearance).assertExists()
+
+        pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
+        controllerHint().assertExists()
+        railNode(navSettings).assertIsFocused()
+        railNode(navSettings).assertIsSelected()
+    }
+
+    private fun establishSettingsContentControllerContext() {
+        establishSettingsRailControllerContext()
         pressL1()
         controllerHint().assertExists()
         textNode(themeSystem).assertIsFocused()
+        railNode(navSettings).assertIsSelected()
+    }
+
+    private fun establishRailControllerTarget(label: String, confinedKeyCode: Int) {
+        railNode(label).requestFocus()
+        composeRule.waitForIdle()
+        railNode(label).assertIsFocused()
+        pressDpad(confinedKeyCode)
+        controllerHint().assertExists()
+        railNode(label).assertIsFocused()
+    }
+
+    private fun establishContentControllerTarget(text: String, confinedKeyCode: Int) {
+        textNode(text).requestFocus()
+        composeRule.waitForIdle()
+        textNode(text).assertIsFocused()
+        pressDpad(confinedKeyCode)
+        controllerHint().assertExists()
+        textNode(text).assertIsFocused()
+    }
+
+    private fun touchRailAndAssertContext(label: String) {
+        tapRail(label)
+        touchHint().assertExists()
+        railNode(label).assertIsSelected()
+    }
+
+    private fun touchContentAndAssertContext(text: String) {
+        tapText(text)
+        touchHint().assertExists()
+        textNode(appearance).assertExists()
+        railNode(navSettings).assertIsSelected()
     }
 
     private fun tapRail(label: String) {
@@ -253,6 +320,10 @@ class CarePadFocusIntegrationTest {
 
     private fun pressL1() {
         injectControllerKey(KeyEvent.KEYCODE_BUTTON_L1, InputDevice.SOURCE_GAMEPAD)
+    }
+
+    private fun pressA() {
+        injectControllerKey(KeyEvent.KEYCODE_BUTTON_A, InputDevice.SOURCE_GAMEPAD)
     }
 
     private fun injectControllerKey(keyCode: Int, source: Int) {
