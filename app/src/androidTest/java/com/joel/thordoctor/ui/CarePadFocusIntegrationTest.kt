@@ -263,20 +263,18 @@ class CarePadFocusIntegrationTest {
     }
 
     private fun establishSettingsRailControllerContext() {
-        requestKeyboardInputModeForFocusSetup()
-        railNode(navSettings).requestFocus()
-        composeRule.waitForIdle()
-        railNode(navSettings).assertIsFocused()
-
-        // The keyboard input-mode change above is test-only platform setup. Reducer modality
-        // remains untouched until this real controller event reaches the production pipeline.
-        // L1 aligns the logical zone with the physically observed rail target.
         pressL1()
+        controllerHint().assertExists()
+        railNode(navHome).assertIsFocused()
+
+        pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
+        controllerHint().assertExists()
+        railNode(navAddModules).assertIsFocused()
+
+        pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
         controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
 
-        // Select Settings with a real controller action, then use the lower rail edge as a
-        // confined controller-history event that must not move focus or change zones.
         pressA()
         controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
@@ -298,9 +296,16 @@ class CarePadFocusIntegrationTest {
     }
 
     private fun establishRailControllerTarget(label: String, confinedKeyCode: Int) {
-        requestKeyboardInputModeForFocusSetup()
-        railNode(label).requestFocus()
-        composeRule.waitForIdle()
+        when (label) {
+            navHome -> {
+                pressDpad(KeyEvent.KEYCODE_DPAD_UP)
+                railNode(navAddModules).assertIsFocused()
+                pressDpad(KeyEvent.KEYCODE_DPAD_UP)
+            }
+            navAddModules -> Unit
+            else -> error("Unsupported productive rail setup target: $label")
+        }
+        controllerHint().assertExists()
         railNode(label).assertIsFocused()
         pressDpad(confinedKeyCode)
         controllerHint().assertExists()
