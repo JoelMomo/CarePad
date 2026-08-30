@@ -8,6 +8,9 @@ import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
+import androidx.compose.ui.input.LocalInputModeManager
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
@@ -35,6 +38,7 @@ class CarePadFocusIntegrationTest {
     private val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
     private val showSettingsSubtree = mutableStateOf(true)
 
+    private lateinit var inputModeManager: InputModeManager
     private lateinit var navHome: String
     private lateinit var navAddModules: String
     private lateinit var navSettings: String
@@ -56,6 +60,7 @@ class CarePadFocusIntegrationTest {
         appearance = composeRule.activity.getString(R.string.appearance)
 
         composeRule.setContent {
+            inputModeManager = LocalInputModeManager.current
             MaterialTheme {
                 CarePadShellScreen(
                     onThemeModeChange = { mode -> themeMode.value = mode },
@@ -229,12 +234,14 @@ class CarePadFocusIntegrationTest {
     }
 
     private fun establishSettingsRailControllerContext() {
+        requestKeyboardInputModeForFocusSetup()
         railNode(navSettings).requestFocus()
         composeRule.waitForIdle()
         railNode(navSettings).assertIsFocused()
 
-        // RequestFocus updates the observed physical target, while the shell starts in CONTENT.
-        // L1 aligns the logical zone with that real rail target through the production pipeline.
+        // The keyboard input-mode change above is test-only platform setup. Reducer modality
+        // remains untouched until this real controller event reaches the production pipeline.
+        // L1 aligns the logical zone with the physically observed rail target.
         pressL1()
         controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
@@ -262,6 +269,7 @@ class CarePadFocusIntegrationTest {
     }
 
     private fun establishRailControllerTarget(label: String, confinedKeyCode: Int) {
+        requestKeyboardInputModeForFocusSetup()
         railNode(label).requestFocus()
         composeRule.waitForIdle()
         railNode(label).assertIsFocused()
@@ -271,12 +279,19 @@ class CarePadFocusIntegrationTest {
     }
 
     private fun establishContentControllerTarget(text: String, confinedKeyCode: Int) {
+        requestKeyboardInputModeForFocusSetup()
         textNode(text).requestFocus()
         composeRule.waitForIdle()
         textNode(text).assertIsFocused()
         pressDpad(confinedKeyCode)
         controllerHint().assertExists()
         textNode(text).assertIsFocused()
+    }
+
+    private fun requestKeyboardInputModeForFocusSetup() {
+        composeRule.runOnIdle {
+            check(inputModeManager.requestInputMode(InputMode.Keyboard))
+        }
     }
 
     private fun touchRailAndAssertContext(label: String) {
