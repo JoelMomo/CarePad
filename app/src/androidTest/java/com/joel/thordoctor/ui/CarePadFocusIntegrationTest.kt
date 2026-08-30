@@ -263,6 +263,11 @@ class CarePadFocusIntegrationTest {
     }
 
     private fun establishSettingsRailControllerContext() {
+        requestKeyboardInputModeForFocusSetup()
+        railNode(navHome).requestFocus()
+        composeRule.waitForIdle()
+        railNode(navHome).assertIsFocused()
+
         pressL1()
         controllerHint().assertExists()
         railNode(navHome).assertIsFocused()
