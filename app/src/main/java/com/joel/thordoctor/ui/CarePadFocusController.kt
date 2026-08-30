@@ -368,7 +368,9 @@ private fun reduceFocusObserved(
     var next = state.copy(observedFocus = normalizedKey)
     when (normalizedKey) {
         is CarePadFocusKey.Rail -> {
-            next = next.copy(railPreferredDestination = normalizedKey.destination)
+            if (state.activeZone == CarePadFocusZone.RAIL) {
+                next = next.copy(railPreferredDestination = normalizedKey.destination)
+            }
         }
         is CarePadFocusKey.Module,
         is CarePadFocusKey.Uninstall,
