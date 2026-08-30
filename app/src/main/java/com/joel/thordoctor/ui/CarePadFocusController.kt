@@ -403,11 +403,12 @@ private fun reduceFocusExecutionResult(
     if (pending.token != event.token) {
         return state
     }
-    return when (val intent = pending.intent) {
+    return when (pending.intent) {
         is CarePadFocusIntent.MoveWithinZone -> state.copy(pendingFocus = null)
-        is CarePadFocusIntent.RequestTarget -> when {
-            !event.accepted -> state.copy(pendingFocus = null)
-            state.observedFocus == intent.target -> {
+        is CarePadFocusIntent.RequestTarget -> {
+            if (!event.accepted) {
+                state.copy(pendingFocus = null)
+            } else {
                 var next = state.copy(pendingFocus = null)
                 pending.moveAfterConfirmation?.let { direction ->
                     next = next.scheduleFocus(
@@ -416,7 +417,6 @@ private fun reduceFocusExecutionResult(
                 }
                 next
             }
-            else -> state
         }
     }
 }
