@@ -210,14 +210,25 @@ class CarePadFocusIntegrationTest {
         touchHint().assertExists()
         railNode(navHome).assertIsSelected()
 
-        // B: this same first L1 must reach the CarePad reducer and switch TOUCH -> CONTROLLER.
-        pressL1()
+        // Probe the same first L1 at the physical event boundary. The reducer handles KeyDown;
+        // observing before KeyUp distinguishes "never focused" from "focused then lost" without
+        // changing production behavior or introducing synthetic reducer state.
+        val probe = pressL1WithFocusTimingProbe()
         controllerHint().assertExists()
-
-        // C: activeZone remained CONTENT through the destination/target change, so that same
-        // L1 crosses to RAIL and restores the remembered rail target. Selection remains Home.
-        railNode(navSettings).assertIsFocused()
         railNode(navHome).assertIsSelected()
+
+        if (!probe.settingsFocusedAfterUp) {
+            throw AssertionError(
+                "CAREFPAD_FOCUS_PROBE " +
+                    "controllerAfterDown=${probe.controllerHintAfterDown} " +
+                    "settingsAfterDown=${probe.settingsFocusedAfterDown} " +
+                    "homeAfterDown=${probe.homeFocusedAfterDown} " +
+                    "settingsAfterUp=${probe.settingsFocusedAfterUp} " +
+                    "homeAfterUp=${probe.homeFocusedAfterUp}"
+            )
+        }
+
+        railNode(navSettings).assertIsFocused()
     }
 
     @Test
@@ -345,6 +356,60 @@ class CarePadFocusIntegrationTest {
 
     private fun pressA() {
         injectControllerKey(KeyEvent.KEYCODE_BUTTON_A, InputDevice.SOURCE_GAMEPAD)
+    }
+
+    private data class L1FocusTimingProbe(
+        val controllerHintAfterDown: Boolean,
+        val settingsFocusedAfterDown: Boolean,
+        val homeFocusedAfterDown: Boolean,
+        val settingsFocusedAfterUp: Boolean,
+        val homeFocusedAfterUp: Boolean,
+    )
+
+    private fun pressL1WithFocusTimingProbe(): L1FocusTimingProbe {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val downTime = SystemClock.uptimeMillis()
+        val down = KeyEvent(
+            downTime,
+            downTime,
+            KeyEvent.ACTION_DOWN,
+            KeyEvent.KEYCODE_BUTTON_L1,
+            0,
+            0,
+            KeyCharacterMap.VIRTUAL_KEYBOARD,
+            0,
+            0,
+            InputDevice.SOURCE_GAMEPAD,
+        )
+        val up = KeyEvent(
+            downTime,
+            SystemClock.uptimeMillis(),
+            KeyEvent.ACTION_UP,
+            KeyEvent.KEYCODE_BUTTON_L1,
+            0,
+            0,
+            KeyCharacterMap.VIRTUAL_KEYBOARD,
+            0,
+            0,
+            InputDevice.SOURCE_GAMEPAD,
+        )
+
+        check(instrumentation.uiAutomation.injectInputEvent(down, true))
+        composeRule.waitForIdle()
+        val controllerAfterDown = runCatching { controllerHint().assertExists() }.isSuccess
+        val settingsAfterDown = runCatching { railNode(navSettings).assertIsFocused() }.isSuccess
+        val homeAfterDown = runCatching { railNode(navHome).assertIsFocused() }.isSuccess
+
+        check(instrumentation.uiAutomation.injectInputEvent(up, true))
+        composeRule.waitForIdle()
+        return L1FocusTimingProbe(
+            controllerHintAfterDown = controllerAfterDown,
+            settingsFocusedAfterDown = settingsAfterDown,
+            homeFocusedAfterDown = homeAfterDown,
+            settingsFocusedAfterUp =
+                runCatching { railNode(navSettings).assertIsFocused() }.isSuccess,
+            homeFocusedAfterUp = runCatching { railNode(navHome).assertIsFocused() }.isSuccess,
+        )
     }
 
     private fun injectControllerKey(keyCode: Int, source: Int) {
