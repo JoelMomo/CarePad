@@ -383,9 +383,10 @@ fun CarePadShellScreen(
 
                 val direction = controllerDirection(native.keyCode)
                 if (native.repeatCount != 0) {
-                    return@onPreviewKeyEvent
+                    return@onPreviewKeyEvent (
                         native.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_L1 ||
                             direction != null
+                    )
                 }
 
                 val wasTouch = focusControllerState.modality == CarePadInputMethod.TOUCH
