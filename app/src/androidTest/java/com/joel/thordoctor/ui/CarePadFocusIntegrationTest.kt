@@ -86,14 +86,19 @@ class CarePadFocusIntegrationTest {
         tapRail(navSettings)
         railNode(navSettings).assertIsFocused()
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
+        controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
 
         tapRail(navHome)
+        railNode(navHome).assertIsFocused()
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
+        controllerHint().assertExists()
         railNode(navAddModules).assertIsFocused()
 
         tapRail(navAddModules)
+        railNode(navAddModules).assertIsFocused()
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
+        controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
 
         pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
@@ -103,10 +108,11 @@ class CarePadFocusIntegrationTest {
     @Test
     fun settingsRailTouchThenFirstL1CrossesExactlyOnce() {
         tapRail(navSettings)
+        railNode(navSettings).assertIsFocused()
 
         pressL1()
-        textNode(themeSystem).assertIsFocused()
         controllerHint().assertExists()
+        textNode(themeSystem).assertIsFocused()
 
         pressL1()
         railNode(navSettings).assertIsFocused()
@@ -123,8 +129,8 @@ class CarePadFocusIntegrationTest {
             tapText(themeSystem)
             touchHint().assertExists()
             pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
-            textNode(themeLight).assertIsFocused()
             controllerHint().assertExists()
+            textNode(themeLight).assertIsFocused()
         }
     }
 
@@ -134,8 +140,8 @@ class CarePadFocusIntegrationTest {
         tapText(themeSystem)
 
         pressL1()
-        railNode(navSettings).assertIsFocused()
         controllerHint().assertExists()
+        railNode(navSettings).assertIsFocused()
 
         pressL1()
         textNode(themeSystem).assertIsFocused()
@@ -172,8 +178,8 @@ class CarePadFocusIntegrationTest {
 
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
 
-        textNode(themeDark).assertIsFocused()
         controllerHint().assertExists()
+        textNode(themeDark).assertIsFocused()
     }
 
     @Test
@@ -189,12 +195,14 @@ class CarePadFocusIntegrationTest {
 
         pressL1()
 
+        controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
     }
 
     @Test
     fun touchAndControllerHintsFollowReducerModality() {
         tapRail(navSettings)
+        railNode(navSettings).assertIsFocused()
         touchHint().assertExists()
 
         pressL1()
@@ -209,7 +217,9 @@ class CarePadFocusIntegrationTest {
 
     private fun enterSettingsContent() {
         tapRail(navSettings)
+        railNode(navSettings).assertIsFocused()
         pressL1()
+        controllerHint().assertExists()
         textNode(themeSystem).assertIsFocused()
     }
 
@@ -224,7 +234,7 @@ class CarePadFocusIntegrationTest {
     }
 
     private fun railNode(label: String) =
-        composeRule.onNodeWithContentDescription(label)
+        composeRule.onNodeWithContentDescription(label, useUnmergedTree = true)
 
     private fun textNode(text: String) = composeRule.onNodeWithText(text)
 
