@@ -10,7 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
-import androidx.compose.ui.input.LocalInputModeManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
