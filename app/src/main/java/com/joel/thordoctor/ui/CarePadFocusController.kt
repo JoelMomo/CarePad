@@ -144,7 +144,6 @@ internal fun reduceCarePadFocus(
             val target = carePadEntryTarget(controllerState, nextZone)
             controllerState.copy(
                 activeZone = nextZone,
-                observedFocus = null,
                 pendingFocus = null,
             ).scheduleFocus(
                 intent = CarePadFocusIntent.RequestTarget(target),
