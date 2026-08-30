@@ -256,7 +256,7 @@ class CarePadFocusControllerTest {
     @Test
     fun pendingTokenExecutesOnceAndLateResultCannotCompleteContinuation() {
         val touched = reduceCarePadFocus(
-            settingsState(),
+            settingsState().copy(observedFocus = null),
             CarePadFocusEvent.TouchContent(system),
         )
         val requested = reduceCarePadFocus(
