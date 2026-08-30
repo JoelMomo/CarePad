@@ -73,19 +73,21 @@ internal fun reduceCarePadFocus(
 ): CarePadFocusControllerState = when (event) {
     CarePadFocusEvent.TouchContext -> state.copy(
         modality = CarePadInputMethod.TOUCH,
-        observedFocus = null,
         pendingFocus = null,
     )
 
-    is CarePadFocusEvent.TouchRail -> state.copy(
-        activeZone = CarePadFocusZone.RAIL,
-        modality = CarePadInputMethod.TOUCH,
-        railPreferredDestination = event.destination,
-        observedFocus = null,
-        pendingFocus = null,
-    ).scheduleFocus(
-        CarePadFocusIntent.RequestTarget(CarePadFocusKey.Rail(event.destination))
-    )
+    is CarePadFocusEvent.TouchRail -> {
+        val touchedTarget = CarePadFocusKey.Rail(event.destination)
+        state.copy(
+            activeZone = CarePadFocusZone.RAIL,
+            modality = CarePadInputMethod.TOUCH,
+            railPreferredDestination = event.destination,
+            observedFocus = state.observedFocus.takeIf { it == touchedTarget },
+            pendingFocus = null,
+        ).scheduleFocus(
+            CarePadFocusIntent.RequestTarget(touchedTarget)
+        )
+    }
 
     is CarePadFocusEvent.TouchContent -> {
         val touchedTarget = event.target?.takeIf {
@@ -102,7 +104,11 @@ internal fun reduceCarePadFocus(
             activeZone = CarePadFocusZone.CONTENT,
             modality = CarePadInputMethod.TOUCH,
             contentPreferredTargets = preferredTargets,
-            observedFocus = null,
+            observedFocus = if (touchedTarget == null) {
+                state.observedFocus
+            } else {
+                state.observedFocus.takeIf { it == touchedTarget }
+            },
             pendingFocus = null,
         )
         next.scheduleFocus(
