@@ -138,6 +138,7 @@ private data class ControllerGlyphs(
 @Composable
 fun CarePadShellScreen(
     onThemeModeChange: (AppThemeMode) -> Unit,
+    focusTrace: ((String) -> Unit)? = null,
     settingsContent: @Composable (
         onBack: () -> Unit,
         onThemeFocusChanged: (AppThemeMode, Boolean) -> Unit,
@@ -152,6 +153,19 @@ fun CarePadShellScreen(
     var focusControllerState by remember { mutableStateOf(CarePadFocusControllerState()) }
     var expandedPackage by remember { mutableStateOf<String?>(null) }
     var pendingUninstall by remember { mutableStateOf<VisibleModule?>(null) }
+    val focusTraceSequence = remember { longArrayOf(0L) }
+
+    fun traceFocus(message: String) {
+        val trace = focusTrace ?: return
+        focusTraceSequence[0] += 1
+        trace("${focusTraceSequence[0]} $message")
+    }
+
+    fun focusStateTrace(state: CarePadFocusControllerState): String =
+        "zone=${state.activeZone} modality=${state.modality} " +
+            "selected=${state.selectedDestination} railPreferred=${state.railPreferredDestination} " +
+            "observed=${state.observedFocus} pending=${state.pendingFocus} " +
+            "nextToken=${state.nextFocusToken}"
 
     val destination = focusControllerState.selectedDestination
     val inputMethod = focusControllerState.modality
@@ -192,7 +206,12 @@ fun CarePadShellScreen(
     val contentFallbackRequester = remember { FocusRequester() }
 
     fun dispatchFocus(event: CarePadFocusEvent) {
-        focusControllerState = reduceCarePadFocus(focusControllerState, event)
+        val before = focusControllerState
+        val after = reduceCarePadFocus(before, event)
+        focusControllerState = after
+        traceFocus(
+            "EVENT $event | before=${focusStateTrace(before)} | after=${focusStateTrace(after)}"
+        )
     }
 
     fun refreshModules() {
@@ -251,6 +270,7 @@ fun CarePadShellScreen(
     val pendingFocus = focusControllerState.pendingFocus
     LaunchedEffect(pendingFocus?.token) {
         val pending = pendingFocus ?: return@LaunchedEffect
+        traceFocus("EXECUTE token=${pending.token} intent=${pending.intent}")
         val accepted = when (val intent = pending.intent) {
             is CarePadFocusIntent.RequestTarget -> {
                 val requester = when (val target = intent.target) {
@@ -267,7 +287,24 @@ fun CarePadShellScreen(
                         }
                     }
                 }
-                requester?.requestFocus() == true
+                traceFocus(
+                    "REQUESTER token=${pending.token} target=${intent.target} " +
+                        "resolved=${requester != null}"
+                )
+                if (requester == null) {
+                    traceFocus(
+                        "REQUEST_FOCUS token=${pending.token} target=${intent.target} skipped=null"
+                    )
+                    false
+                } else {
+                    traceFocus("REQUEST_FOCUS token=${pending.token} target=${intent.target} call")
+                    val requestAccepted = requester.requestFocus()
+                    traceFocus(
+                        "REQUEST_FOCUS token=${pending.token} target=${intent.target} " +
+                            "return=$requestAccepted"
+                    )
+                    requestAccepted
+                }
             }
 
             is CarePadFocusIntent.MoveWithinZone ->
@@ -297,7 +334,6 @@ fun CarePadShellScreen(
         }
         return false
     }
-
     fun enterTouchRail(touchedDestination: CarePadDestination) {
         dispatchFocus(CarePadFocusEvent.TouchRail(touchedDestination))
     }
@@ -392,10 +428,20 @@ fun CarePadShellScreen(
                 val wasTouch = focusControllerState.modality == CarePadInputMethod.TOUCH
                 when {
                     native.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_L1 -> {
+                        traceFocus(
+                            "KEYDOWN L1 start state=${focusStateTrace(focusControllerState)} " +
+                                "wasTouch=$wasTouch"
+                        )
                         dispatchFocus(CarePadFocusEvent.ControllerL1())
                         if (wasTouch) {
-                            inputModeManager.requestInputMode(InputMode.Keyboard)
+                            traceFocus("INPUT_MODE Keyboard call reason=L1")
+                            val modeAccepted =
+                                inputModeManager.requestInputMode(InputMode.Keyboard)
+                            traceFocus("INPUT_MODE Keyboard return=$modeAccepted reason=L1")
                         }
+                        traceFocus(
+                            "KEYDOWN L1 handler-return state=${focusStateTrace(focusControllerState)}"
+                        )
                         true
                     }
 
