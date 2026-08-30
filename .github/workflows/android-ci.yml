@@ -66,6 +66,9 @@ jobs:
       - name: Build debug APKs
         run: ./gradlew :app:assembleDebug :module-lab:assembleDebug :performance-module:assembleDebug :performance-emulator-fixture:assembleDebug :controls-input-lab:assembleDebug --stacktrace
 
+      - name: Build CarePad focus androidTest APK
+        run: ./gradlew :app:assembleDebugAndroidTest --stacktrace
+
       - name: Build Performance release APK for LAB isolation
         run: ./gradlew :performance-module:assembleRelease --stacktrace
 
@@ -135,6 +138,14 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+
+      - name: Upload CarePad focus androidTest APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-focus-androidTest-debug
+          path: app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Upload baseline module lab APK
         uses: actions/upload-artifact@v4
@@ -268,6 +279,12 @@ jobs:
           name: CarePad-debug
           path: artifacts/host-normal
 
+      - name: Download CarePad focus androidTest APK
+        uses: actions/download-artifact@v4
+        with:
+          name: CarePad-focus-androidTest-debug
+          path: artifacts/focus-androidTest
+
       - name: Download CarePad lab host
         uses: actions/download-artifact@v4
         with:
@@ -344,6 +361,13 @@ jobs:
             -no-snapshot \
             -gpu swiftshader_indirect \
             > "$RUNNER_TEMP/carepad-emulator.log" 2>&1 &
+
+      - name: Run CarePad focus Compose tests
+        run: |
+          chmod +x scripts/ci/android-emulator-focus-compose.sh
+          scripts/ci/android-emulator-focus-compose.sh \
+            "$(find artifacts/host-normal -name '*.apk' -print -quit)" \
+            "$(find artifacts/focus-androidTest -name '*.apk' -print -quit)"
 
       - name: Run CarePad module smoke test
         run: |
