@@ -1,28 +1,45 @@
 package com.joel.thordoctor.ui
 
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
+import android.os.Bundle
 import android.os.SystemClock
+import android.test.mock.MockPackageManager
 import android.view.InputDevice
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.requestFocus
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import carepad.contracts.CarePadModuleActions
+import carepad.contracts.CarePadModuleIds
+import carepad.contracts.CarePadModuleMetadataKeys
+import carepad.contracts.CarePadProtocol
 import com.joel.thordoctor.AppThemeMode
 import com.joel.thordoctor.R
 import org.junit.Before
@@ -30,13 +47,14 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
+private const val TEST_PERFORMANCE_MODULE_PACKAGE = "dev.carepad.test.performance"
+
 @RunWith(AndroidJUnit4::class)
 class CarePadFocusIntegrationTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     private val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
-    private val showSettingsSubtree = mutableStateOf(true)
 
     private lateinit var inputModeManager: InputModeManager
     private lateinit var navHome: String
@@ -50,7 +68,6 @@ class CarePadFocusIntegrationTest {
     @Before
     fun setUp() {
         themeMode.value = AppThemeMode.SYSTEM
-        showSettingsSubtree.value = true
         navHome = composeRule.activity.getString(R.string.carepad_nav_home)
         navAddModules = composeRule.activity.getString(R.string.carepad_nav_add_modules)
         navSettings = composeRule.activity.getString(R.string.carepad_nav_settings)
@@ -59,18 +76,19 @@ class CarePadFocusIntegrationTest {
         themeDark = composeRule.activity.getString(R.string.theme_dark)
         appearance = composeRule.activity.getString(R.string.appearance)
 
+        val shellContext = SingleModuleContext(composeRule.activity)
         composeRule.setContent {
-            inputModeManager = LocalInputModeManager.current
-            MaterialTheme {
-                CarePadShellScreen(
-                    onThemeModeChange = { mode -> themeMode.value = mode },
-                    settingsContent = {
-                            _,
-                            onThemeFocusChanged,
-                            onThemeTouched,
-                            themeFocusRequesters,
-                        ->
-                        if (showSettingsSubtree.value) {
+            CompositionLocalProvider(LocalContext provides shellContext) {
+                inputModeManager = LocalInputModeManager.current
+                MaterialTheme {
+                    CarePadShellScreen(
+                        onThemeModeChange = { mode -> themeMode.value = mode },
+                        settingsContent = {
+                                _,
+                                onThemeFocusChanged,
+                                onThemeTouched,
+                                themeFocusRequesters,
+                            ->
                             CarePadSettingsScreen(
                                 themeMode = themeMode.value,
                                 onThemeModeChange = { mode ->
@@ -80,11 +98,9 @@ class CarePadFocusIntegrationTest {
                                 onControllerThemeFocusChanged = onThemeFocusChanged,
                                 controllerFocusRequesters = themeFocusRequesters,
                             )
-                        } else {
-                            Text("settings-subtree-removed")
-                        }
-                    },
-                )
+                        },
+                    )
+                }
             }
         }
         composeRule.waitForIdle()
@@ -198,20 +214,41 @@ class CarePadFocusIntegrationTest {
 
     @Test
     fun disappearingFocusedSubtreeDoesNotChangeLogicalZone() {
-        establishSettingsContentControllerContext()
-        textNode(themeSystem).assertIsFocused()
+        val performance = composeRule.activity.getString(R.string.carepad_module_performance)
+        val uninstall = composeRule.activity.getString(R.string.carepad_uninstall_module)
+
+        moduleNode(performance).assertExists()
+        moduleNode(performance).performTouchInput { longClick() }
+        composeRule.waitForIdle()
+        touchHint().assertExists()
+        uninstallNode(uninstall).assertExists()
+
+        // Keep the reducer in TOUCH while the physically focused product target is the
+        // Details-only uninstall control. Android back then collapses Details through the
+        // production handleBack -> expandedPackage -> ContentTargetsChanged path.
+        uninstallNode(uninstall).requestFocus()
+        composeRule.waitForIdle()
+        uninstallNode(uninstall).assertIsFocused()
+        touchHint().assertExists()
+        railNode(navHome).assertIsSelected()
 
         composeRule.runOnUiThread {
-            showSettingsSubtree.value = false
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
         }
         composeRule.waitForIdle()
-        textNode("settings-subtree-removed").assertExists()
+        uninstallNode(uninstall).assertDoesNotExist()
+        moduleNode(performance).assertExists()
+        touchHint().assertExists()
+        railNode(navHome).assertIsSelected()
 
+        // B: this same first L1 must reach the CarePad reducer and switch modality.
         pressL1()
-
         controllerHint().assertExists()
-        railNode(navSettings).assertIsFocused()
-        railNode(navSettings).assertIsSelected()
+
+        // C: after the signalled target disappearance, that first L1 must complete the
+        // CONTENT -> RAIL transition and physically focus the selected Home rail target.
+        railNode(navHome).assertIsFocused()
+        railNode(navHome).assertIsSelected()
     }
 
     @Test
@@ -322,6 +359,16 @@ class CarePadFocusIntegrationTest {
         useUnmergedTree = true,
     )
 
+    private fun moduleNode(label: String) = composeRule.onNode(
+        matcher = hasClickAction() and hasAnyDescendant(hasText(label)),
+        useUnmergedTree = true,
+    )
+
+    private fun uninstallNode(label: String) = composeRule.onNode(
+        matcher = hasClickAction() and hasAnyDescendant(hasText(label)),
+        useUnmergedTree = true,
+    )
+
     private fun textNode(text: String) = composeRule.onNodeWithText(text)
 
     private fun touchHint() = composeRule.onNodeWithText("Toca", substring = true)
@@ -372,4 +419,45 @@ class CarePadFocusIntegrationTest {
         check(instrumentation.uiAutomation.injectInputEvent(up, true))
         composeRule.waitForIdle()
     }
+}
+
+private class SingleModuleContext(base: Context) : ContextWrapper(base) {
+    private val packageManagerOverride = SingleModulePackageManager(
+        delegate = base.packageManager,
+        hostPackageName = base.packageName,
+    )
+
+    override fun getPackageManager(): PackageManager = packageManagerOverride
+}
+
+@Suppress("DEPRECATION")
+private class SingleModulePackageManager(
+    private val delegate: PackageManager,
+    private val hostPackageName: String,
+) : MockPackageManager() {
+    private val moduleResolveInfo = ResolveInfo().apply {
+        activityInfo = ActivityInfo().apply {
+            packageName = TEST_PERFORMANCE_MODULE_PACKAGE
+            name = "$TEST_PERFORMANCE_MODULE_PACKAGE.EntryActivity"
+            metaData = Bundle().apply {
+                putString(CarePadModuleMetadataKeys.MODULE_ID, CarePadModuleIds.PERFORMANCE)
+                putInt(CarePadModuleMetadataKeys.PROTOCOL_MIN, CarePadProtocol.VERSION)
+                putInt(CarePadModuleMetadataKeys.PROTOCOL_MAX, CarePadProtocol.VERSION)
+                putString(CarePadModuleMetadataKeys.CAPABILITIES, "")
+            }
+        }
+    }
+
+    override fun queryIntentActivities(intent: Intent, flags: Int): MutableList<ResolveInfo> =
+        if (intent.action == CarePadModuleActions.MODULE) {
+            mutableListOf(moduleResolveInfo)
+        } else {
+            delegate.queryIntentActivities(intent, flags).toMutableList()
+        }
+
+    override fun getPackageInfo(packageName: String, flags: Int): PackageInfo =
+        delegate.getPackageInfo(
+            if (packageName == TEST_PERFORMANCE_MODULE_PACKAGE) hostPackageName else packageName,
+            flags,
+        )
 }
