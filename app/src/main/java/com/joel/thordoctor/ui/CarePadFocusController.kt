@@ -410,14 +410,10 @@ private fun reduceFocusExecutionResult(
         is CarePadFocusIntent.RequestTarget -> {
             if (!event.accepted) {
                 state.copy(pendingFocus = null)
+            } else if (pending.moveAfterConfirmation != null) {
+                state
             } else {
-                var next = state.copy(pendingFocus = null)
-                pending.moveAfterConfirmation?.let { direction ->
-                    next = next.scheduleFocus(
-                        intent = CarePadFocusIntent.MoveWithinZone(direction),
-                    )
-                }
-                next
+                state.copy(pendingFocus = null)
             }
         }
     }
