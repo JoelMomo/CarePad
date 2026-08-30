@@ -1,5 +1,6 @@
 package com.joel.thordoctor.ui
 
+import android.os.Bundle
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyCharacterMap
@@ -35,6 +36,7 @@ class CarePadFocusIntegrationTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     private val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
+    private val focusTrace = mutableListOf<String>()
 
     private lateinit var inputModeManager: InputModeManager
     private lateinit var navHome: String
@@ -48,6 +50,7 @@ class CarePadFocusIntegrationTest {
     @Before
     fun setUp() {
         themeMode.value = AppThemeMode.SYSTEM
+        focusTrace.clear()
         navHome = composeRule.activity.getString(R.string.carepad_nav_home)
         navAddModules = composeRule.activity.getString(R.string.carepad_nav_add_modules)
         navSettings = composeRule.activity.getString(R.string.carepad_nav_settings)
@@ -61,6 +64,7 @@ class CarePadFocusIntegrationTest {
             MaterialTheme {
                 CarePadShellScreen(
                     onThemeModeChange = { mode -> themeMode.value = mode },
+                    focusTrace = { entry -> focusTrace += entry },
                     settingsContent = {
                             _,
                             onThemeFocusChanged,
@@ -86,8 +90,12 @@ class CarePadFocusIntegrationTest {
     @Test
     fun railTouchesMakeFirstDpadEffectiveAndKeepRailConfined() {
         establishSettingsRailControllerContext()
+        focusTrace.clear()
+        val inputModeBeforeTouch = currentInputMode()
         touchRailAndAssertContext(navSettings)
-        pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
+        val inputModeAfterTouch = currentInputMode()
+        val probe = pressDpadWithFocusTimingProbe(KeyEvent.KEYCODE_DPAD_DOWN)
+        emitDpadProbe(inputModeBeforeTouch, inputModeAfterTouch, probe)
         controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
 
@@ -342,6 +350,14 @@ class CarePadFocusIntegrationTest {
     private fun controllerHint() =
         composeRule.onNodeWithText("Navegación", substring = true)
 
+    private fun currentInputMode(): InputMode {
+        var mode = InputMode.Touch
+        composeRule.runOnIdle {
+            mode = inputModeManager.inputMode
+        }
+        return mode
+    }
+
     private fun pressDpad(keyCode: Int) {
         injectControllerKey(keyCode, InputDevice.SOURCE_DPAD)
     }
@@ -352,6 +368,103 @@ class CarePadFocusIntegrationTest {
 
     private fun pressA() {
         injectControllerKey(KeyEvent.KEYCODE_BUTTON_A, InputDevice.SOURCE_GAMEPAD)
+    }
+
+    private data class DpadFocusTimingProbe(
+        val inputModeBeforeDown: InputMode,
+        val inputModeAfterDown: InputMode,
+        val inputModeAfterUp: InputMode,
+        val settingsFocusedAfterDown: Boolean,
+        val homeFocusedAfterDown: Boolean,
+        val settingsFocusedAfterUp: Boolean,
+        val homeFocusedAfterUp: Boolean,
+        val traceAfterDown: List<String>,
+        val traceAfterUp: List<String>,
+    )
+
+    private fun pressDpadWithFocusTimingProbe(keyCode: Int): DpadFocusTimingProbe {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val inputModeBeforeDown = currentInputMode()
+        val downTime = SystemClock.uptimeMillis()
+        val down = KeyEvent(
+            downTime,
+            downTime,
+            KeyEvent.ACTION_DOWN,
+            keyCode,
+            0,
+            0,
+            KeyCharacterMap.VIRTUAL_KEYBOARD,
+            0,
+            0,
+            InputDevice.SOURCE_DPAD,
+        )
+        val up = KeyEvent(
+            downTime,
+            SystemClock.uptimeMillis(),
+            KeyEvent.ACTION_UP,
+            keyCode,
+            0,
+            0,
+            KeyCharacterMap.VIRTUAL_KEYBOARD,
+            0,
+            0,
+            InputDevice.SOURCE_DPAD,
+        )
+
+        check(instrumentation.uiAutomation.injectInputEvent(down, true))
+        composeRule.waitForIdle()
+        val inputModeAfterDown = currentInputMode()
+        val settingsFocusedAfterDown =
+            runCatching { railNode(navSettings).assertIsFocused() }.isSuccess
+        val homeFocusedAfterDown = runCatching { railNode(navHome).assertIsFocused() }.isSuccess
+        val traceAfterDown = focusTrace.toList()
+
+        check(instrumentation.uiAutomation.injectInputEvent(up, true))
+        composeRule.waitForIdle()
+        return DpadFocusTimingProbe(
+            inputModeBeforeDown = inputModeBeforeDown,
+            inputModeAfterDown = inputModeAfterDown,
+            inputModeAfterUp = currentInputMode(),
+            settingsFocusedAfterDown = settingsFocusedAfterDown,
+            homeFocusedAfterDown = homeFocusedAfterDown,
+            settingsFocusedAfterUp =
+                runCatching { railNode(navSettings).assertIsFocused() }.isSuccess,
+            homeFocusedAfterUp = runCatching { railNode(navHome).assertIsFocused() }.isSuccess,
+            traceAfterDown = traceAfterDown,
+            traceAfterUp = focusTrace.toList(),
+        )
+    }
+
+    private fun emitDpadProbe(
+        inputModeBeforeTouch: InputMode,
+        inputModeAfterTouch: InputMode,
+        probe: DpadFocusTimingProbe,
+    ) {
+        val traceMessage = buildString {
+            appendLine("CAREPAD_TOUCH_DPAD_PROBE_V1")
+            appendLine(
+                "INPUT_MODE beforeTouch=$inputModeBeforeTouch afterTouch=$inputModeAfterTouch " +
+                    "beforeDown=${probe.inputModeBeforeDown} afterDown=${probe.inputModeAfterDown} " +
+                    "afterUp=${probe.inputModeAfterUp}"
+            )
+            appendLine("TRACE_AFTER_DOWN")
+            probe.traceAfterDown.forEach(::appendLine)
+            appendLine(
+                "PHYSICAL_AFTER_DOWN settings=${probe.settingsFocusedAfterDown} " +
+                    "home=${probe.homeFocusedAfterDown}"
+            )
+            appendLine("TRACE_AFTER_UP_DELTA")
+            probe.traceAfterUp.drop(probe.traceAfterDown.size).forEach(::appendLine)
+            append(
+                "PHYSICAL_AFTER_UP settings=${probe.settingsFocusedAfterUp} " +
+                    "home=${probe.homeFocusedAfterUp}"
+            )
+        }
+        println(traceMessage)
+        InstrumentationRegistry.getInstrumentation().sendStatus(
+            0,
+            Bundle().apply { putString("stream", traceMessage) },
+        )
     }
 
     private fun injectControllerKey(keyCode: Int, source: Int) {
