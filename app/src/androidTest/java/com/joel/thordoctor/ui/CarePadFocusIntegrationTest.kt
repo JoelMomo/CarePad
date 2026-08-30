@@ -214,7 +214,7 @@ class CarePadFocusIntegrationTest {
         controllerHint().assertExists()
         railNode(navHome).assertIsSelected()
         railNode(navSettings).assertIsFocused()
-        textNode(appearance).assertDoesNotExist()
+        textNode(yourModules).assertExists()
     }
 
     @Test
