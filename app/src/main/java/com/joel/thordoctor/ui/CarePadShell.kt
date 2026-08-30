@@ -950,3 +950,57 @@ private fun moduleIcon(moduleId: String): ImageVector = when (
     0 -> Icons.Rounded.Speed
     else -> Icons.Rounded.SportsEsports
 }
+
+private fun controllerGlyphs(profile: ControlGlyphProfile): ControllerGlyphs = when (profile) {
+    ControlGlyphProfile.GENERIC -> ControllerGlyphs(
+        primary = "A",
+        details = "Superior",
+        back = "B",
+        navigation = "L1",
+        detailsKeyCode = AndroidKeyEvent.KEYCODE_BUTTON_Y,
+    )
+
+    ControlGlyphProfile.ABXY_Y_TOP -> ControllerGlyphs(
+        primary = "A",
+        details = "Y",
+        back = "B",
+        navigation = "LB",
+        detailsKeyCode = AndroidKeyEvent.KEYCODE_BUTTON_Y,
+    )
+
+    ControlGlyphProfile.ABXY_X_TOP -> ControllerGlyphs(
+        primary = "A",
+        details = "X",
+        back = "B",
+        navigation = "L",
+        detailsKeyCode = AndroidKeyEvent.KEYCODE_BUTTON_X,
+    )
+
+    ControlGlyphProfile.SYMBOLS_TRIANGLE_TOP -> ControllerGlyphs(
+        primary = "✕",
+        details = "△",
+        back = "○",
+        navigation = "L1",
+        detailsKeyCode = AndroidKeyEvent.KEYCODE_BUTTON_Y,
+    )
+}
+
+private fun controllerDirection(keyCode: Int): CarePadDirection? = when (keyCode) {
+    AndroidKeyEvent.KEYCODE_DPAD_UP -> CarePadDirection.UP
+    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> CarePadDirection.DOWN
+    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> CarePadDirection.LEFT
+    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> CarePadDirection.RIGHT
+    else -> null
+}
+
+private fun CarePadDirection.toComposeFocusDirection(): FocusDirection = when (this) {
+    CarePadDirection.UP -> FocusDirection.Up
+    CarePadDirection.DOWN -> FocusDirection.Down
+    CarePadDirection.LEFT -> FocusDirection.Left
+    CarePadDirection.RIGHT -> FocusDirection.Right
+}
+
+private fun isControllerSource(source: Int): Boolean =
+    (source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+        (source and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD ||
+        (source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
