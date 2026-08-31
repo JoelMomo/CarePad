@@ -10,6 +10,13 @@ enum class AppThemeMode {
     DARK
 }
 
+enum class ControlGlyphProfile {
+    GENERIC,
+    ABXY_Y_TOP,
+    ABXY_X_TOP,
+    SYMBOLS_TRIANGLE_TOP,
+}
+
 object AppPreferences {
 
     private const val PREFERENCES_NAME =
@@ -26,6 +33,9 @@ object AppPreferences {
 
     private const val KEY_THEME_MODE =
         "theme_mode"
+
+    private const val KEY_CONTROL_GLYPH_PROFILE =
+        "control_glyph_profile"
 
     private const val KEY_DIAGNOSTIC_FOLDER_URI =
         "diagnostic_folder_uri"
@@ -75,6 +85,24 @@ object AppPreferences {
         preferences(context)
             .edit()
             .putString(KEY_THEME_MODE, mode.name)
+            .apply()
+    }
+
+    fun getControlGlyphProfile(context: Context): ControlGlyphProfile {
+        val value = preferences(context)
+            .getString(KEY_CONTROL_GLYPH_PROFILE, ControlGlyphProfile.GENERIC.name)
+
+        return try {
+            ControlGlyphProfile.valueOf(value ?: ControlGlyphProfile.GENERIC.name)
+        } catch (_: IllegalArgumentException) {
+            ControlGlyphProfile.GENERIC
+        }
+    }
+
+    fun setControlGlyphProfile(context: Context, profile: ControlGlyphProfile) {
+        preferences(context)
+            .edit()
+            .putString(KEY_CONTROL_GLYPH_PROFILE, profile.name)
             .apply()
     }
 

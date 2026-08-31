@@ -1,0 +1,26 @@
+<resources>
+    <string name="carepad_nav_home">Inicio</string>
+    <string name="carepad_nav_add_modules">Añadir módulos</string>
+    <string name="carepad_nav_settings">Ajustes</string>
+
+    <string name="carepad_your_modules">Tus módulos</string>
+    <string name="carepad_no_installed_modules">No hay módulos instalados compatibles.</string>
+    <string name="carepad_add_modules_not_connected">No hay un catálogo de módulos conectado en esta build.</string>
+
+    <string name="carepad_module_performance">Rendimiento</string>
+    <string name="carepad_module_performance_description">Consulta el rendimiento durante tus sesiones de emulación.</string>
+    <string name="carepad_module_games_bios">Juegos y BIOS</string>
+    <string name="carepad_module_games_bios_description">Consulta tu biblioteca de juegos y comprueba problemas conocidos en sus archivos.</string>
+
+    <string name="carepad_installed_version">Versión instalada</string>
+    <string name="carepad_uninstall_module">Desinstalar módulo</string>
+    <string name="carepad_uninstall_title">Desinstalar %1$s</string>
+    <string name="carepad_uninstall_message">Android pedirá confirmación antes de eliminar este módulo.</string>
+    <string name="carepad_uninstall_confirm">Desinstalar</string>
+    <string name="carepad_cancel">Cancelar</string>
+
+    <string name="carepad_hint_touch_home">Toca para abrir · Mantén pulsado para detalles</string>
+    <string name="carepad_hint_touch_navigation">Toca para seleccionar</string>
+    <string name="carepad_hint_controller_home">%1$s Abrir · %2$s Detalles · %3$s Atrás · %4$s Navegación</string>
+    <string name="carepad_hint_controller_navigation">%1$s Atrás · %2$s Navegación</string>
+</resources>
