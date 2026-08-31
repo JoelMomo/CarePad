@@ -3,6 +3,11 @@ set -euo pipefail
 
 HOST_APK="${1:?normal CarePad host APK required}"
 TEST_APK="${2:?CarePad androidTest APK required}"
+MODULE_APK="${3:-}"
+
+if [[ -z "$MODULE_APK" && -d artifacts/performance-module ]]; then
+  MODULE_APK="$(find artifacts/performance-module -name '*.apk' -print -quit)"
+fi
 
 adb wait-for-device
 
@@ -18,6 +23,9 @@ test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
 adb uninstall com.joel.thordoctor.test >/dev/null 2>&1 || true
 adb uninstall com.joel.thordoctor >/dev/null 2>&1 || true
 adb install -r "$HOST_APK"
+if [[ -n "$MODULE_APK" ]]; then
+  adb install -r "$MODULE_APK"
+fi
 adb install -r "$TEST_APK"
 
 RESULT_FILE="${RUNNER_TEMP:-/tmp}/carepad-focus-compose-result.txt"
