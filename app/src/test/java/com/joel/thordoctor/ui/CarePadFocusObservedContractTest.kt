@@ -1,17 +1,17 @@
 package com.joel.thordoctor.ui
 
+import com.joel.thordoctor.AppThemeMode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class CarePadFocusObservedContractTest {
     @Test
-    fun incidentalRailObservationInContentPreservesRailMemoryAndL1RestoresIt() {
-        val settingsRail = CarePadFocusKey.Rail(CarePadDestination.SETTINGS)
+    fun railObservationDoesNotChangeSelectionOrCreateEntryMemory() {
         val homeRail = CarePadFocusKey.Rail(CarePadDestination.HOME)
         val initial = CarePadFocusControllerState(
-            activeZone = CarePadFocusZone.CONTENT,
-            selectedDestination = CarePadDestination.HOME,
-            railPreferredDestination = CarePadDestination.SETTINGS,
+            selectedDestination = CarePadDestination.SETTINGS,
+            observedFocus = CarePadFocusKey.Theme(AppThemeMode.SYSTEM),
         )
 
         val observed = reduceCarePadFocus(
@@ -19,33 +19,31 @@ class CarePadFocusObservedContractTest {
             CarePadFocusEvent.FocusObserved(homeRail),
         )
 
+        assertEquals(CarePadDestination.SETTINGS, observed.selectedDestination)
         assertEquals(homeRail, observed.observedFocus)
-        assertEquals(CarePadDestination.SETTINGS, observed.railPreferredDestination)
-
-        val afterL1 = reduceCarePadFocus(
-            observed,
-            CarePadFocusEvent.ControllerL1(),
-        )
-
-        assertEquals(CarePadFocusZone.RAIL, afterL1.activeZone)
-        assertEquals(settingsRail, afterL1.pendingFocus?.target)
     }
 
     @Test
-    fun railObservationInRailZoneUpdatesRailMemory() {
-        val homeRail = CarePadFocusKey.Rail(CarePadDestination.HOME)
+    fun incompatibleContentObservationIsRejectedWithoutZoneState() {
         val initial = CarePadFocusControllerState(
-            activeZone = CarePadFocusZone.RAIL,
             selectedDestination = CarePadDestination.SETTINGS,
-            railPreferredDestination = CarePadDestination.SETTINGS,
         )
+        val homeModule = CarePadFocusKey.Module("dev.carepad.module.performance")
 
-        val observed = reduceCarePadFocus(
-            initial,
-            CarePadFocusEvent.FocusObserved(homeRail),
+        assertNull(
+            reduceCarePadFocus(
+                initial,
+                CarePadFocusEvent.FocusObserved(homeModule),
+            ).observedFocus,
         )
-
-        assertEquals(homeRail, observed.observedFocus)
-        assertEquals(CarePadDestination.HOME, observed.railPreferredDestination)
+        assertEquals(
+            CarePadFocusKey.Theme(AppThemeMode.LIGHT),
+            reduceCarePadFocus(
+                initial,
+                CarePadFocusEvent.FocusObserved(
+                    CarePadFocusKey.Theme(AppThemeMode.LIGHT)
+                ),
+            ).observedFocus,
+        )
     }
 }
