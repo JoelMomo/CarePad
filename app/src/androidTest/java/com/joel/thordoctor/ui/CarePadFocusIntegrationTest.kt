@@ -35,7 +35,6 @@ class CarePadFocusIntegrationTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     private val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
-    private val focusTrace = mutableListOf<String>()
 
     private lateinit var inputModeManager: InputModeManager
     private lateinit var navHome: String
@@ -51,7 +50,6 @@ class CarePadFocusIntegrationTest {
     @Before
     fun setUp() {
         themeMode.value = AppThemeMode.SYSTEM
-        focusTrace.clear()
         navHome = composeRule.activity.getString(R.string.carepad_nav_home)
         navAddModules = composeRule.activity.getString(R.string.carepad_nav_add_modules)
         navSettings = composeRule.activity.getString(R.string.carepad_nav_settings)
@@ -67,7 +65,6 @@ class CarePadFocusIntegrationTest {
             MaterialTheme {
                 CarePadShellScreen(
                     onThemeModeChange = { mode -> themeMode.value = mode },
-                    focusTrace = { entry -> focusTrace += entry },
                     settingsContent = {
                             _,
                             onThemeFocusChanged,
