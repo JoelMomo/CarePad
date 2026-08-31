@@ -321,6 +321,7 @@ fun CarePadShellScreen(
 
     fun enterTouchContent(touchedTarget: CarePadFocusKey? = null) {
         dispatchFocus(CarePadFocusEvent.TouchContent(touchedTarget))
+        touchedTarget?.let { requestFocusTarget(it, "Touch-content") }
     }
 
     fun focusedPackageName(): String? = when (val focused = focusControllerState.observedFocus) {
@@ -433,7 +434,7 @@ fun CarePadShellScreen(
 
                     direction != null -> {
                         val entryTarget = if (
-                            wasTouch ||
+                            !wasTouch &&
                             focusControllerState.observedFocus?.let(::carePadFocusZone) !=
                             focusControllerState.activeZone
                         ) {
@@ -445,12 +446,6 @@ fun CarePadShellScreen(
                             null
                         }
                         dispatchFocus(CarePadFocusEvent.ControllerActivity)
-                        if (wasTouch) {
-                            traceFocus("INPUT_MODE Keyboard call reason=Dpad")
-                            val modeAccepted =
-                                inputModeManager.requestInputMode(InputMode.Keyboard)
-                            traceFocus("INPUT_MODE Keyboard return=$modeAccepted reason=Dpad")
-                        }
                         entryTarget?.let { requestFocusTarget(it, "Dpad-entry") }
                         val moved = focusManager.moveFocus(direction)
                         traceFocus(
@@ -830,6 +825,7 @@ private fun CarePadHome(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .focusProperties { canFocus = true }
                             .focusRequester(focusRequesters.getValue(packageName))
                             .onFocusChanged { state ->
                                 onFocusChanged(packageName, state.isFocused)
@@ -923,6 +919,7 @@ private fun CarePadModuleDetails(
             OutlinedButton(
                 onClick = onUninstall,
                 modifier = Modifier
+                    .focusProperties { canFocus = true }
                     .focusRequester(uninstallFocusRequester)
                     .onFocusChanged { state ->
                         onUninstallFocusChanged(state.isFocused)
