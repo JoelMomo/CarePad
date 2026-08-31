@@ -62,15 +62,6 @@ internal fun carePadFocusKeyMatchesDestination(
     is CarePadFocusKey.ContentFallback -> key.destination == destination
 }
 
-internal fun carePadDefaultContentFallback(
-    destination: CarePadDestination,
-): CarePadFocusKey = when (destination) {
-    CarePadDestination.HOME -> CarePadFocusKey.ContentFallback(CarePadDestination.HOME)
-    CarePadDestination.ADD_MODULES ->
-        CarePadFocusKey.ContentFallback(CarePadDestination.ADD_MODULES)
-    CarePadDestination.SETTINGS -> CarePadFocusKey.Theme(AppThemeMode.SYSTEM)
-}
-
 internal fun carePadContentTargets(
     destination: CarePadDestination,
     visiblePackages: Collection<String>,
