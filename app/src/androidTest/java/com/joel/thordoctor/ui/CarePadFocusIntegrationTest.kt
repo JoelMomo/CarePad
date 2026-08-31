@@ -337,9 +337,17 @@ class CarePadFocusIntegrationTest {
     }
 
     private fun requestTouchInputModeForPhysicalOracle() {
-        composeRule.runOnIdle {
-            check(inputModeManager.requestInputMode(InputMode.Touch))
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.uiAutomation.adoptShellPermissionIdentity(
+            "android.permission.MODIFY_TOUCH_MODE_STATE"
+        )
+        try {
+            instrumentation.setInTouchMode(true)
+        } finally {
+            instrumentation.uiAutomation.dropShellPermissionIdentity()
         }
+        composeRule.waitForIdle()
+        check(currentInputMode() == InputMode.Touch)
     }
 
     private fun touchRailAndAssertContext(label: String) {
