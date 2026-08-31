@@ -1,6 +1,5 @@
 package com.joel.thordoctor.ui
 
-import android.os.Bundle
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyCharacterMap
@@ -46,6 +45,8 @@ class CarePadFocusIntegrationTest {
     private lateinit var themeLight: String
     private lateinit var themeDark: String
     private lateinit var appearance: String
+    private lateinit var performanceModule: String
+    private lateinit var yourModules: String
 
     @Before
     fun setUp() {
@@ -58,6 +59,8 @@ class CarePadFocusIntegrationTest {
         themeLight = composeRule.activity.getString(R.string.theme_light)
         themeDark = composeRule.activity.getString(R.string.theme_dark)
         appearance = composeRule.activity.getString(R.string.appearance)
+        performanceModule = composeRule.activity.getString(R.string.carepad_module_performance)
+        yourModules = composeRule.activity.getString(R.string.carepad_your_modules)
 
         composeRule.setContent {
             inputModeManager = LocalInputModeManager.current
@@ -88,67 +91,40 @@ class CarePadFocusIntegrationTest {
     }
 
     @Test
-    fun railTouchesMakeFirstDpadEffectiveAndKeepRailConfined() {
+    fun settingsBoundaryUsesNaturalSpatialLeftRightWithoutL1() {
         establishSettingsRailControllerContext()
-        focusTrace.clear()
-        val inputModeBeforeTouch = currentInputMode()
-        touchRailAndAssertContext(navSettings)
-        val inputModeAfterTouch = currentInputMode()
-        val probe = pressDpadWithFocusTimingProbe(KeyEvent.KEYCODE_DPAD_DOWN)
-        emitDpadProbe(inputModeBeforeTouch, inputModeAfterTouch, probe)
-        controllerHint().assertExists()
-        railNode(navSettings).assertIsFocused()
-
-        establishRailControllerTarget(navHome, KeyEvent.KEYCODE_DPAD_UP)
-        touchRailAndAssertContext(navHome)
-        pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
-        controllerHint().assertExists()
-        railNode(navAddModules).assertIsFocused()
-
-        establishRailControllerTarget(navAddModules, KeyEvent.KEYCODE_DPAD_RIGHT)
-        touchRailAndAssertContext(navAddModules)
-        pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
-        controllerHint().assertExists()
-        railNode(navSettings).assertIsFocused()
 
         pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
-        railNode(navSettings).assertIsFocused()
-    }
-
-    @Test
-    fun settingsRailTouchThenFirstL1CrossesExactlyOnce() {
-        establishSettingsRailControllerContext()
-        touchRailAndAssertContext(navSettings)
-        textNode(appearance).assertExists()
-
-        pressL1()
         controllerHint().assertExists()
         textNode(themeSystem).assertIsFocused()
+        railNode(navSettings).assertIsSelected()
 
-        pressL1()
+        pressDpad(KeyEvent.KEYCODE_DPAD_LEFT)
+        controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
+        railNode(navSettings).assertIsSelected()
+    }
 
-        pressL1()
+    @Test
+    fun systemTouchThenFirstDpadMovesImmediately() {
+        establishSettingsContentControllerContext()
+        establishContentControllerTarget(themeDark)
+
+        touchContentAndAssertContext(themeSystem)
+        touchHint().assertExists()
         textNode(themeSystem).assertIsFocused()
+
+        pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
+
+        controllerHint().assertExists()
+        textNode(themeLight).assertIsFocused()
+        railNode(navSettings).assertIsSelected()
     }
 
     @Test
-    fun systemTouchThenFirstDpadIsEffectiveRegardlessOfPriorHistory() {
+    fun systemTouchInRealTouchModeMovesOnFirstDpadAndUpdatesHintIndependently() {
         establishSettingsContentControllerContext()
-
-        repeat(3) {
-            establishContentControllerTarget(themeSystem, KeyEvent.KEYCODE_DPAD_UP)
-            touchContentAndAssertContext(themeSystem)
-            pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
-            controllerHint().assertExists()
-            textNode(themeLight).assertIsFocused()
-        }
-    }
-
-    @Test
-    fun systemTouchInRealTouchModeAnchorsContentAndFirstDpadMovesImmediately() {
-        establishSettingsContentControllerContext()
-        establishContentControllerTarget(themeDark, KeyEvent.KEYCODE_DPAD_DOWN)
+        establishContentControllerTarget(themeDark)
 
         requestTouchInputModeForPhysicalOracle()
         touchContentAndAssertContext(themeSystem)
@@ -167,102 +143,91 @@ class CarePadFocusIntegrationTest {
     }
 
     @Test
-    fun systemTouchThenFirstL1ReturnsToRememberedRail() {
-        establishSettingsContentControllerContext()
-        establishContentControllerTarget(themeSystem, KeyEvent.KEYCODE_DPAD_UP)
-        touchContentAndAssertContext(themeSystem)
+    fun l1RemainsAnOptionalShortcutAcrossTheSameSpatialBoundary() {
+        establishSettingsRailControllerContext()
+
+        pressL1()
+        controllerHint().assertExists()
+        textNode(themeSystem).assertIsFocused()
+        railNode(navSettings).assertIsSelected()
 
         pressL1()
         controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
         railNode(navSettings).assertIsSelected()
-
-        pressL1()
-        textNode(themeSystem).assertIsFocused()
     }
 
     @Test
-    fun contentDpadNeverCrossesToRailAndSelectedRemainsIndependentFromFocused() {
+    fun themeRecompositionKeepsSpatialControllerNavigation() {
         establishSettingsContentControllerContext()
-        textNode(themeSystem).assertIsFocused()
-
-        pressDpad(KeyEvent.KEYCODE_DPAD_LEFT)
-        textNode(themeSystem).assertIsFocused()
-        pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
-        textNode(themeSystem).assertIsFocused()
-
-        pressL1()
-        railNode(navSettings).assertIsFocused()
-        pressDpad(KeyEvent.KEYCODE_DPAD_UP)
-        railNode(navAddModules).assertIsFocused()
-        pressDpad(KeyEvent.KEYCODE_DPAD_UP)
-        railNode(navHome).assertIsFocused()
-
-        textNode(appearance).assertExists()
-        railNode(navSettings).assertIsSelected()
-        pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
-        railNode(navHome).assertIsFocused()
-        textNode(appearance).assertExists()
-        railNode(navSettings).assertIsSelected()
-    }
-
-    @Test
-    fun themeRecompositionPreservesFirstControllerContinuationAndModeHint() {
-        establishSettingsContentControllerContext()
-        establishContentControllerTarget(themeLight, KeyEvent.KEYCODE_DPAD_RIGHT)
+        establishContentControllerTarget(themeLight)
         touchContentAndAssertContext(themeLight)
 
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
 
         controllerHint().assertExists()
         textNode(themeDark).assertIsFocused()
-    }
-
-    @Test
-    fun disappearingFocusedSubtreeDoesNotChangeLogicalZone() {
-        val yourModules = composeRule.activity.getString(R.string.carepad_your_modules)
-
-        establishSettingsContentControllerContext()
-        establishContentControllerTarget(themeSystem, KeyEvent.KEYCODE_DPAD_UP)
-        touchContentAndAssertContext(themeSystem)
-        touchHint().assertExists()
         railNode(navSettings).assertIsSelected()
-
-        // Back from Settings is a real shell transition: goTo(HOME) removes the Settings
-        // content targets and the production LaunchedEffect emits ContentTargetsChanged.
-        // It does not manufacture reducer state from the test harness.
-        composeRule.runOnUiThread {
-            composeRule.activity.onBackPressedDispatcher.onBackPressed()
-        }
-        composeRule.waitForIdle()
-        textNode(yourModules).assertExists()
-        touchHint().assertExists()
-        railNode(navHome).assertIsSelected()
-
-        pressL1()
-        controllerHint().assertExists()
-        railNode(navHome).assertIsSelected()
-        railNode(navSettings).assertIsFocused()
-        textNode(yourModules).assertExists()
     }
 
     @Test
-    fun touchAndControllerHintsFollowReducerModality() {
-        establishSettingsRailControllerContext()
-        touchRailAndAssertContext(navSettings)
-        touchHint().assertExists()
-
-        pressL1()
-        controllerHint().assertExists()
-        textNode(themeSystem).assertIsFocused()
-
-        establishContentControllerTarget(themeSystem, KeyEvent.KEYCODE_DPAD_UP)
+    fun touchAndControllerHintsDoNotChooseFocusTargets() {
+        establishSettingsContentControllerContext()
         touchContentAndAssertContext(themeSystem)
         touchHint().assertExists()
+        textNode(themeSystem).assertIsFocused()
 
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
         controllerHint().assertExists()
         textNode(themeLight).assertIsFocused()
+
+        tapRail(navSettings)
+        touchHint().assertExists()
+        railNode(navSettings).assertIsFocused()
+        railNode(navSettings).assertIsSelected()
+
+        pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
+        controllerHint().assertExists()
+        textNode(themeSystem).assertIsFocused()
+    }
+
+    @Test
+    fun homeDynamicModuleUsesNaturalHorizontalCrossingWithoutVerticalRailJump() {
+        requestKeyboardInputModeForFocusSetup()
+        textNode(performanceModule).assertExists()
+        railNode(navHome).requestFocus()
+        composeRule.waitForIdle()
+        railNode(navHome).assertIsFocused()
+        railNode(navHome).assertIsSelected()
+
+        pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
+        controllerHint().assertExists()
+        textNode(performanceModule).assertIsFocused()
+        railNode(navHome).assertIsSelected()
+
+        pressDpad(KeyEvent.KEYCODE_DPAD_LEFT)
+        railNode(navHome).assertIsFocused()
+        railNode(navHome).assertIsSelected()
+
+        pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
+        textNode(performanceModule).assertIsFocused()
+
+        pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
+        textNode(performanceModule).assertIsFocused()
+        railNode(navAddModules).assertIsNotFocusedCompat()
+        railNode(navSettings).assertIsNotFocusedCompat()
+    }
+
+    @Test
+    fun backStillReturnsSettingsToHomeWithoutFocusPolicyState() {
+        establishSettingsContentControllerContext()
+        composeRule.runOnUiThread {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeRule.waitForIdle()
+
+        textNode(yourModules).assertExists()
+        railNode(navHome).assertIsSelected()
     }
 
     private fun establishSettingsRailControllerContext() {
@@ -271,16 +236,9 @@ class CarePadFocusIntegrationTest {
         composeRule.waitForIdle()
         railNode(navHome).assertIsFocused()
 
-        pressL1()
-        controllerHint().assertExists()
-        railNode(navHome).assertIsFocused()
-
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
-        controllerHint().assertExists()
         railNode(navAddModules).assertIsFocused()
-
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
-        controllerHint().assertExists()
         railNode(navSettings).assertIsFocused()
 
         pressA()
@@ -288,45 +246,20 @@ class CarePadFocusIntegrationTest {
         railNode(navSettings).assertIsFocused()
         railNode(navSettings).assertIsSelected()
         textNode(appearance).assertExists()
-
-        pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
-        controllerHint().assertExists()
-        railNode(navSettings).assertIsFocused()
-        railNode(navSettings).assertIsSelected()
     }
 
     private fun establishSettingsContentControllerContext() {
         establishSettingsRailControllerContext()
-        pressL1()
+        pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
         controllerHint().assertExists()
         textNode(themeSystem).assertIsFocused()
         railNode(navSettings).assertIsSelected()
     }
 
-    private fun establishRailControllerTarget(label: String, confinedKeyCode: Int) {
-        when (label) {
-            navHome -> {
-                pressDpad(KeyEvent.KEYCODE_DPAD_UP)
-                railNode(navAddModules).assertIsFocused()
-                pressDpad(KeyEvent.KEYCODE_DPAD_UP)
-            }
-            navAddModules -> Unit
-            else -> error("Unsupported productive rail setup target: $label")
-        }
-        controllerHint().assertExists()
-        railNode(label).assertIsFocused()
-        pressDpad(confinedKeyCode)
-        controllerHint().assertExists()
-        railNode(label).assertIsFocused()
-    }
-
-    private fun establishContentControllerTarget(text: String, confinedKeyCode: Int) {
+    private fun establishContentControllerTarget(text: String) {
         requestKeyboardInputModeForFocusSetup()
         textNode(text).requestFocus()
         composeRule.waitForIdle()
-        textNode(text).assertIsFocused()
-        pressDpad(confinedKeyCode)
-        controllerHint().assertExists()
         textNode(text).assertIsFocused()
     }
 
@@ -348,12 +281,6 @@ class CarePadFocusIntegrationTest {
         }
         composeRule.waitForIdle()
         check(currentInputMode() == InputMode.Touch)
-    }
-
-    private fun touchRailAndAssertContext(label: String) {
-        tapRail(label)
-        touchHint().assertExists()
-        railNode(label).assertIsSelected()
     }
 
     private fun touchContentAndAssertContext(text: String) {
@@ -405,103 +332,6 @@ class CarePadFocusIntegrationTest {
         injectControllerKey(KeyEvent.KEYCODE_BUTTON_A, InputDevice.SOURCE_GAMEPAD)
     }
 
-    private data class DpadFocusTimingProbe(
-        val inputModeBeforeDown: InputMode,
-        val inputModeAfterDown: InputMode,
-        val inputModeAfterUp: InputMode,
-        val settingsFocusedAfterDown: Boolean,
-        val homeFocusedAfterDown: Boolean,
-        val settingsFocusedAfterUp: Boolean,
-        val homeFocusedAfterUp: Boolean,
-        val traceAfterDown: List<String>,
-        val traceAfterUp: List<String>,
-    )
-
-    private fun pressDpadWithFocusTimingProbe(keyCode: Int): DpadFocusTimingProbe {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val inputModeBeforeDown = currentInputMode()
-        val downTime = SystemClock.uptimeMillis()
-        val down = KeyEvent(
-            downTime,
-            downTime,
-            KeyEvent.ACTION_DOWN,
-            keyCode,
-            0,
-            0,
-            KeyCharacterMap.VIRTUAL_KEYBOARD,
-            0,
-            0,
-            InputDevice.SOURCE_DPAD,
-        )
-        val up = KeyEvent(
-            downTime,
-            SystemClock.uptimeMillis(),
-            KeyEvent.ACTION_UP,
-            keyCode,
-            0,
-            0,
-            KeyCharacterMap.VIRTUAL_KEYBOARD,
-            0,
-            0,
-            InputDevice.SOURCE_DPAD,
-        )
-
-        check(instrumentation.uiAutomation.injectInputEvent(down, true))
-        composeRule.waitForIdle()
-        val inputModeAfterDown = currentInputMode()
-        val settingsFocusedAfterDown =
-            runCatching { railNode(navSettings).assertIsFocused() }.isSuccess
-        val homeFocusedAfterDown = runCatching { railNode(navHome).assertIsFocused() }.isSuccess
-        val traceAfterDown = focusTrace.toList()
-
-        check(instrumentation.uiAutomation.injectInputEvent(up, true))
-        composeRule.waitForIdle()
-        return DpadFocusTimingProbe(
-            inputModeBeforeDown = inputModeBeforeDown,
-            inputModeAfterDown = inputModeAfterDown,
-            inputModeAfterUp = currentInputMode(),
-            settingsFocusedAfterDown = settingsFocusedAfterDown,
-            homeFocusedAfterDown = homeFocusedAfterDown,
-            settingsFocusedAfterUp =
-                runCatching { railNode(navSettings).assertIsFocused() }.isSuccess,
-            homeFocusedAfterUp = runCatching { railNode(navHome).assertIsFocused() }.isSuccess,
-            traceAfterDown = traceAfterDown,
-            traceAfterUp = focusTrace.toList(),
-        )
-    }
-
-    private fun emitDpadProbe(
-        inputModeBeforeTouch: InputMode,
-        inputModeAfterTouch: InputMode,
-        probe: DpadFocusTimingProbe,
-    ) {
-        val traceMessage = buildString {
-            appendLine("CAREPAD_TOUCH_DPAD_PROBE_V1")
-            appendLine(
-                "INPUT_MODE beforeTouch=$inputModeBeforeTouch afterTouch=$inputModeAfterTouch " +
-                    "beforeDown=${probe.inputModeBeforeDown} afterDown=${probe.inputModeAfterDown} " +
-                    "afterUp=${probe.inputModeAfterUp}"
-            )
-            appendLine("TRACE_AFTER_DOWN")
-            probe.traceAfterDown.forEach(::appendLine)
-            appendLine(
-                "PHYSICAL_AFTER_DOWN settings=${probe.settingsFocusedAfterDown} " +
-                    "home=${probe.homeFocusedAfterDown}"
-            )
-            appendLine("TRACE_AFTER_UP_DELTA")
-            probe.traceAfterUp.drop(probe.traceAfterDown.size).forEach(::appendLine)
-            append(
-                "PHYSICAL_AFTER_UP settings=${probe.settingsFocusedAfterUp} " +
-                    "home=${probe.homeFocusedAfterUp}"
-            )
-        }
-        println(traceMessage)
-        InstrumentationRegistry.getInstrumentation().sendStatus(
-            0,
-            Bundle().apply { putString("stream", traceMessage) },
-        )
-    }
-
     private fun injectControllerKey(keyCode: Int, source: Int) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val downTime = SystemClock.uptimeMillis()
@@ -532,5 +362,9 @@ class CarePadFocusIntegrationTest {
         check(instrumentation.uiAutomation.injectInputEvent(down, true))
         check(instrumentation.uiAutomation.injectInputEvent(up, true))
         composeRule.waitForIdle()
+    }
+
+    private fun androidx.compose.ui.test.SemanticsNodeInteraction.assertIsNotFocusedCompat() {
+        check(runCatching { assertIsFocused() }.isFailure)
     }
 }
