@@ -146,6 +146,27 @@ class CarePadFocusIntegrationTest {
     }
 
     @Test
+    fun systemTouchInRealTouchModeAnchorsContentAndFirstDpadMovesImmediately() {
+        establishSettingsContentControllerContext()
+        establishContentControllerTarget(themeDark, KeyEvent.KEYCODE_DPAD_DOWN)
+
+        requestTouchInputModeForPhysicalOracle()
+        touchContentAndAssertContext(themeSystem)
+
+        check(currentInputMode() == InputMode.Touch)
+        touchHint().assertExists()
+        textNode(themeSystem).assertIsFocused()
+        railNode(navSettings).assertIsSelected()
+
+        pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
+
+        check(currentInputMode() == InputMode.Keyboard)
+        controllerHint().assertExists()
+        textNode(themeLight).assertIsFocused()
+        railNode(navSettings).assertIsSelected()
+    }
+
+    @Test
     fun systemTouchThenFirstL1ReturnsToRememberedRail() {
         establishSettingsContentControllerContext()
         establishContentControllerTarget(themeSystem, KeyEvent.KEYCODE_DPAD_UP)
@@ -312,6 +333,12 @@ class CarePadFocusIntegrationTest {
     private fun requestKeyboardInputModeForFocusSetup() {
         composeRule.runOnIdle {
             check(inputModeManager.requestInputMode(InputMode.Keyboard))
+        }
+    }
+
+    private fun requestTouchInputModeForPhysicalOracle() {
+        composeRule.runOnIdle {
+            check(inputModeManager.requestInputMode(InputMode.Touch))
         }
     }
 
