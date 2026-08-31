@@ -2,13 +2,6 @@ package com.joel.thordoctor.ui
 
 import com.joel.thordoctor.AppThemeMode
 
-internal enum class CarePadDirection {
-    UP,
-    DOWN,
-    LEFT,
-    RIGHT,
-}
-
 internal sealed interface CarePadFocusKey {
     data class Rail(val destination: CarePadDestination) : CarePadFocusKey
     data class Module(val packageName: String) : CarePadFocusKey
@@ -17,15 +10,9 @@ internal sealed interface CarePadFocusKey {
     data class ContentFallback(val destination: CarePadDestination) : CarePadFocusKey
 }
 
-internal sealed interface CarePadFocusIntent {
-    data class RequestTarget(val target: CarePadFocusKey) : CarePadFocusIntent
-    data class MoveWithinZone(val direction: CarePadDirection) : CarePadFocusIntent
-}
-
 internal data class CarePadPendingFocus(
     val token: Long,
-    val intent: CarePadFocusIntent,
-    val moveAfterConfirmation: CarePadDirection? = null,
+    val target: CarePadFocusKey,
 )
 
 internal data class CarePadFocusControllerState(
@@ -54,17 +41,10 @@ internal sealed interface CarePadFocusEvent {
 
     data object ControllerActivity : CarePadFocusEvent
     data class ControllerL1(val repeat: Boolean = false) : CarePadFocusEvent
-    data class ControllerDpad(
-        val direction: CarePadDirection,
-        val repeat: Boolean = false,
-    ) : CarePadFocusEvent
 
     data class FocusObserved(val key: CarePadFocusKey?) : CarePadFocusEvent
     data class ZoneFocusLost(val zone: CarePadFocusZone) : CarePadFocusEvent
-    data class FocusExecutionResult(
-        val token: Long,
-        val accepted: Boolean,
-    ) : CarePadFocusEvent
+    data class FocusRequestExecuted(val token: Long) : CarePadFocusEvent
 }
 
 internal fun reduceCarePadFocus(
@@ -84,8 +64,6 @@ internal fun reduceCarePadFocus(
             railPreferredDestination = event.destination,
             observedFocus = state.observedFocus.takeIf { it == touchedTarget },
             pendingFocus = null,
-        ).scheduleFocus(
-            CarePadFocusIntent.RequestTarget(touchedTarget)
         )
     }
 
@@ -100,7 +78,7 @@ internal fun reduceCarePadFocus(
         } else {
             state.contentPreferredTargets
         }
-        val next = state.copy(
+        state.copy(
             activeZone = CarePadFocusZone.CONTENT,
             modality = CarePadInputMethod.TOUCH,
             contentPreferredTargets = preferredTargets,
@@ -110,13 +88,6 @@ internal fun reduceCarePadFocus(
                 state.observedFocus.takeIf { it == touchedTarget }
             },
             pendingFocus = null,
-        )
-        next.scheduleFocus(
-            CarePadFocusIntent.RequestTarget(
-                touchedTarget
-                    ?: next.contentPreferredTargets[next.selectedDestination]
-                    ?: next.contentFallbackTarget
-            )
         )
     }
 
@@ -147,34 +118,10 @@ internal fun reduceCarePadFocus(
                 CarePadFocusZone.RAIL -> CarePadFocusZone.CONTENT
                 CarePadFocusZone.CONTENT -> CarePadFocusZone.RAIL
             }
-            val target = carePadEntryTarget(controllerState, nextZone)
             controllerState.copy(
                 activeZone = nextZone,
                 pendingFocus = null,
-            ).scheduleFocus(
-                intent = CarePadFocusIntent.RequestTarget(target),
-            )
-        }
-    }
-
-    is CarePadFocusEvent.ControllerDpad -> {
-        val controllerState = state.copy(modality = CarePadInputMethod.CONTROLLER)
-        if (event.repeat) {
-            controllerState
-        } else if (
-            controllerState.observedFocus?.let(::carePadFocusZone) ==
-            controllerState.activeZone
-        ) {
-            controllerState.copy(pendingFocus = null).scheduleFocus(
-                intent = CarePadFocusIntent.MoveWithinZone(event.direction),
-            )
-        } else {
-            controllerState.copy(pendingFocus = null).scheduleFocus(
-                intent = CarePadFocusIntent.RequestTarget(
-                    carePadEntryTarget(controllerState, controllerState.activeZone)
-                ),
-                moveAfterConfirmation = event.direction,
-            )
+            ).scheduleFocus(carePadEntryTarget(controllerState, nextZone))
         }
     }
 
@@ -188,8 +135,13 @@ internal fun reduceCarePadFocus(
         }
     }
 
-    is CarePadFocusEvent.FocusExecutionResult ->
-        reduceFocusExecutionResult(state, event)
+    is CarePadFocusEvent.FocusRequestExecuted -> {
+        if (state.pendingFocus?.token == event.token) {
+            state.copy(pendingFocus = null)
+        } else {
+            state
+        }
+    }
 }
 
 internal fun carePadFocusZone(key: CarePadFocusKey): CarePadFocusZone = when (key) {
@@ -345,8 +297,7 @@ private fun reduceContentTargetsChanged(
         },
     )
 
-    val pending = next.pendingFocus
-    val requested = (pending?.intent as? CarePadFocusIntent.RequestTarget)?.target
+    val requested = next.pendingFocus?.target
     if (
         selectedContext &&
         requested != null &&
@@ -354,10 +305,7 @@ private fun reduceContentTargetsChanged(
         requested != event.fallbackTarget &&
         requested !in event.validTargets
     ) {
-        next = next.copy(pendingFocus = null).scheduleFocus(
-            intent = CarePadFocusIntent.RequestTarget(event.fallbackTarget),
-            moveAfterConfirmation = pending.moveAfterConfirmation,
-        )
+        next = next.copy(pendingFocus = null).scheduleFocus(event.fallbackTarget)
     }
     return next
 }
@@ -389,49 +337,18 @@ private fun reduceFocusObserved(
         null -> Unit
     }
 
-    val pending = next.pendingFocus
-    val requested = (pending?.intent as? CarePadFocusIntent.RequestTarget)?.target
-    if (pending != null && requested == normalizedKey) {
+    if (next.pendingFocus?.target == normalizedKey) {
         next = next.copy(pendingFocus = null)
-        pending.moveAfterConfirmation?.let { direction ->
-            next = next.scheduleFocus(
-                intent = CarePadFocusIntent.MoveWithinZone(direction),
-            )
-        }
     }
     return next
 }
 
-private fun reduceFocusExecutionResult(
-    state: CarePadFocusControllerState,
-    event: CarePadFocusEvent.FocusExecutionResult,
-): CarePadFocusControllerState {
-    val pending = state.pendingFocus ?: return state
-    if (pending.token != event.token) {
-        return state
-    }
-    return when (pending.intent) {
-        is CarePadFocusIntent.MoveWithinZone -> state.copy(pendingFocus = null)
-        is CarePadFocusIntent.RequestTarget -> {
-            if (!event.accepted) {
-                state.copy(pendingFocus = null)
-            } else if (pending.moveAfterConfirmation != null) {
-                state
-            } else {
-                state.copy(pendingFocus = null)
-            }
-        }
-    }
-}
-
 private fun CarePadFocusControllerState.scheduleFocus(
-    intent: CarePadFocusIntent,
-    moveAfterConfirmation: CarePadDirection? = null,
+    target: CarePadFocusKey,
 ): CarePadFocusControllerState = copy(
     pendingFocus = CarePadPendingFocus(
         token = nextFocusToken,
-        intent = intent,
-        moveAfterConfirmation = moveAfterConfirmation,
+        target = target,
     ),
     nextFocusToken = nextFocusToken + 1,
 )
