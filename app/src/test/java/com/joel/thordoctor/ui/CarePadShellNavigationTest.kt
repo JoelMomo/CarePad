@@ -12,15 +12,16 @@ class CarePadShellNavigationTest {
     private val visiblePackages = setOf(modulePackage)
 
     @Test
-    fun railVisualStateDependsOnlyOnSemanticZone() {
+    fun railVisualStateFollowsObservedRailFocusOnly() {
         assertEquals(
             CarePadRailVisualState.EXPANDED,
-            carePadRailVisualState(CarePadFocusZone.RAIL),
+            carePadRailVisualState(CarePadFocusKey.Rail(CarePadDestination.HOME)),
         )
         assertEquals(
             CarePadRailVisualState.COMPACT,
-            carePadRailVisualState(CarePadFocusZone.CONTENT),
+            carePadRailVisualState(CarePadFocusKey.Theme(AppThemeMode.SYSTEM)),
         )
+        assertEquals(CarePadRailVisualState.COMPACT, carePadRailVisualState(null))
     }
 
     @Test
@@ -42,7 +43,6 @@ class CarePadShellNavigationTest {
     @Test
     fun railPrimaryActionUsesObservedRailFocusNotSelectedDestination() {
         val state = CarePadFocusControllerState(
-            activeZone = CarePadFocusZone.RAIL,
             modality = CarePadInputMethod.CONTROLLER,
             selectedDestination = CarePadDestination.HOME,
             observedFocus = CarePadFocusKey.Rail(CarePadDestination.ADD_MODULES),
@@ -55,10 +55,9 @@ class CarePadShellNavigationTest {
     }
 
     @Test
-    fun modulePrimaryActionRequiresHomeContentAndVisiblePackage() {
+    fun modulePrimaryActionRequiresHomeAndVisiblePackage() {
         val module = CarePadFocusKey.Module(modulePackage)
         val state = CarePadFocusControllerState(
-            activeZone = CarePadFocusZone.CONTENT,
             modality = CarePadInputMethod.CONTROLLER,
             selectedDestination = CarePadDestination.HOME,
             observedFocus = module,
@@ -77,7 +76,6 @@ class CarePadShellNavigationTest {
     fun uninstallPrimaryActionRequiresOpenDetails() {
         val uninstall = CarePadFocusKey.Uninstall(modulePackage)
         val state = CarePadFocusControllerState(
-            activeZone = CarePadFocusZone.CONTENT,
             modality = CarePadInputMethod.CONTROLLER,
             selectedDestination = CarePadDestination.HOME,
             observedFocus = uninstall,
@@ -95,10 +93,9 @@ class CarePadShellNavigationTest {
     }
 
     @Test
-    fun themePrimaryActionRequiresSettingsContent() {
+    fun themePrimaryActionRequiresSettings() {
         val theme = CarePadFocusKey.Theme(AppThemeMode.LIGHT)
         val state = CarePadFocusControllerState(
-            activeZone = CarePadFocusZone.CONTENT,
             modality = CarePadInputMethod.CONTROLLER,
             selectedDestination = CarePadDestination.SETTINGS,
             observedFocus = theme,
@@ -116,7 +113,6 @@ class CarePadShellNavigationTest {
     @Test
     fun fallbackFocusIsNeverAnActionTarget() {
         val state = CarePadFocusControllerState(
-            activeZone = CarePadFocusZone.CONTENT,
             modality = CarePadInputMethod.CONTROLLER,
             selectedDestination = CarePadDestination.ADD_MODULES,
             observedFocus = CarePadFocusKey.ContentFallback(CarePadDestination.ADD_MODULES),
@@ -128,7 +124,6 @@ class CarePadShellNavigationTest {
     @Test
     fun detailsActionTracksObservedModuleOrUninstallPackage() {
         val moduleState = CarePadFocusControllerState(
-            activeZone = CarePadFocusZone.CONTENT,
             modality = CarePadInputMethod.CONTROLLER,
             selectedDestination = CarePadDestination.HOME,
             observedFocus = CarePadFocusKey.Module(modulePackage),
@@ -145,7 +140,9 @@ class CarePadShellNavigationTest {
         )
         assertFalse(
             carePadDetailsControllerActionAllowed(
-                moduleState.copy(activeZone = CarePadFocusZone.RAIL),
+                moduleState.copy(
+                    observedFocus = CarePadFocusKey.Rail(CarePadDestination.HOME)
+                ),
                 visiblePackages,
             )
         )
