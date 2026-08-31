@@ -28,10 +28,7 @@ class CarePadFocusObservedContractTest {
         )
 
         assertEquals(CarePadFocusZone.RAIL, afterL1.activeZone)
-        assertEquals(
-            CarePadFocusIntent.RequestTarget(settingsRail),
-            afterL1.pendingFocus?.intent,
-        )
+        assertEquals(settingsRail, afterL1.pendingFocus?.target)
     }
 
     @Test
