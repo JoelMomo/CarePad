@@ -4,6 +4,16 @@ set -euo pipefail
 HOST_APK="${1:?normal CarePad host APK required}"
 TEST_APK="${2:?CarePad androidTest APK required}"
 MODULE_APK="${3:-}"
+PERFORMANCE_PACKAGE="dev.carepad.module.performance"
+PERFORMANCE_FIXTURE_INSTALLED=false
+
+cleanup_performance_fixture() {
+  if [[ "$PERFORMANCE_FIXTURE_INSTALLED" == true ]]; then
+    adb uninstall "$PERFORMANCE_PACKAGE" >/dev/null 2>&1 || true
+  fi
+}
+
+trap cleanup_performance_fixture EXIT
 
 if [[ -z "$MODULE_APK" && -d artifacts/performance-module ]]; then
   MODULE_APK="$(find artifacts/performance-module -name '*.apk' -print -quit)"
@@ -25,6 +35,7 @@ adb uninstall com.joel.thordoctor >/dev/null 2>&1 || true
 adb install -r "$HOST_APK"
 if [[ -n "$MODULE_APK" ]]; then
   adb install -r "$MODULE_APK"
+  PERFORMANCE_FIXTURE_INSTALLED=true
 fi
 adb install -r "$TEST_APK"
 
