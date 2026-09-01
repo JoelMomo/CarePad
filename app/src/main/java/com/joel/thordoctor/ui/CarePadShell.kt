@@ -452,12 +452,13 @@ fun CarePadShellScreen(
             selected = destination,
             visualState = carePadRailVisualState(focusControllerState.observedFocus),
             focusRequesters = railFocusRequesters,
-            onFocused = { focusedDestination ->
-                dispatchFocus(
-                    CarePadFocusEvent.FocusObserved(
-                        CarePadFocusKey.Rail(focusedDestination)
-                    )
-                )
+            onFocusChanged = { focusedDestination, focused ->
+                val railFocus = CarePadFocusKey.Rail(focusedDestination)
+                if (focused) {
+                    dispatchFocus(CarePadFocusEvent.FocusObserved(railFocus))
+                } else if (focusControllerState.observedFocus == railFocus) {
+                    dispatchFocus(CarePadFocusEvent.FocusObserved(null))
+                }
             },
             onSelected = { selectedDestination ->
                 goTo(selectedDestination)
@@ -584,7 +585,7 @@ private fun CarePadNavigationRail(
     selected: CarePadDestination,
     visualState: CarePadRailVisualState,
     focusRequesters: Map<CarePadDestination, FocusRequester>,
-    onFocused: (CarePadDestination) -> Unit,
+    onFocusChanged: (CarePadDestination, Boolean) -> Unit,
     onSelected: (CarePadDestination) -> Unit,
 ) {
     val expanded = visualState == CarePadRailVisualState.EXPANDED
@@ -623,9 +624,7 @@ private fun CarePadNavigationRail(
                     .focusProperties { canFocus = true }
                     .focusRequester(focusRequesters.getValue(item.destination))
                     .onFocusChanged { state ->
-                        if (state.isFocused) {
-                            onFocused(item.destination)
-                        }
+                        onFocusChanged(item.destination, state.isFocused)
                     },
             )
         }
