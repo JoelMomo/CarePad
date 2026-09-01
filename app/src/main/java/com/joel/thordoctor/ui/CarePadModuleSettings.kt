@@ -107,6 +107,7 @@ internal fun CarePadModuleSettingsSections() {
     var delegatedFeedback by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var choiceDialog by remember { mutableStateOf<ChoiceDialogState?>(null) }
     var focusedKey by remember { mutableStateOf<ModuleSettingFocusKey?>(null) }
+    var focusRestoreKey by remember { mutableStateOf<ModuleSettingFocusKey?>(null) }
     var previousInteractiveKeys by remember { mutableStateOf<List<ModuleSettingFocusKey>>(emptyList()) }
     val focusRequesters = remember { mutableMapOf<ModuleSettingFocusKey, FocusRequester>() }
 
@@ -228,6 +229,7 @@ internal fun CarePadModuleSettingsSections() {
     ) {
         val itemKey = ModuleSettingFocusKey(module.packageName, item.id)
         if (itemKey in pendingItems) return
+        focusRestoreKey = itemKey
         markPending(itemKey, true)
         itemFeedback = itemFeedback - itemKey
         scope.launch {
@@ -284,6 +286,7 @@ internal fun CarePadModuleSettingsSections() {
     ) {
         val itemKey = ModuleSettingFocusKey(module.packageName, item.id)
         if (itemKey in pendingItems) return
+        focusRestoreKey = itemKey
         markPending(itemKey, true)
         itemFeedback = itemFeedback - itemKey
         scope.launch {
@@ -373,6 +376,17 @@ internal fun CarePadModuleSettingsSections() {
         previousInteractiveKeys = interactiveKeys
     }
 
+    LaunchedEffect(focusRestoreKey, pendingItems, interactiveKeys, choiceDialog) {
+        val target = focusRestoreKey ?: return@LaunchedEffect
+        if (choiceDialog != null || target in pendingItems || target !in interactiveKeys) {
+            return@LaunchedEffect
+        }
+        focusRequesters[target]?.let { requester ->
+            requester.requestFocus()
+            focusRestoreKey = null
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         settingsModules.forEach { presentation ->
             val module = presentation.module
@@ -413,6 +427,7 @@ internal fun CarePadModuleSettingsSections() {
                         requestBooleanWrite(module, snapshot, item, value)
                     },
                     onChoiceOpen = { snapshot, item ->
+                        focusRestoreKey = ModuleSettingFocusKey(module.packageName, item.id)
                         choiceDialog = ChoiceDialogState(
                             module = module,
                             catalogRevision = snapshot.catalogRevision,
@@ -550,9 +565,8 @@ private fun BooleanSettingRow(
     onFocused: (Boolean) -> Unit,
     onToggle: (Boolean) -> Unit,
 ) {
-    val enabled = item.editable &&
-        item.availability == CarePadItemAvailability.AVAILABLE &&
-        !pending
+    val focusable = item.editable && item.availability == CarePadItemAvailability.AVAILABLE
+    val enabled = focusable && !pending
     val supporting = feedback ?: item.errorMessage ?: if (
         item.availability != CarePadItemAvailability.AVAILABLE
     ) {
@@ -565,7 +579,7 @@ private fun BooleanSettingRow(
         modifier = Modifier
             .fillMaxWidth()
             .focusRequester(focusRequester)
-            .focusProperties { canFocus = enabled }
+            .focusProperties { canFocus = focusable }
             .onFocusChanged { onFocused(it.isFocused) }
             .controllerActivation(enabled) { onToggle(!item.value) }
             .clickable(enabled = enabled) {
@@ -621,9 +635,8 @@ private fun SingleChoiceSettingRow(
     onFocused: (Boolean) -> Unit,
     onOpen: () -> Unit,
 ) {
-    val enabled = item.editable &&
-        item.availability == CarePadItemAvailability.AVAILABLE &&
-        !pending
+    val focusable = item.editable && item.availability == CarePadItemAvailability.AVAILABLE
+    val enabled = focusable && !pending
     val effectiveLabel = item.options.firstOrNull { it.optionId == item.selectedOptionId }?.label
         ?: stringResource(R.string.carepad_module_setting_not_available)
     val supporting = feedback ?: item.errorMessage ?: if (
@@ -638,7 +651,7 @@ private fun SingleChoiceSettingRow(
         modifier = Modifier
             .fillMaxWidth()
             .focusRequester(focusRequester)
-            .focusProperties { canFocus = enabled }
+            .focusProperties { canFocus = focusable }
             .onFocusChanged { onFocused(it.isFocused) }
             .controllerActivation(enabled, onOpen)
             .clickable(enabled = enabled) {
