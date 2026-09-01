@@ -568,7 +568,10 @@ private fun BooleanSettingRow(
             .focusProperties { canFocus = enabled }
             .onFocusChanged { onFocused(it.isFocused) }
             .controllerActivation(enabled) { onToggle(!item.value) }
-            .clickable(enabled = enabled) { onToggle(!item.value) },
+            .clickable(enabled = enabled) {
+                focusRequester.requestFocus()
+                onToggle(!item.value)
+            },
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface,
     ) {
@@ -638,7 +641,10 @@ private fun SingleChoiceSettingRow(
             .focusProperties { canFocus = enabled }
             .onFocusChanged { onFocused(it.isFocused) }
             .controllerActivation(enabled, onOpen)
-            .clickable(enabled = enabled, onClick = onOpen),
+            .clickable(enabled = enabled) {
+                focusRequester.requestFocus()
+                onOpen()
+            },
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface,
     ) {
@@ -743,7 +749,10 @@ private fun DelegatedSettingsRow(
             .focusProperties { canFocus = true }
             .onFocusChanged { onFocused(it.isFocused) }
             .controllerActivation(enabled = true, onActivate = onOpen)
-            .clickable(onClick = onOpen),
+            .clickable {
+                focusRequester.requestFocus()
+                onOpen()
+            },
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface,
     ) {
@@ -830,15 +839,19 @@ private fun SingleChoiceDialog(
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 dialog.item.options.forEach { option ->
                     val selected = candidate == option.optionId
+                    val optionFocusRequester = requesters.getValue(option.optionId)
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .focusRequester(requesters.getValue(option.optionId))
+                            .focusRequester(optionFocusRequester)
                             .focusProperties { canFocus = true }
                             .controllerActivation(enabled = true) {
                                 candidate = option.optionId
                             }
-                            .clickable { candidate = option.optionId },
+                            .clickable {
+                                optionFocusRequester.requestFocus()
+                                candidate = option.optionId
+                            },
                         shape = RoundedCornerShape(14.dp),
                         color = if (selected) {
                             MaterialTheme.colorScheme.primaryContainer
