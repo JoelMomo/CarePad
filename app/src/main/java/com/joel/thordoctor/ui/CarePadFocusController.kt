@@ -109,7 +109,9 @@ internal fun carePadControllerActionTarget(
             it.packageName in visiblePackages &&
             expandedPackage == it.packageName
     }
-    is CarePadFocusKey.Theme,
+    is CarePadFocusKey.Theme -> focused.takeIf {
+        state.selectedDestination == CarePadDestination.SETTINGS
+    }
     is CarePadFocusKey.ContentFallback -> null
 }
 
