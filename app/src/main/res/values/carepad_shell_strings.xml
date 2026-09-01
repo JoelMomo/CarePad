@@ -19,6 +19,19 @@
     <string name="carepad_uninstall_confirm">Desinstalar</string>
     <string name="carepad_cancel">Cancelar</string>
 
+    <string name="carepad_module_settings_fallback_name">Módulo</string>
+    <string name="carepad_module_settings_loading">Cargando ajustes…</string>
+    <string name="carepad_module_settings_unavailable">Estos ajustes no están disponibles ahora.</string>
+    <string name="carepad_module_settings_incompatible">Estos ajustes no son compatibles con esta versión de CarePad.</string>
+    <string name="carepad_module_setting_not_available">No disponible</string>
+    <string name="carepad_module_setting_change_failed">No se pudo cambiar este ajuste.</string>
+    <string name="carepad_module_setting_stale">Este ajuste ha cambiado. Revisa el valor actual.</string>
+    <string name="carepad_module_settings_more">Más ajustes</string>
+    <string name="carepad_module_settings_more_description">Continúa en el módulo para configurar opciones adicionales.</string>
+    <string name="carepad_module_settings_configure">Configurar…</string>
+    <string name="carepad_module_settings_delegated_unavailable">No se pudo abrir la configuración del módulo.</string>
+    <string name="carepad_module_settings_apply">Aplicar</string>
+
     <string name="carepad_hint_touch_home">Toca para abrir · Mantén pulsado para detalles</string>
     <string name="carepad_hint_touch_navigation">Toca para seleccionar</string>
     <string name="carepad_hint_controller_home">%1$s Abrir · %2$s Detalles · %3$s Atrás · %4$s Navegación</string>
