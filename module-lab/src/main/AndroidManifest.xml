@@ -1,11 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-permission android:name="dev.carepad.permission.MODULE_SETTINGS" />
+
     <application
         android:allowBackup="false"
         android:label="CarePad Module Lab"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <provider
+            android:name=".LabSettingsProvider"
+            android:authorities="${applicationId}.carepad.settings"
+            android:permission="dev.carepad.permission.MODULE_SETTINGS"
+            android:exported="true" />
+
+        <activity
+            android:name=".LabDelegatedSettingsActivity"
+            android:exported="true"
+            android:permission="dev.carepad.permission.MODULE_SETTINGS">
+            <intent-filter>
+                <action android:name="dev.carepad.action.OPEN_MODULE_SETTINGS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name=".LabModuleActivity"
@@ -22,7 +40,7 @@
                 android:value="${carepadModuleLabProtocolMax}" />
             <meta-data
                 android:name="dev.carepad.meta.CAPABILITIES"
-                android:value="lab" />
+                android:value="lab,settings_inline,settings_delegated" />
             <meta-data
                 android:name="carepad.lab.ALWAYS_CRASH"
                 android:value="${carepadModuleLabAlwaysCrash}" />

@@ -26,10 +26,21 @@
     <uses-permission
         android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
+    <permission
+        android:name="dev.carepad.permission.MODULE_SETTINGS"
+        android:protectionLevel="signature" />
+
+    <uses-permission
+        android:name="dev.carepad.permission.MODULE_SETTINGS" />
+
     <queries>
 
         <intent>
             <action android:name="dev.carepad.action.MODULE" />
+        </intent>
+
+        <intent>
+            <action android:name="dev.carepad.action.OPEN_MODULE_SETTINGS" />
         </intent>
 
         <package

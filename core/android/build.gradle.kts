@@ -20,5 +20,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":carepad-contracts"))
     implementation(libs.androidx.documentfile)
+
+    testImplementation(libs.junit)
 }
