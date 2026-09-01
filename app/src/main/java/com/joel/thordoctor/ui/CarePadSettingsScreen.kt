@@ -1,5 +1,6 @@
 package com.joel.thordoctor.ui
 
+import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,9 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -151,6 +155,7 @@ private fun CarePadThemeChoice(
             .focusProperties { canFocus = true }
             .focusRequester(focusRequester)
             .onFocusChanged { state -> onFocusChanged(state.isFocused) }
+            .settingsControllerActivation(onClick)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = if (selected) {
@@ -186,3 +191,23 @@ private fun CarePadThemeChoice(
         }
     }
 }
+
+private fun Modifier.settingsControllerActivation(onActivate: () -> Unit): Modifier =
+    onPreviewKeyEvent { event ->
+        val native = event.nativeKeyEvent
+        if (
+            event.type == KeyEventType.KeyDown &&
+            native.repeatCount == 0 &&
+            native.keyCode in setOf(
+                AndroidKeyEvent.KEYCODE_BUTTON_A,
+                AndroidKeyEvent.KEYCODE_DPAD_CENTER,
+                AndroidKeyEvent.KEYCODE_ENTER,
+                AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
+            )
+        ) {
+            onActivate()
+            true
+        } else {
+            false
+        }
+    }
