@@ -196,7 +196,7 @@ internal fun CarePadModuleSettingsSections() {
 
     LaunchedEffect(settingsModules, refreshRevision) {
         inlineStates = inlineStates.filterKeys { it in settingsPackages }
-        pendingItems = pendingItems.filter { it.packageName in settingsPackages }
+        pendingItems = pendingItems.filter { it.packageName in settingsPackages }.toSet()
         itemFeedback = itemFeedback.filterKeys { it.packageName in settingsPackages }
         delegatedFeedback = delegatedFeedback.filterKeys { it in settingsPackages }
         if (choiceDialog?.module?.packageName !in settingsPackages) {
@@ -388,7 +388,11 @@ internal fun CarePadModuleSettingsSections() {
             key(module.packageName) {
                 ModuleSettingsSection(
                     presentation = presentation,
-                    state = state ?: InlineModuleState.Loading,
+                    state = if (hasInline) {
+                        state ?: InlineModuleState.Loading
+                    } else {
+                        InlineModuleState.Empty
+                    },
                     pendingItems = pendingItems,
                     itemFeedback = itemFeedback,
                     delegatedFeedback = delegatedFeedback[module.packageName],
