@@ -118,6 +118,16 @@ class CarePadFocusControllerTest {
         )
     }
 
+    @Test
+    fun settingsControlsOwnControllerActivationLocally() {
+        assertNull(
+            carePadControllerActionTarget(
+                settingsState(),
+                visiblePackages = emptyList(),
+            )
+        )
+    }
+
     private fun settingsState(): CarePadFocusControllerState =
         CarePadFocusControllerState(
             modality = CarePadInputMethod.CONTROLLER,
