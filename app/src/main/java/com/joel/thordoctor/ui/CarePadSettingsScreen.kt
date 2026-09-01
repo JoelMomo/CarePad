@@ -129,6 +129,10 @@ fun CarePadSettingsScreen(
                 }
             }
         }
+
+        item {
+            CarePadModuleSettingsSections()
+        }
     }
 }
 
