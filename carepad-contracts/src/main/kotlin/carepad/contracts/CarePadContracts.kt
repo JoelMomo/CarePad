@@ -24,7 +24,14 @@ object CarePadModuleIds {
 object CarePadModuleActions {
     const val MODULE = "dev.carepad.action.MODULE"
     const val OPEN_MODULE = "dev.carepad.action.OPEN_MODULE"
+    const val OPEN_MODULE_SETTINGS = "dev.carepad.action.OPEN_MODULE_SETTINGS"
     const val BIND_MODULE = "dev.carepad.action.BIND_MODULE"
+}
+
+/** Known module capability tokens exchanged via manifest metadata. */
+object CarePadModuleCapabilities {
+    const val SETTINGS_INLINE = "settings_inline"
+    const val SETTINGS_DELEGATED = "settings_delegated"
 }
 
 /** Manifest metadata keys used by the host to inspect module APKs. */

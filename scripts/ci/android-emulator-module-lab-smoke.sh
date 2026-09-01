@@ -12,6 +12,7 @@ HOST_PACKAGE="com.joel.thordoctor.carepadlabhost"
 MODULE_PACKAGE="com.joel.thordoctor.modulelab"
 HARNESS_COMPONENT="${HOST_PACKAGE}/com.joel.thordoctor.modules.host.ModuleLabHarnessActivity"
 MODULE_OPEN_ACTION="dev.carepad.action.OPEN_MODULE"
+MODULE_SETTINGS_ACTION="dev.carepad.action.OPEN_MODULE_SETTINGS"
 UI_DUMP_DEVICE="/sdcard/carepad-window.xml"
 UI_DUMP_LOCAL="${RUNNER_TEMP:-/tmp}/carepad-window.xml"
 
@@ -195,6 +196,29 @@ assert_module_opens() {
     return 1
 }
 
+assert_module_delegated_settings_opens() {
+    local start_output
+    local resumed_activity
+
+    adb shell am force-stop "$MODULE_PACKAGE" >/dev/null
+    start_output="$(adb shell am start -a "$MODULE_SETTINGS_ACTION" -p "$MODULE_PACKAGE")"
+
+    for _ in $(seq 1 20); do
+        resumed_activity="$(current_resumed_activity)"
+        if grep -Fq "$MODULE_PACKAGE" <<<"$resumed_activity" &&
+            grep -Fq "LabDelegatedSettingsActivity" <<<"$resumed_activity"; then
+            return 0
+        fi
+        sleep 0.5
+    done
+
+    echo "Module OPEN_MODULE_SETTINGS action did not make LabDelegatedSettingsActivity the resumed activity" >&2
+    echo "$start_output" >&2
+    echo "Resumed activity: $(current_resumed_activity)" >&2
+    adb shell dumpsys activity activities >&2 || true
+    return 1
+}
+
 assert_module_crash_isolated() {
     local logcat_output
 
@@ -365,6 +389,8 @@ adb install -r "$UPDATE_APK"
 assert_module_version "0.2-lab"
 assert_harness_contains_all "Accepted: lab" "Version: 0.2-lab"
 assert_module_opens
+assert_module_delegated_settings_opens
+
 
 # A crash inside the independently packaged module must not take down CarePad or
 # corrupt discovery. After the crash, the same installed module must still be

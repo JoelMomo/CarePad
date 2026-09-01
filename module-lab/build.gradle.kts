@@ -43,4 +43,5 @@ android {
 
 dependencies {
     implementation(project(":carepad-contracts"))
+    implementation(project(":carepad-core-android"))
 }
