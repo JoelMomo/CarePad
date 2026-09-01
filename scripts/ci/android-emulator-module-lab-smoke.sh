@@ -11,8 +11,8 @@ DEFECTIVE_UPDATE_APK="${6:?defective-update module APK path required}"
 HOST_PACKAGE="com.joel.thordoctor.carepadlabhost"
 MODULE_PACKAGE="com.joel.thordoctor.modulelab"
 HARNESS_COMPONENT="${HOST_PACKAGE}/com.joel.thordoctor.modules.host.ModuleLabHarnessActivity"
+SETTINGS_CONTROL_COMPONENT="${MODULE_PACKAGE}/com.joel.thordoctor.modulelab.LabSettingsControlReceiver"
 MODULE_OPEN_ACTION="dev.carepad.action.OPEN_MODULE"
-MODULE_SETTINGS_ACTION="dev.carepad.action.OPEN_MODULE_SETTINGS"
 UI_DUMP_DEVICE="/sdcard/carepad-window.xml"
 UI_DUMP_LOCAL="${RUNNER_TEMP:-/tmp}/carepad-window.xml"
 
@@ -22,7 +22,6 @@ wait_for_boot() {
         adb devices -l >&2 || true
         return 1
     fi
-
     for _ in $(seq 1 90); do
         if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
             adb shell input keyevent 82 >/dev/null 2>&1 || true
@@ -30,7 +29,6 @@ wait_for_boot() {
         fi
         sleep 2
     done
-
     echo "Android emulator became reachable but did not finish booting" >&2
     adb shell getprop >&2 || true
     return 1
@@ -44,7 +42,6 @@ current_resumed_activity() {
 dump_current_ui() {
     rm -f "$UI_DUMP_LOCAL"
     adb shell rm -f "$UI_DUMP_DEVICE" >/dev/null 2>&1 || true
-
     for _ in $(seq 1 20); do
         if adb shell uiautomator dump "$UI_DUMP_DEVICE" >/dev/null 2>&1 &&
             adb pull "$UI_DUMP_DEVICE" "$UI_DUMP_LOCAL" >/dev/null 2>&1 &&
@@ -53,7 +50,6 @@ dump_current_ui() {
         fi
         sleep 0.5
     done
-
     echo "Android UI did not produce a fresh hierarchy dump" >&2
     return 1
 }
@@ -92,7 +88,6 @@ PY
         cat "$UI_DUMP_LOCAL" >&2 || true
         return 1
     }
-
     read -r tap_x tap_y <<<"$coordinates"
     adb shell input tap "$tap_x" "$tap_y"
 }
@@ -100,10 +95,8 @@ PY
 refresh_harness_dump() {
     local start_output
     local resumed_activity
-
     adb shell am force-stop "$HOST_PACKAGE" >/dev/null
     start_output="$(adb shell am start -n "$HARNESS_COMPONENT")"
-
     for _ in $(seq 1 30); do
         resumed_activity="$(current_resumed_activity)"
         if grep -Fq "$HOST_PACKAGE" <<<"$resumed_activity" &&
@@ -114,24 +107,18 @@ refresh_harness_dump() {
         fi
         sleep 0.5
     done
-
     echo "CarePad Lab Harness did not produce a host-owned UI dump" >&2
     echo "$start_output" >&2
     echo "Resumed activity: $(current_resumed_activity)" >&2
-    if [[ -f "$UI_DUMP_LOCAL" ]]; then
-        echo "Last UI dump:" >&2
-        cat "$UI_DUMP_LOCAL" >&2
-    fi
+    [[ -f "$UI_DUMP_LOCAL" ]] && cat "$UI_DUMP_LOCAL" >&2 || true
     adb shell dumpsys activity activities >&2 || true
     return 1
 }
 
 assert_harness_contains_all() {
-    local attempts=12
     local expected
     local all_present
-
-    for _ in $(seq 1 "$attempts"); do
+    for _ in $(seq 1 12); do
         if refresh_harness_dump; then
             all_present=true
             for expected in "$@"; do
@@ -140,26 +127,78 @@ assert_harness_contains_all() {
                     break
                 fi
             done
-            if [[ "$all_present" == true ]]; then
-                return 0
-            fi
+            [[ "$all_present" == true ]] && return 0
         fi
         sleep 1
     done
-
     echo "Harness UI did not converge to the expected discovery state:" >&2
-    for expected in "$@"; do
-        echo "  - $expected" >&2
-    done
-    if [[ -f "$UI_DUMP_LOCAL" ]]; then
-        echo "Last fresh UI dump:" >&2
-        cat "$UI_DUMP_LOCAL" >&2
-    fi
-    echo "Installed module package state:" >&2
+    for expected in "$@"; do echo "  - $expected" >&2; done
+    [[ -f "$UI_DUMP_LOCAL" ]] && cat "$UI_DUMP_LOCAL" >&2 || true
     adb shell dumpsys package "$MODULE_PACKAGE" >&2 || true
-    echo "Activities resolving CarePad module action:" >&2
-    adb shell cmd package query-activities -a "dev.carepad.action.MODULE" >&2 || true
     return 1
+}
+
+wait_for_current_ui_text() {
+    local expected="$1"
+    for _ in $(seq 1 30); do
+        if dump_current_ui && grep -Fq "$expected" "$UI_DUMP_LOCAL"; then
+            return 0
+        fi
+        sleep 0.5
+    done
+    echo "Current harness UI did not contain expected text: $expected" >&2
+    [[ -f "$UI_DUMP_LOCAL" ]] && cat "$UI_DUMP_LOCAL" >&2 || true
+    return 1
+}
+
+click_harness_button() {
+    dump_current_ui
+    tap_ui_button "$1"
+}
+
+control_settings() {
+    local command="$1"
+    local output
+    output="$(adb shell am broadcast \
+        -n "$SETTINGS_CONTROL_COMPONENT" \
+        -a dev.carepad.modulelab.CONTROL_SETTINGS \
+        --es command "$command")"
+    if ! grep -Eq 'result=0|Broadcast completed' <<<"$output"; then
+        echo "Unable to control Module Lab settings fixture: $command" >&2
+        echo "$output" >&2
+        return 1
+    fi
+    sleep 0.5
+}
+
+assert_inline_settings_transport() {
+    control_settings RESET
+    refresh_harness_dump
+
+    click_harness_button "C0 Snapshot"
+    wait_for_current_ui_text "C0 snapshot OK revision=1 boolean=false choice=opengl info=Lab-Fixture v0.1 (Debug)"
+
+    click_harness_button "C0 Boolean=true"
+    wait_for_current_ui_text "C0 boolean APPLIED revision=1 effective=true"
+
+    click_harness_button "C0 Snapshot"
+    wait_for_current_ui_text "C0 snapshot OK revision=1 boolean=true choice=opengl info=Lab-Fixture v0.1 (Debug)"
+
+    click_harness_button "C0 Choice=vulkan"
+    wait_for_current_ui_text "C0 choice APPLIED revision=1 effective=vulkan"
+
+    click_harness_button "C0 Snapshot"
+    wait_for_current_ui_text "C0 snapshot OK revision=1 boolean=true choice=vulkan info=Lab-Fixture v0.1 (Debug)"
+
+    control_settings ADVANCE_REVISION
+    click_harness_button "C0 Boolean=true"
+    wait_for_current_ui_text "C0 boolean STALE current=2"
+
+    control_settings FORCE_INCOMPATIBLE
+    click_harness_button "C0 Snapshot"
+    wait_for_current_ui_text "C0 snapshot INCOMPATIBLE"
+
+    control_settings RESET
 }
 
 assert_module_version() {
@@ -176,10 +215,8 @@ assert_module_version() {
 assert_module_opens() {
     local start_output
     local resumed_activity
-
     adb shell am force-stop "$MODULE_PACKAGE" >/dev/null
     start_output="$(adb shell am start -a "$MODULE_OPEN_ACTION" -p "$MODULE_PACKAGE")"
-
     for _ in $(seq 1 20); do
         resumed_activity="$(current_resumed_activity)"
         if grep -Fq "$MODULE_PACKAGE" <<<"$resumed_activity" &&
@@ -188,21 +225,16 @@ assert_module_opens() {
         fi
         sleep 0.5
     done
-
     echo "Module OPEN_MODULE action did not make LabModuleActivity the resumed activity" >&2
     echo "$start_output" >&2
     echo "Resumed activity: $(current_resumed_activity)" >&2
-    adb shell dumpsys activity activities >&2 || true
     return 1
 }
 
-assert_module_delegated_settings_opens() {
-    local start_output
+assert_module_delegated_settings_opens_through_host() {
     local resumed_activity
-
-    adb shell am force-stop "$MODULE_PACKAGE" >/dev/null
-    start_output="$(adb shell am start -a "$MODULE_SETTINGS_ACTION" -p "$MODULE_PACKAGE")"
-
+    refresh_harness_dump
+    click_harness_button "Open lab settings"
     for _ in $(seq 1 20); do
         resumed_activity="$(current_resumed_activity)"
         if grep -Fq "$MODULE_PACKAGE" <<<"$resumed_activity" &&
@@ -211,24 +243,16 @@ assert_module_delegated_settings_opens() {
         fi
         sleep 0.5
     done
-
-    echo "Module OPEN_MODULE_SETTINGS action did not make LabDelegatedSettingsActivity the resumed activity" >&2
-    echo "$start_output" >&2
+    echo "CarePad host did not launch the delegated module settings Activity" >&2
     echo "Resumed activity: $(current_resumed_activity)" >&2
-    adb shell dumpsys activity activities >&2 || true
     return 1
 }
 
 assert_module_crash_isolated() {
     local logcat_output
-
     adb logcat -c
     adb shell am force-stop "$MODULE_PACKAGE" >/dev/null
-    adb shell am start \
-        -a "$MODULE_OPEN_ACTION" \
-        -p "$MODULE_PACKAGE" \
-        --ez carepad.lab.crash true >/dev/null
-
+    adb shell am start -a "$MODULE_OPEN_ACTION" -p "$MODULE_PACKAGE" --ez carepad.lab.crash true >/dev/null
     for _ in $(seq 1 20); do
         logcat_output="$(adb logcat -d 2>/dev/null || true)"
         if grep -Fq "CarePad module lab intentional crash" <<<"$logcat_output"; then
@@ -238,7 +262,6 @@ assert_module_crash_isolated() {
         fi
         sleep 0.5
     done
-
     echo "Intentional module crash was not observed in logcat" >&2
     adb logcat -d >&2 || true
     return 1
@@ -247,12 +270,10 @@ assert_module_crash_isolated() {
 assert_failed_replacement_preserves_module() {
     local install_output="${RUNNER_TEMP:-/tmp}/carepad-failed-replacement.txt"
     local install_status
-
     set +e
     adb install -r "$WRONG_SIGNATURE_APK" >"$install_output" 2>&1
     install_status=$?
     set -e
-
     if [[ "$install_status" -eq 0 ]]; then
         echo "Android unexpectedly replaced the trusted module with a differently signed APK" >&2
         cat "$install_output" >&2
@@ -263,7 +284,6 @@ assert_failed_replacement_preserves_module() {
         cat "$install_output" >&2
         return 1
     fi
-
     assert_module_version "0.2-lab"
     assert_harness_contains_all "Accepted: lab" "Version: 0.2-lab"
     assert_module_opens
@@ -274,15 +294,12 @@ assert_defective_update_recovery_constraints() {
     local rollback_output="${RUNNER_TEMP:-/tmp}/carepad-defective-update-rollback.txt"
     local rollback_status
     local crash_observed=false
-
     adb install -r "$DEFECTIVE_UPDATE_APK"
     assert_module_version "0.5-broken"
     assert_harness_contains_all "Accepted: lab" "Version: 0.5-broken"
-
     adb logcat -c
     adb shell am force-stop "$MODULE_PACKAGE" >/dev/null
     adb shell am start -a "$MODULE_OPEN_ACTION" -p "$MODULE_PACKAGE" >/dev/null || true
-
     for _ in $(seq 1 20); do
         logcat_output="$(adb logcat -d 2>/dev/null || true)"
         if grep -Fq "CarePad module lab always-crash fixture" <<<"$logcat_output"; then
@@ -291,25 +308,16 @@ assert_defective_update_recovery_constraints() {
         fi
         sleep 0.5
     done
-
     if [[ "$crash_observed" != true ]]; then
         echo "Defective installed module did not produce the expected normal-open crash" >&2
         adb logcat -d >&2 || true
         return 1
     fi
-
-    # The host must remain usable and discovery must remain deterministic even
-    # though the newly installed module itself cannot open successfully.
     assert_harness_contains_all "Accepted: lab" "Version: 0.5-broken"
-
-    # A normal app cannot silently return to the previous version: Android
-    # rejects the lower versionCode. This characterizes the recovery constraint
-    # without pretending that CarePad already has a product rollback policy.
     set +e
     adb install -r "$UPDATE_APK" >"$rollback_output" 2>&1
     rollback_status=$?
     set -e
-
     if [[ "$rollback_status" -eq 0 ]]; then
         echo "Android unexpectedly accepted rollback from defective 0.5 to 0.2" >&2
         cat "$rollback_output" >&2
@@ -320,7 +328,6 @@ assert_defective_update_recovery_constraints() {
         cat "$rollback_output" >&2
         return 1
     fi
-
     assert_module_version "0.5-broken"
     assert_harness_contains_all "Accepted: lab" "Version: 0.5-broken"
 }
@@ -328,25 +335,16 @@ assert_defective_update_recovery_constraints() {
 remove_module_through_carepad() {
     refresh_harness_dump
     tap_ui_button "Remove lab"
-
     for _ in $(seq 1 20); do
-        if dump_current_ui && tap_ui_button "Uninstall" "OK"; then
-            break
-        fi
+        if dump_current_ui && tap_ui_button "Uninstall" "OK"; then break; fi
         sleep 0.5
     done
-
     for _ in $(seq 1 40); do
-        if ! adb shell pm path "$MODULE_PACKAGE" >/dev/null 2>&1; then
-            return 0
-        fi
+        if ! adb shell pm path "$MODULE_PACKAGE" >/dev/null 2>&1; then return 0; fi
         sleep 0.5
     done
-
     echo "Module remained installed after CarePad-initiated Android removal flow" >&2
     adb shell dumpsys package "$MODULE_PACKAGE" >&2 || true
-    dump_current_ui || true
-    cat "$UI_DUMP_LOCAL" >&2 || true
     return 1
 }
 
@@ -357,8 +355,6 @@ adb shell settings put global animator_duration_scale 0
 
 adb install "$HOST_APK"
 
-# An official-signature module with an incompatible protocol must remain installed
-# but rejected by CarePad without breaking the host.
 adb install "$INCOMPATIBLE_PROTOCOL_APK"
 assert_module_version "0.3-incompatible"
 assert_harness_contains_all \
@@ -368,8 +364,6 @@ assert_harness_contains_all \
 adb uninstall "$MODULE_PACKAGE"
 assert_harness_contains_all "No compatible trusted modules discovered."
 
-# A module advertising the correct protocol but signed by an unrelated key must
-# likewise be visible only as rejected and must not become an accepted module.
 adb install "$WRONG_SIGNATURE_APK"
 assert_module_version "0.4-wrong-signature"
 assert_harness_contains_all \
@@ -379,7 +373,6 @@ assert_harness_contains_all \
 adb uninstall "$MODULE_PACKAGE"
 assert_harness_contains_all "No compatible trusted modules discovered."
 
-# Preserve the existing positive regression path after the negative cases.
 adb install "$BASELINE_APK"
 assert_module_version "0.1-lab"
 assert_harness_contains_all "Accepted: lab" "Version: 0.1-lab"
@@ -389,27 +382,13 @@ adb install -r "$UPDATE_APK"
 assert_module_version "0.2-lab"
 assert_harness_contains_all "Accepted: lab" "Version: 0.2-lab"
 assert_module_opens
-assert_module_delegated_settings_opens
+assert_inline_settings_transport
+assert_module_delegated_settings_opens_through_host
 
-
-# A crash inside the independently packaged module must not take down CarePad or
-# corrupt discovery. After the crash, the same installed module must still be
-# discoverable and open normally.
 assert_module_crash_isolated
-
-# A failed package replacement must leave the already-installed trusted version
-# intact and usable. This validates Android's failure isolation before CarePad
-# adds any higher-level rollback policy of its own.
 assert_failed_replacement_preserves_module
-
-# A different failure class occurs when an update installs successfully but is
-# functionally broken. Characterize that state without introducing product UX:
-# CarePad survives, the broken version remains installed, and normal downgrade
-# to the previous APK is rejected by Android.
 assert_defective_update_recovery_constraints
 
-# The path ends with removal initiated from CarePad itself, followed by Android's
-# own user confirmation. Direct adb uninstall would not validate this gate.
 remove_module_through_carepad
 assert_harness_contains_all "No compatible trusted modules discovered."
 

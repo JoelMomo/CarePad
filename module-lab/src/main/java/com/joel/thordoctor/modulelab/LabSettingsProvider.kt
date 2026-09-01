@@ -9,12 +9,8 @@ import carepad.contracts.CarePadSettingsSnapshot
 import carepad.contracts.CarePadSettingsSnapshotResult
 import com.joel.thordoctor.core.settings.CarePadSettingsProvider
 
-/**
- * Fixture ContentProvider in module-lab exposing the 3 approved inline settings types
- * and handling request/response lifecycle.
- */
+/** Debug fixture exposing the three C0 inline setting types. */
 class LabSettingsProvider : CarePadSettingsProvider() {
-
     enum class SimulationMode {
         NORMAL,
         FORCE_REJECT,
@@ -39,6 +35,7 @@ class LabSettingsProvider : CarePadSettingsProvider() {
             choiceValue = "opengl"
         }
 
+        /** Simulates an external catalog/semantic change, not an ordinary value write. */
         fun advanceRevision(): String {
             revisionCounter++
             revision = revisionCounter.toString()
@@ -46,21 +43,19 @@ class LabSettingsProvider : CarePadSettingsProvider() {
         }
     }
 
-    override fun onGetSnapshot(): CarePadSettingsSnapshotResult {
-        return when (State.mode) {
-            SimulationMode.FORCE_INCOMPATIBLE -> {
-                CarePadSettingsSnapshotResult.Incompatible(
-                    supportedContractVersion = 999,
-                    message = "Simulated incompatible snapshot"
-                )
-            }
-
-            SimulationMode.FORCE_UNAVAILABLE -> {
-                CarePadSettingsSnapshotResult.Unavailable("Simulated unavailable snapshot")
-            }
-
-            else -> {
-                val items = listOf(
+    override fun onGetSnapshot(): CarePadSettingsSnapshotResult = when (State.mode) {
+        SimulationMode.FORCE_INCOMPATIBLE -> CarePadSettingsSnapshotResult.Incompatible(
+            supportedContractVersion = 999,
+            message = "Settings contract is not supported."
+        )
+        SimulationMode.FORCE_UNAVAILABLE -> CarePadSettingsSnapshotResult.Unavailable(
+            "Settings are temporarily unavailable."
+        )
+        else -> CarePadSettingsSnapshotResult.Success(
+            CarePadSettingsSnapshot(
+                contractVersion = CarePadSettingsProtocol.CONTRACT_VERSION,
+                catalogRevision = State.revision,
+                items = listOf(
                     CarePadSettingItem.BooleanItem(
                         id = "lab.boolean_setting",
                         title = "Lab Turbo Mode",
@@ -90,71 +85,48 @@ class LabSettingsProvider : CarePadSettingsProvider() {
                         value = State.INFO_VALUE
                     )
                 )
-
-                CarePadSettingsSnapshotResult.Success(
-                    CarePadSettingsSnapshot(
-                        contractVersion = CarePadSettingsProtocol.CONTRACT_VERSION,
-                        catalogRevision = State.revision,
-                        items = items
-                    )
-                )
-            }
-        }
+            )
+        )
     }
 
     override fun onWriteBoolean(
         catalogRevision: String,
         itemId: String,
         value: Boolean
-    ): CarePadSettingResult {
-        return when (State.mode) {
-            SimulationMode.FORCE_INCOMPATIBLE -> {
-                CarePadSettingResult.Incompatible(
-                    supportedContractVersion = 999,
-                    message = "Simulated incompatible write"
-                )
-            }
-
-            SimulationMode.FORCE_UNAVAILABLE -> {
-                CarePadSettingResult.Unavailable("Simulated unavailable write")
-            }
-
-            SimulationMode.FORCE_STALE -> {
+    ): CarePadSettingResult = when (State.mode) {
+        SimulationMode.FORCE_INCOMPATIBLE -> CarePadSettingResult.Incompatible(
+            supportedContractVersion = 999,
+            message = "Settings contract is not supported."
+        )
+        SimulationMode.FORCE_UNAVAILABLE -> CarePadSettingResult.Unavailable(
+            "Settings are temporarily unavailable."
+        )
+        SimulationMode.FORCE_STALE -> CarePadSettingResult.Stale(
+            currentCatalogRevision = State.revision,
+            message = "Settings catalog changed."
+        )
+        SimulationMode.FORCE_REJECT -> CarePadSettingResult.Rejected(
+            catalogRevision = State.revision,
+            effectiveValueBoolean = State.booleanValue,
+            message = "The requested value was rejected."
+        )
+        SimulationMode.NORMAL -> {
+            if (catalogRevision != State.revision) {
                 CarePadSettingResult.Stale(
                     currentCatalogRevision = State.revision,
-                    message = "Simulated stale revision"
+                    message = "Settings catalog changed."
                 )
-            }
-
-            SimulationMode.FORCE_REJECT -> {
+            } else if (itemId != "lab.boolean_setting") {
                 CarePadSettingResult.Rejected(
                     catalogRevision = State.revision,
-                    effectiveValueBoolean = State.booleanValue,
-                    message = "Simulated write rejection"
+                    message = "The requested setting is unavailable."
                 )
-            }
-
-            SimulationMode.NORMAL -> {
-                if (catalogRevision != State.revision) {
-                    return CarePadSettingResult.Stale(
-                        currentCatalogRevision = State.revision,
-                        message = "Revision mismatch: expected $catalogRevision but current is ${State.revision}"
-                    )
-                }
-
-                if (itemId == "lab.boolean_setting") {
-                    State.booleanValue = value
-                    val newRev = State.advanceRevision()
-                    CarePadSettingResult.Applied(
-                        catalogRevision = newRev,
-                        effectiveValueBoolean = State.booleanValue
-                    )
-                } else {
-                    CarePadSettingResult.Rejected(
-                        catalogRevision = State.revision,
-                        message = "Unknown boolean setting ID '$itemId'"
-                    )
-                }
+            } else {
+                State.booleanValue = value
+                CarePadSettingResult.Applied(
+                    catalogRevision = State.revision,
+                    effectiveValueBoolean = State.booleanValue
+                )
             }
         }
     }
@@ -163,64 +135,46 @@ class LabSettingsProvider : CarePadSettingsProvider() {
         catalogRevision: String,
         itemId: String,
         selectedOptionId: String
-    ): CarePadSettingResult {
-        return when (State.mode) {
-            SimulationMode.FORCE_INCOMPATIBLE -> {
-                CarePadSettingResult.Incompatible(
-                    supportedContractVersion = 999,
-                    message = "Simulated incompatible write"
-                )
-            }
-
-            SimulationMode.FORCE_UNAVAILABLE -> {
-                CarePadSettingResult.Unavailable("Simulated unavailable write")
-            }
-
-            SimulationMode.FORCE_STALE -> {
+    ): CarePadSettingResult = when (State.mode) {
+        SimulationMode.FORCE_INCOMPATIBLE -> CarePadSettingResult.Incompatible(
+            supportedContractVersion = 999,
+            message = "Settings contract is not supported."
+        )
+        SimulationMode.FORCE_UNAVAILABLE -> CarePadSettingResult.Unavailable(
+            "Settings are temporarily unavailable."
+        )
+        SimulationMode.FORCE_STALE -> CarePadSettingResult.Stale(
+            currentCatalogRevision = State.revision,
+            message = "Settings catalog changed."
+        )
+        SimulationMode.FORCE_REJECT -> CarePadSettingResult.Rejected(
+            catalogRevision = State.revision,
+            effectiveSelectedOptionId = State.choiceValue,
+            message = "The requested option was rejected."
+        )
+        SimulationMode.NORMAL -> {
+            if (catalogRevision != State.revision) {
                 CarePadSettingResult.Stale(
                     currentCatalogRevision = State.revision,
-                    message = "Simulated stale revision"
+                    message = "Settings catalog changed."
                 )
-            }
-
-            SimulationMode.FORCE_REJECT -> {
+            } else if (itemId != "lab.choice_setting") {
+                CarePadSettingResult.Rejected(
+                    catalogRevision = State.revision,
+                    message = "The requested setting is unavailable."
+                )
+            } else if (selectedOptionId !in setOf("vulkan", "opengl", "sw")) {
                 CarePadSettingResult.Rejected(
                     catalogRevision = State.revision,
                     effectiveSelectedOptionId = State.choiceValue,
-                    message = "Simulated write rejection"
+                    message = "The requested option is unavailable."
                 )
-            }
-
-            SimulationMode.NORMAL -> {
-                if (catalogRevision != State.revision) {
-                    return CarePadSettingResult.Stale(
-                        currentCatalogRevision = State.revision,
-                        message = "Revision mismatch: expected $catalogRevision but current is ${State.revision}"
-                    )
-                }
-
-                if (itemId == "lab.choice_setting") {
-                    val validOptions = setOf("vulkan", "opengl", "sw")
-                    if (selectedOptionId !in validOptions) {
-                        return CarePadSettingResult.Rejected(
-                            catalogRevision = State.revision,
-                            effectiveSelectedOptionId = State.choiceValue,
-                            message = "Invalid option '$selectedOptionId'"
-                        )
-                    }
-
-                    State.choiceValue = selectedOptionId
-                    val newRev = State.advanceRevision()
-                    CarePadSettingResult.Applied(
-                        catalogRevision = newRev,
-                        effectiveSelectedOptionId = State.choiceValue
-                    )
-                } else {
-                    CarePadSettingResult.Rejected(
-                        catalogRevision = State.revision,
-                        message = "Unknown single-choice setting ID '$itemId'"
-                    )
-                }
+            } else {
+                State.choiceValue = selectedOptionId
+                CarePadSettingResult.Applied(
+                    catalogRevision = State.revision,
+                    effectiveSelectedOptionId = State.choiceValue
+                )
             }
         }
     }

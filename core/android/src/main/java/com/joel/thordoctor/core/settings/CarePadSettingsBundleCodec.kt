@@ -1,5 +1,6 @@
 package com.joel.thordoctor.core.settings
 
+import android.os.Build
 import android.os.Bundle
 import carepad.contracts.CarePadItemAvailability
 import carepad.contracts.CarePadSettingItem
@@ -11,22 +12,14 @@ import carepad.contracts.CarePadSettingsProtocol
 import carepad.contracts.CarePadSettingsSnapshot
 import carepad.contracts.CarePadSettingsSnapshotResult
 
-/**
- * Encodes and decodes settings RPC payloads into compact, narrow Android Bundles.
- *
- * Implements strict defensive bounds to protect the Android Binder buffer and
- * avoid TransactionTooLargeException or memory exhaustion.
- */
+/** Strict Bundle codec for the C0 inline-settings RPC. Malformed payloads fail closed. */
 object CarePadSettingsBundleCodec {
-
-    // Request bundle keys
     const val KEY_CONTRACT_VERSION = "carepad.settings.req.CONTRACT_VERSION"
     const val KEY_CATALOG_REVISION = "carepad.settings.req.CATALOG_REVISION"
     const val KEY_ITEM_ID = "carepad.settings.req.ITEM_ID"
     const val KEY_VALUE_BOOLEAN = "carepad.settings.req.VALUE_BOOLEAN"
     const val KEY_SELECTED_OPTION_ID = "carepad.settings.req.SELECTED_OPTION_ID"
 
-    // Response bundle keys
     const val KEY_RES_STATUS = "carepad.settings.res.STATUS"
     const val KEY_RES_RESULT_CODE = "carepad.settings.res.RESULT_CODE"
     const val KEY_RES_CONTRACT_VERSION = "carepad.settings.res.CONTRACT_VERSION"
@@ -36,19 +29,16 @@ object CarePadSettingsBundleCodec {
     const val KEY_RES_EFFECTIVE_OPTION_ID = "carepad.settings.res.EFFECTIVE_OPTION_ID"
     const val KEY_RES_ERROR_MESSAGE = "carepad.settings.res.ERROR_MESSAGE"
 
-    // Status strings
     const val STATUS_SUCCESS = "SUCCESS"
     const val STATUS_UNAVAILABLE = "UNAVAILABLE"
     const val STATUS_INCOMPATIBLE = "INCOMPATIBLE"
 
-    // Result code strings
     const val CODE_APPLIED = "APPLIED"
     const val CODE_REJECTED = "REJECTED"
     const val CODE_STALE = "STALE"
     const val CODE_UNAVAILABLE = "UNAVAILABLE"
     const val CODE_INCOMPATIBLE = "INCOMPATIBLE"
 
-    // Item bundle keys
     private const val ITEM_ID = "id"
     private const val ITEM_TYPE = "type"
     private const val ITEM_TITLE = "title"
@@ -77,115 +67,112 @@ object CarePadSettingsBundleCodec {
         val selectedOptionId: String
     )
 
-    // --- Snapshot encoding & decoding ---
-
-    fun encodeSnapshotSuccess(snapshot: CarePadSettingsSnapshot): Bundle {
-        val bundle = Bundle()
-        bundle.putString(KEY_RES_STATUS, STATUS_SUCCESS)
-        bundle.putInt(KEY_RES_CONTRACT_VERSION, snapshot.contractVersion)
-        bundle.putString(KEY_RES_CATALOG_REVISION, snapshot.catalogRevision)
-
-        val itemsBundles = ArrayList<Bundle>(snapshot.items.size)
-        snapshot.items.take(CarePadSettingsLimits.MAX_ITEMS_COUNT).forEach { item ->
-            itemsBundles.add(encodeItem(item))
-        }
-        bundle.putParcelableArrayList(KEY_RES_ITEMS, itemsBundles)
-        return bundle
+    fun encodeGetSnapshotRequest(
+        contractVersion: Int = CarePadSettingsProtocol.CONTRACT_VERSION
+    ): Bundle = Bundle().apply {
+        putInt(KEY_CONTRACT_VERSION, contractVersion)
     }
 
-    fun encodeSnapshotUnavailable(message: String?): Bundle {
-        val bundle = Bundle()
-        bundle.putString(KEY_RES_STATUS, STATUS_UNAVAILABLE)
-        message?.let { bundle.putString(KEY_RES_ERROR_MESSAGE, sanitizeErrorMessage(it)) }
-        return bundle
+    fun decodeGetSnapshotContractVersion(bundle: Bundle?): Int? = decodeOrNull {
+        require(bundle != null && bundle.containsKey(KEY_CONTRACT_VERSION))
+        val version = bundle.getInt(KEY_CONTRACT_VERSION)
+        require(version > 0)
+        version
+    }
+
+    fun encodeSnapshotSuccess(snapshot: CarePadSettingsSnapshot): Bundle = Bundle().apply {
+        putString(KEY_RES_STATUS, STATUS_SUCCESS)
+        putInt(KEY_RES_CONTRACT_VERSION, snapshot.contractVersion)
+        putString(KEY_RES_CATALOG_REVISION, snapshot.catalogRevision)
+        putParcelableArrayList(
+            KEY_RES_ITEMS,
+            ArrayList(snapshot.items.map(::encodeItem))
+        )
+    }
+
+    fun encodeSnapshotUnavailable(message: String?): Bundle = Bundle().apply {
+        putString(KEY_RES_STATUS, STATUS_UNAVAILABLE)
+        sanitizeOutgoingMessage(message)?.let { putString(KEY_RES_ERROR_MESSAGE, it) }
     }
 
     fun encodeSnapshotIncompatible(
         supportedContractVersion: Int = CarePadSettingsProtocol.CONTRACT_VERSION,
         message: String? = null
-    ): Bundle {
-        val bundle = Bundle()
-        bundle.putString(KEY_RES_STATUS, STATUS_INCOMPATIBLE)
-        bundle.putInt(KEY_RES_CONTRACT_VERSION, supportedContractVersion)
-        message?.let { bundle.putString(KEY_RES_ERROR_MESSAGE, sanitizeErrorMessage(it)) }
-        return bundle
+    ): Bundle = Bundle().apply {
+        putString(KEY_RES_STATUS, STATUS_INCOMPATIBLE)
+        putInt(KEY_RES_CONTRACT_VERSION, supportedContractVersion)
+        sanitizeOutgoingMessage(message)?.let { putString(KEY_RES_ERROR_MESSAGE, it) }
     }
 
-    fun decodeSnapshotResult(bundle: Bundle?): CarePadSettingsSnapshotResult {
-        if (bundle == null) {
-            return CarePadSettingsSnapshotResult.Unavailable("Empty response bundle from provider")
-        }
-
-        return when (bundle.getString(KEY_RES_STATUS)) {
-            STATUS_SUCCESS -> {
-                val version = bundle.getInt(KEY_RES_CONTRACT_VERSION, 0)
-                if (version != CarePadSettingsProtocol.CONTRACT_VERSION) {
-                    return CarePadSettingsSnapshotResult.Incompatible(
-                        supportedContractVersion = version,
-                        message = "Unsupported contract version $version"
-                    )
-                }
-
-                val revision = bundle.getString(KEY_RES_CATALOG_REVISION).orEmpty()
-                if (revision.isBlank()) {
-                    return CarePadSettingsSnapshotResult.Unavailable("Missing catalog revision in snapshot")
-                }
-
-                val itemBundles = getParcelableBundleArrayList(bundle, KEY_RES_ITEMS)
-                val items = itemBundles.mapNotNull { decodeItem(it) }
-
-                try {
-                    CarePadSettingsSnapshotResult.Success(
-                        CarePadSettingsSnapshot(
-                            contractVersion = version,
-                            catalogRevision = revision,
-                            items = items
-                        )
-                    )
-                } catch (e: Exception) {
-                    CarePadSettingsSnapshotResult.Unavailable("Invalid snapshot structure: ${e.message}")
-                }
-            }
-
+    fun decodeSnapshotResult(bundle: Bundle?): CarePadSettingsSnapshotResult = decodeOrUnavailableSnapshot {
+        require(bundle != null && bundle.containsKey(KEY_RES_STATUS))
+        when (val status = bundle.getString(KEY_RES_STATUS)) {
+            STATUS_SUCCESS -> decodeSnapshotSuccess(bundle)
             STATUS_INCOMPATIBLE -> {
-                val version = bundle.getInt(KEY_RES_CONTRACT_VERSION, CarePadSettingsProtocol.CONTRACT_VERSION)
-                val message = bundle.getString(KEY_RES_ERROR_MESSAGE)
-                CarePadSettingsSnapshotResult.Incompatible(version, message)
+                require(bundle.containsKey(KEY_RES_CONTRACT_VERSION))
+                val version = bundle.getInt(KEY_RES_CONTRACT_VERSION)
+                require(version > 0)
+                CarePadSettingsSnapshotResult.Incompatible(
+                    supportedContractVersion = version,
+                    message = optionalBoundedString(bundle, KEY_RES_ERROR_MESSAGE, CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH)
+                )
             }
-
-            STATUS_UNAVAILABLE -> {
-                val message = bundle.getString(KEY_RES_ERROR_MESSAGE)
-                CarePadSettingsSnapshotResult.Unavailable(message)
-            }
-
-            else -> CarePadSettingsSnapshotResult.Unavailable("Unknown response status from settings provider")
+            STATUS_UNAVAILABLE -> CarePadSettingsSnapshotResult.Unavailable(
+                optionalBoundedString(bundle, KEY_RES_ERROR_MESSAGE, CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH)
+            )
+            else -> error("Unknown snapshot status: $status")
         }
     }
 
-    // --- Write requests encoding & decoding ---
+    private fun decodeSnapshotSuccess(bundle: Bundle): CarePadSettingsSnapshotResult {
+        require(bundle.containsKey(KEY_RES_CONTRACT_VERSION))
+        val version = bundle.getInt(KEY_RES_CONTRACT_VERSION)
+        require(version > 0)
+        if (version != CarePadSettingsProtocol.CONTRACT_VERSION) {
+            return CarePadSettingsSnapshotResult.Incompatible(supportedContractVersion = version)
+        }
+
+        val revision = requiredBoundedString(
+            bundle,
+            KEY_RES_CATALOG_REVISION,
+            CarePadSettingsLimits.MAX_REVISION_LENGTH
+        )
+        val itemBundles = requiredBundleList(bundle, KEY_RES_ITEMS)
+        require(itemBundles.size <= CarePadSettingsLimits.MAX_ITEMS_COUNT)
+        val items = itemBundles.map(::decodeItemStrict)
+
+        return CarePadSettingsSnapshotResult.Success(
+            CarePadSettingsSnapshot(
+                contractVersion = version,
+                catalogRevision = revision,
+                items = items
+            )
+        )
+    }
 
     fun encodeWriteBooleanRequest(
         contractVersion: Int = CarePadSettingsProtocol.CONTRACT_VERSION,
         catalogRevision: String,
         itemId: String,
         value: Boolean
-    ): Bundle {
-        val bundle = Bundle()
-        bundle.putInt(KEY_CONTRACT_VERSION, contractVersion)
-        bundle.putString(KEY_CATALOG_REVISION, catalogRevision)
-        bundle.putString(KEY_ITEM_ID, itemId)
-        bundle.putBoolean(KEY_VALUE_BOOLEAN, value)
-        return bundle
+    ): Bundle = Bundle().apply {
+        putInt(KEY_CONTRACT_VERSION, contractVersion)
+        putString(KEY_CATALOG_REVISION, catalogRevision)
+        putString(KEY_ITEM_ID, itemId)
+        putBoolean(KEY_VALUE_BOOLEAN, value)
     }
 
-    fun decodeWriteBooleanRequest(bundle: Bundle?): WriteBooleanRequest? {
-        if (bundle == null) return null
-        val version = bundle.getInt(KEY_CONTRACT_VERSION, 0)
-        val revision = bundle.getString(KEY_CATALOG_REVISION) ?: return null
-        val itemId = bundle.getString(KEY_ITEM_ID) ?: return null
+    fun decodeWriteBooleanRequest(bundle: Bundle?): WriteBooleanRequest? = decodeOrNull {
+        require(bundle != null)
+        require(bundle.containsKey(KEY_CONTRACT_VERSION))
+        require(bundle.containsKey(KEY_VALUE_BOOLEAN))
+        require(!bundle.containsKey(KEY_SELECTED_OPTION_ID))
+        val version = bundle.getInt(KEY_CONTRACT_VERSION)
+        require(version > 0)
+        val revision = requiredBoundedString(bundle, KEY_CATALOG_REVISION, CarePadSettingsLimits.MAX_REVISION_LENGTH)
+        val itemId = requiredBoundedString(bundle, KEY_ITEM_ID, CarePadSettingsLimits.MAX_ID_LENGTH)
         val value = bundle.getBoolean(KEY_VALUE_BOOLEAN)
-        if (version <= 0 || revision.isBlank() || itemId.isBlank()) return null
-        return WriteBooleanRequest(version, revision, itemId, value)
+        WriteBooleanRequest(version, revision, itemId, value)
     }
 
     fun encodeWriteSingleChoiceRequest(
@@ -193,218 +180,324 @@ object CarePadSettingsBundleCodec {
         catalogRevision: String,
         itemId: String,
         selectedOptionId: String
-    ): Bundle {
-        val bundle = Bundle()
-        bundle.putInt(KEY_CONTRACT_VERSION, contractVersion)
-        bundle.putString(KEY_CATALOG_REVISION, catalogRevision)
-        bundle.putString(KEY_ITEM_ID, itemId)
-        bundle.putString(KEY_SELECTED_OPTION_ID, selectedOptionId)
-        return bundle
+    ): Bundle = Bundle().apply {
+        putInt(KEY_CONTRACT_VERSION, contractVersion)
+        putString(KEY_CATALOG_REVISION, catalogRevision)
+        putString(KEY_ITEM_ID, itemId)
+        putString(KEY_SELECTED_OPTION_ID, selectedOptionId)
     }
 
-    fun decodeWriteSingleChoiceRequest(bundle: Bundle?): WriteSingleChoiceRequest? {
-        if (bundle == null) return null
-        val version = bundle.getInt(KEY_CONTRACT_VERSION, 0)
-        val revision = bundle.getString(KEY_CATALOG_REVISION) ?: return null
-        val itemId = bundle.getString(KEY_ITEM_ID) ?: return null
-        val selectedOptionId = bundle.getString(KEY_SELECTED_OPTION_ID) ?: return null
-        if (version <= 0 || revision.isBlank() || itemId.isBlank() || selectedOptionId.isBlank()) return null
-        return WriteSingleChoiceRequest(version, revision, itemId, selectedOptionId)
+    fun decodeWriteSingleChoiceRequest(bundle: Bundle?): WriteSingleChoiceRequest? = decodeOrNull {
+        require(bundle != null)
+        require(bundle.containsKey(KEY_CONTRACT_VERSION))
+        require(!bundle.containsKey(KEY_VALUE_BOOLEAN))
+        val version = bundle.getInt(KEY_CONTRACT_VERSION)
+        require(version > 0)
+        val revision = requiredBoundedString(bundle, KEY_CATALOG_REVISION, CarePadSettingsLimits.MAX_REVISION_LENGTH)
+        val itemId = requiredBoundedString(bundle, KEY_ITEM_ID, CarePadSettingsLimits.MAX_ID_LENGTH)
+        val optionId = requiredBoundedString(bundle, KEY_SELECTED_OPTION_ID, CarePadSettingsLimits.MAX_ID_LENGTH)
+        WriteSingleChoiceRequest(version, revision, itemId, optionId)
     }
 
-    // --- SettingResult encoding & decoding ---
-
-    fun encodeSettingResult(result: CarePadSettingResult): Bundle {
-        val bundle = Bundle()
+    fun encodeSettingResult(result: CarePadSettingResult): Bundle = Bundle().apply {
         when (result) {
             is CarePadSettingResult.Applied -> {
-                bundle.putString(KEY_RES_RESULT_CODE, CODE_APPLIED)
-                bundle.putString(KEY_RES_CATALOG_REVISION, result.catalogRevision)
-                result.effectiveValueBoolean?.let { bundle.putBoolean(KEY_RES_EFFECTIVE_BOOLEAN, it) }
-                result.effectiveSelectedOptionId?.let { bundle.putString(KEY_RES_EFFECTIVE_OPTION_ID, it) }
+                putString(KEY_RES_RESULT_CODE, CODE_APPLIED)
+                putString(KEY_RES_CATALOG_REVISION, result.catalogRevision)
+                result.effectiveValueBoolean?.let { putBoolean(KEY_RES_EFFECTIVE_BOOLEAN, it) }
+                result.effectiveSelectedOptionId?.let { putString(KEY_RES_EFFECTIVE_OPTION_ID, it) }
             }
-
             is CarePadSettingResult.Rejected -> {
-                bundle.putString(KEY_RES_RESULT_CODE, CODE_REJECTED)
-                bundle.putString(KEY_RES_CATALOG_REVISION, result.catalogRevision)
-                result.effectiveValueBoolean?.let { bundle.putBoolean(KEY_RES_EFFECTIVE_BOOLEAN, it) }
-                result.effectiveSelectedOptionId?.let { bundle.putString(KEY_RES_EFFECTIVE_OPTION_ID, it) }
-                result.message?.let { bundle.putString(KEY_RES_ERROR_MESSAGE, sanitizeErrorMessage(it)) }
+                putString(KEY_RES_RESULT_CODE, CODE_REJECTED)
+                putString(KEY_RES_CATALOG_REVISION, result.catalogRevision)
+                result.effectiveValueBoolean?.let { putBoolean(KEY_RES_EFFECTIVE_BOOLEAN, it) }
+                result.effectiveSelectedOptionId?.let { putString(KEY_RES_EFFECTIVE_OPTION_ID, it) }
+                sanitizeOutgoingMessage(result.message)?.let { putString(KEY_RES_ERROR_MESSAGE, it) }
             }
-
             is CarePadSettingResult.Stale -> {
-                bundle.putString(KEY_RES_RESULT_CODE, CODE_STALE)
-                bundle.putString(KEY_RES_CATALOG_REVISION, result.currentCatalogRevision)
-                result.message?.let { bundle.putString(KEY_RES_ERROR_MESSAGE, sanitizeErrorMessage(it)) }
+                putString(KEY_RES_RESULT_CODE, CODE_STALE)
+                putString(KEY_RES_CATALOG_REVISION, result.currentCatalogRevision)
+                sanitizeOutgoingMessage(result.message)?.let { putString(KEY_RES_ERROR_MESSAGE, it) }
             }
-
             is CarePadSettingResult.Unavailable -> {
-                bundle.putString(KEY_RES_RESULT_CODE, CODE_UNAVAILABLE)
-                result.message?.let { bundle.putString(KEY_RES_ERROR_MESSAGE, sanitizeErrorMessage(it)) }
+                putString(KEY_RES_RESULT_CODE, CODE_UNAVAILABLE)
+                sanitizeOutgoingMessage(result.message)?.let { putString(KEY_RES_ERROR_MESSAGE, it) }
             }
-
             is CarePadSettingResult.Incompatible -> {
-                bundle.putString(KEY_RES_RESULT_CODE, CODE_INCOMPATIBLE)
-                bundle.putInt(KEY_RES_CONTRACT_VERSION, result.supportedContractVersion)
-                result.message?.let { bundle.putString(KEY_RES_ERROR_MESSAGE, sanitizeErrorMessage(it)) }
+                putString(KEY_RES_RESULT_CODE, CODE_INCOMPATIBLE)
+                putInt(KEY_RES_CONTRACT_VERSION, result.supportedContractVersion)
+                sanitizeOutgoingMessage(result.message)?.let { putString(KEY_RES_ERROR_MESSAGE, it) }
             }
         }
-        return bundle
     }
 
-    fun decodeSettingResult(bundle: Bundle?): CarePadSettingResult {
-        if (bundle == null) {
-            return CarePadSettingResult.Unavailable("Null response from provider")
+    fun decodeBooleanSettingResult(bundle: Bundle?): CarePadSettingResult =
+        decodeSettingResult(bundle, ExpectedValue.BOOLEAN)
+
+    fun decodeSingleChoiceSettingResult(bundle: Bundle?): CarePadSettingResult =
+        decodeSettingResult(bundle, ExpectedValue.SINGLE_CHOICE)
+
+    private fun decodeSettingResult(
+        bundle: Bundle?,
+        expectedValue: ExpectedValue
+    ): CarePadSettingResult = decodeOrUnavailableSetting {
+        require(bundle != null && bundle.containsKey(KEY_RES_RESULT_CODE))
+        val code = bundle.getString(KEY_RES_RESULT_CODE) ?: error("Missing result code")
+        val message = optionalBoundedString(
+            bundle,
+            KEY_RES_ERROR_MESSAGE,
+            CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH
+        )
+        val hasBoolean = bundle.containsKey(KEY_RES_EFFECTIVE_BOOLEAN)
+        val hasOption = bundle.containsKey(KEY_RES_EFFECTIVE_OPTION_ID)
+
+        fun revision(): String = requiredBoundedString(
+            bundle,
+            KEY_RES_CATALOG_REVISION,
+            CarePadSettingsLimits.MAX_REVISION_LENGTH
+        )
+
+        fun expectedBoolean(): Boolean {
+            require(expectedValue == ExpectedValue.BOOLEAN && hasBoolean && !hasOption)
+            return bundle.getBoolean(KEY_RES_EFFECTIVE_BOOLEAN)
         }
 
-        val code = bundle.getString(KEY_RES_RESULT_CODE) ?: return CarePadSettingResult.Unavailable("Missing result code")
-        val revision = bundle.getString(KEY_RES_CATALOG_REVISION).orEmpty()
-        val errorMsg = bundle.getString(KEY_RES_ERROR_MESSAGE)
+        fun expectedOption(): String {
+            require(expectedValue == ExpectedValue.SINGLE_CHOICE && hasOption && !hasBoolean)
+            return requiredBoundedString(bundle, KEY_RES_EFFECTIVE_OPTION_ID, CarePadSettingsLimits.MAX_ID_LENGTH)
+        }
 
-        val hasBool = bundle.containsKey(KEY_RES_EFFECTIVE_BOOLEAN)
-        val boolVal = if (hasBool) bundle.getBoolean(KEY_RES_EFFECTIVE_BOOLEAN) else null
-        val optVal = bundle.getString(KEY_RES_EFFECTIVE_OPTION_ID)
-
-        return when (code) {
-            CODE_APPLIED -> {
-                if (revision.isBlank()) CarePadSettingResult.Unavailable("Missing revision in APPLIED result")
-                else CarePadSettingResult.Applied(revision, boolVal, optVal)
+        when (code) {
+            CODE_APPLIED -> when (expectedValue) {
+                ExpectedValue.BOOLEAN -> CarePadSettingResult.Applied(
+                    catalogRevision = revision(),
+                    effectiveValueBoolean = expectedBoolean()
+                )
+                ExpectedValue.SINGLE_CHOICE -> CarePadSettingResult.Applied(
+                    catalogRevision = revision(),
+                    effectiveSelectedOptionId = expectedOption()
+                )
             }
-
             CODE_REJECTED -> {
-                if (revision.isBlank()) CarePadSettingResult.Unavailable("Missing revision in REJECTED result")
-                else CarePadSettingResult.Rejected(revision, boolVal, optVal, errorMsg)
+                require(!(hasBoolean && hasOption))
+                when {
+                    hasBoolean -> {
+                        require(expectedValue == ExpectedValue.BOOLEAN)
+                        CarePadSettingResult.Rejected(
+                            catalogRevision = revision(),
+                            effectiveValueBoolean = bundle.getBoolean(KEY_RES_EFFECTIVE_BOOLEAN),
+                            message = message
+                        )
+                    }
+                    hasOption -> {
+                        require(expectedValue == ExpectedValue.SINGLE_CHOICE)
+                        CarePadSettingResult.Rejected(
+                            catalogRevision = revision(),
+                            effectiveSelectedOptionId = requiredBoundedString(
+                                bundle,
+                                KEY_RES_EFFECTIVE_OPTION_ID,
+                                CarePadSettingsLimits.MAX_ID_LENGTH
+                            ),
+                            message = message
+                        )
+                    }
+                    else -> CarePadSettingResult.Rejected(
+                        catalogRevision = revision(),
+                        message = message
+                    )
+                }
             }
-
             CODE_STALE -> {
-                if (revision.isBlank()) CarePadSettingResult.Unavailable("Missing current revision in STALE result")
-                else CarePadSettingResult.Stale(revision, errorMsg)
+                require(!hasBoolean && !hasOption)
+                CarePadSettingResult.Stale(revision(), message)
             }
-
+            CODE_UNAVAILABLE -> {
+                require(!hasBoolean && !hasOption)
+                CarePadSettingResult.Unavailable(message)
+            }
             CODE_INCOMPATIBLE -> {
-                val version = bundle.getInt(KEY_RES_CONTRACT_VERSION, CarePadSettingsProtocol.CONTRACT_VERSION)
-                CarePadSettingResult.Incompatible(version, errorMsg)
+                require(!hasBoolean && !hasOption)
+                require(bundle.containsKey(KEY_RES_CONTRACT_VERSION))
+                val version = bundle.getInt(KEY_RES_CONTRACT_VERSION)
+                require(version > 0)
+                CarePadSettingResult.Incompatible(version, message)
             }
-
-            CODE_UNAVAILABLE -> CarePadSettingResult.Unavailable(errorMsg)
-            else -> CarePadSettingResult.Unavailable("Unknown result code '$code'")
+            else -> error("Unknown result code: $code")
         }
     }
 
-    // --- Private item encoding helpers ---
-
-    private fun encodeItem(item: CarePadSettingItem): Bundle {
-        val bundle = Bundle()
-        bundle.putString(ITEM_ID, item.id)
-        bundle.putString(ITEM_TYPE, item.type.name)
-        bundle.putString(ITEM_TITLE, item.title)
-        item.description?.let { bundle.putString(ITEM_DESCRIPTION, it) }
-        bundle.putBoolean(ITEM_EDITABLE, item.editable)
-        bundle.putString(ITEM_AVAILABILITY, item.availability.name)
-        item.errorMessage?.let { bundle.putString(ITEM_ERROR_MESSAGE, sanitizeErrorMessage(it)) }
+    private fun encodeItem(item: CarePadSettingItem): Bundle = Bundle().apply {
+        putString(ITEM_ID, item.id)
+        putString(ITEM_TYPE, item.type.name)
+        putString(ITEM_TITLE, item.title)
+        item.description?.let { putString(ITEM_DESCRIPTION, it) }
+        putBoolean(ITEM_EDITABLE, item.editable)
+        putString(ITEM_AVAILABILITY, item.availability.name)
+        sanitizeOutgoingMessage(item.errorMessage)?.let { putString(ITEM_ERROR_MESSAGE, it) }
 
         when (item) {
-            is CarePadSettingItem.BooleanItem -> {
-                bundle.putBoolean(ITEM_VALUE_BOOLEAN, item.value)
-            }
-
+            is CarePadSettingItem.BooleanItem -> putBoolean(ITEM_VALUE_BOOLEAN, item.value)
             is CarePadSettingItem.SingleChoiceItem -> {
-                bundle.putString(ITEM_SELECTED_OPTION_ID, item.selectedOptionId)
-                val optBundles = ArrayList<Bundle>(item.options.size)
-                item.options.take(CarePadSettingsLimits.MAX_OPTIONS_PER_CHOICE).forEach { opt ->
-                    val optBundle = Bundle()
-                    optBundle.putString(OPTION_ID, opt.optionId)
-                    optBundle.putString(OPTION_LABEL, opt.label)
-                    optBundles.add(optBundle)
-                }
-                bundle.putParcelableArrayList(ITEM_OPTIONS, optBundles)
+                putString(ITEM_SELECTED_OPTION_ID, item.selectedOptionId)
+                putParcelableArrayList(
+                    ITEM_OPTIONS,
+                    ArrayList(item.options.map { option ->
+                        Bundle().apply {
+                            putString(OPTION_ID, option.optionId)
+                            putString(OPTION_LABEL, option.label)
+                        }
+                    })
+                )
             }
+            is CarePadSettingItem.ReadOnlyInfoItem -> putString(ITEM_VALUE_STRING, item.value)
+        }
+    }
 
-            is CarePadSettingItem.ReadOnlyInfoItem -> {
-                bundle.putString(ITEM_VALUE_STRING, item.value)
+    private fun decodeItemStrict(bundle: Bundle): CarePadSettingItem {
+        val id = requiredBoundedString(bundle, ITEM_ID, CarePadSettingsLimits.MAX_ID_LENGTH)
+        val type = CarePadSettingType.valueOf(requiredBoundedString(bundle, ITEM_TYPE, 32))
+        val title = requiredBoundedString(bundle, ITEM_TITLE, CarePadSettingsLimits.MAX_TITLE_LENGTH)
+        val description = optionalBoundedString(bundle, ITEM_DESCRIPTION, CarePadSettingsLimits.MAX_DESCRIPTION_LENGTH)
+        require(bundle.containsKey(ITEM_EDITABLE))
+        val editable = bundle.getBoolean(ITEM_EDITABLE)
+        val availability = CarePadItemAvailability.valueOf(
+            requiredBoundedString(bundle, ITEM_AVAILABILITY, 32)
+        )
+        val errorMessage = optionalBoundedString(
+            bundle,
+            ITEM_ERROR_MESSAGE,
+            CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH
+        )
+
+        return when (type) {
+            CarePadSettingType.BOOLEAN -> {
+                require(bundle.containsKey(ITEM_VALUE_BOOLEAN))
+                require(!bundle.containsKey(ITEM_SELECTED_OPTION_ID))
+                require(!bundle.containsKey(ITEM_OPTIONS))
+                require(!bundle.containsKey(ITEM_VALUE_STRING))
+                CarePadSettingItem.BooleanItem(
+                    id = id,
+                    title = title,
+                    description = description,
+                    editable = editable,
+                    availability = availability,
+                    errorMessage = errorMessage,
+                    value = bundle.getBoolean(ITEM_VALUE_BOOLEAN)
+                )
+            }
+            CarePadSettingType.SINGLE_CHOICE -> {
+                require(!bundle.containsKey(ITEM_VALUE_BOOLEAN))
+                require(!bundle.containsKey(ITEM_VALUE_STRING))
+                val selected = requiredBoundedString(
+                    bundle,
+                    ITEM_SELECTED_OPTION_ID,
+                    CarePadSettingsLimits.MAX_ID_LENGTH
+                )
+                val optionBundles = requiredBundleList(bundle, ITEM_OPTIONS)
+                require(optionBundles.isNotEmpty())
+                require(optionBundles.size <= CarePadSettingsLimits.MAX_OPTIONS_PER_CHOICE)
+                val options = optionBundles.map { optionBundle ->
+                    CarePadSettingOption(
+                        optionId = requiredBoundedString(
+                            optionBundle,
+                            OPTION_ID,
+                            CarePadSettingsLimits.MAX_ID_LENGTH
+                        ),
+                        label = requiredBoundedString(
+                            optionBundle,
+                            OPTION_LABEL,
+                            CarePadSettingsLimits.MAX_TITLE_LENGTH
+                        )
+                    )
+                }
+                CarePadSettingItem.SingleChoiceItem(
+                    id = id,
+                    title = title,
+                    description = description,
+                    editable = editable,
+                    availability = availability,
+                    errorMessage = errorMessage,
+                    selectedOptionId = selected,
+                    options = options
+                )
+            }
+            CarePadSettingType.READ_ONLY_INFO -> {
+                require(!editable)
+                require(!bundle.containsKey(ITEM_VALUE_BOOLEAN))
+                require(!bundle.containsKey(ITEM_SELECTED_OPTION_ID))
+                require(!bundle.containsKey(ITEM_OPTIONS))
+                val value = requiredStringAllowEmpty(
+                    bundle,
+                    ITEM_VALUE_STRING,
+                    CarePadSettingsLimits.MAX_VALUE_LENGTH
+                )
+                CarePadSettingItem.ReadOnlyInfoItem(
+                    id = id,
+                    title = title,
+                    description = description,
+                    availability = availability,
+                    errorMessage = errorMessage,
+                    value = value
+                )
             }
         }
-        return bundle
     }
 
-    private fun decodeItem(bundle: Bundle): CarePadSettingItem? {
-        val id = bundle.getString(ITEM_ID) ?: return null
-        val typeStr = bundle.getString(ITEM_TYPE) ?: return null
-        val title = bundle.getString(ITEM_TITLE) ?: return null
-        val description = bundle.getString(ITEM_DESCRIPTION)
-        val editable = bundle.getBoolean(ITEM_EDITABLE, true)
-        val availStr = bundle.getString(ITEM_AVAILABILITY) ?: CarePadItemAvailability.AVAILABLE.name
-        val availability = runCatching { CarePadItemAvailability.valueOf(availStr) }.getOrDefault(CarePadItemAvailability.AVAILABLE)
-        val errorMessage = bundle.getString(ITEM_ERROR_MESSAGE)
-
-        return runCatching {
-            when (typeStr) {
-                CarePadSettingType.BOOLEAN.name -> {
-                    val value = bundle.getBoolean(ITEM_VALUE_BOOLEAN)
-                    CarePadSettingItem.BooleanItem(
-                        id = id,
-                        title = title,
-                        description = description,
-                        editable = editable,
-                        availability = availability,
-                        errorMessage = errorMessage,
-                        value = value
-                    )
-                }
-
-                CarePadSettingType.SINGLE_CHOICE.name -> {
-                    val selected = bundle.getString(ITEM_SELECTED_OPTION_ID) ?: return null
-                    val optBundles = getParcelableBundleArrayList(bundle, ITEM_OPTIONS)
-                    val options = optBundles.mapNotNull { optB ->
-                        val optId = optB.getString(OPTION_ID) ?: return@mapNotNull null
-                        val optLabel = optB.getString(OPTION_LABEL) ?: return@mapNotNull null
-                        CarePadSettingOption(optId, optLabel)
-                    }
-                    CarePadSettingItem.SingleChoiceItem(
-                        id = id,
-                        title = title,
-                        description = description,
-                        editable = editable,
-                        availability = availability,
-                        errorMessage = errorMessage,
-                        selectedOptionId = selected,
-                        options = options
-                    )
-                }
-
-                CarePadSettingType.READ_ONLY_INFO.name -> {
-                    val value = bundle.getString(ITEM_VALUE_STRING) ?: ""
-                    CarePadSettingItem.ReadOnlyInfoItem(
-                        id = id,
-                        title = title,
-                        description = description,
-                        availability = availability,
-                        errorMessage = errorMessage,
-                        value = value
-                    )
-                }
-
-                else -> null
-            }
-        }.getOrNull()
+    private fun requiredBoundedString(bundle: Bundle, key: String, maxLength: Int): String {
+        require(bundle.containsKey(key))
+        val value = bundle.getString(key) ?: error("Missing string")
+        require(value.isNotBlank() && value.length <= maxLength)
+        return value
     }
 
-    private fun getParcelableBundleArrayList(bundle: Bundle, key: String): List<Bundle> {
-        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            bundle.getParcelableArrayList(key, Bundle::class.java).orEmpty()
+    private fun requiredStringAllowEmpty(bundle: Bundle, key: String, maxLength: Int): String {
+        require(bundle.containsKey(key))
+        val value = bundle.getString(key) ?: error("Missing string")
+        require(value.length <= maxLength)
+        return value
+    }
+
+    private fun optionalBoundedString(bundle: Bundle, key: String, maxLength: Int): String? {
+        if (!bundle.containsKey(key)) return null
+        val value = bundle.getString(key) ?: error("Invalid optional string")
+        require(value.length <= maxLength)
+        return value
+    }
+
+    private fun requiredBundleList(bundle: Bundle, key: String): List<Bundle> {
+        require(bundle.containsKey(key))
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            bundle.getParcelableArrayList(key, Bundle::class.java)
+                ?: error("Missing bundle list")
         } else {
             @Suppress("DEPRECATION")
-            bundle.getParcelableArrayList<Bundle>(key).orEmpty()
+            bundle.getParcelableArrayList<Bundle>(key)
+                ?: error("Missing bundle list")
         }
     }
 
-    private fun sanitizeErrorMessage(raw: String): String {
-        val sanitized = raw.replace('\n', ' ').replace('\r', ' ').trim()
-        return if (sanitized.length > CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH) {
-            sanitized.take(CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH)
-        } else {
-            sanitized
-        }
+    private fun sanitizeOutgoingMessage(raw: String?): String? = raw?.let {
+        val sanitized = it.replace('\n', ' ').replace('\r', ' ').trim()
+        sanitized.take(CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH)
+    }
+
+    private inline fun <T> decodeOrNull(block: () -> T): T? =
+        runCatching(block).getOrNull()
+
+    private inline fun decodeOrUnavailableSnapshot(
+        block: () -> CarePadSettingsSnapshotResult
+    ): CarePadSettingsSnapshotResult = runCatching(block).getOrElse {
+        CarePadSettingsSnapshotResult.Unavailable()
+    }
+
+    private inline fun decodeOrUnavailableSetting(
+        block: () -> CarePadSettingResult
+    ): CarePadSettingResult = runCatching(block).getOrElse {
+        CarePadSettingResult.Unavailable()
+    }
+
+    private enum class ExpectedValue {
+        BOOLEAN,
+        SINGLE_CHOICE
     }
 }
-

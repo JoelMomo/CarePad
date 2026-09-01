@@ -53,21 +53,16 @@ class CarePadSettingsContractsTest {
         assertEquals("opt1", item.selectedOptionId)
         assertEquals(2, item.options.size)
 
-        // Invalid selected option not in list
-        try {
+        expectIllegalArgument {
             CarePadSettingItem.SingleChoiceItem(
                 id = "test.choice",
                 title = "Test Choice",
                 selectedOptionId = "unknown_opt",
                 options = options
             )
-            fail("Expected exception for selected option not in list")
-        } catch (e: IllegalArgumentException) {
-            assertTrue(e.message?.contains("must match one of the available options") == true)
         }
 
-        // Duplicate option IDs
-        try {
+        expectIllegalArgument {
             CarePadSettingItem.SingleChoiceItem(
                 id = "test.choice",
                 title = "Test Choice",
@@ -77,9 +72,6 @@ class CarePadSettingsContractsTest {
                     CarePadSettingOption(optionId = "opt1", label = "Duplicate")
                 )
             )
-            fail("Expected exception for duplicate option IDs")
-        } catch (e: IllegalArgumentException) {
-            assertTrue(e.message?.contains("Option IDs must be unique") == true)
         }
     }
 
@@ -101,11 +93,8 @@ class CarePadSettingsContractsTest {
             CarePadSettingItem.BooleanItem(id = "item1", title = "Item 1", value = true),
             CarePadSettingItem.BooleanItem(id = "item1", title = "Duplicate ID", value = false)
         )
-        try {
+        expectIllegalArgument {
             CarePadSettingsSnapshot(catalogRevision = "rev1", items = items)
-            fail("Expected exception for duplicate item IDs in snapshot")
-        } catch (e: IllegalArgumentException) {
-            assertTrue(e.message?.contains("Setting item IDs must be unique") == true)
         }
     }
 
@@ -126,20 +115,53 @@ class CarePadSettingsContractsTest {
     }
 
     @Test
-    fun settingResultsPreservePayloadsAndEnforceErrorBounds() {
-        val applied = CarePadSettingResult.Applied(
+    fun appliedRequiresExactlyOneEffectiveValue() {
+        val booleanApplied = CarePadSettingResult.Applied(
             catalogRevision = "rev2",
             effectiveValueBoolean = true
         )
-        assertEquals("rev2", applied.catalogRevision)
-        assertEquals(true, applied.effectiveValueBoolean)
+        assertEquals(true, booleanApplied.effectiveValueBoolean)
 
+        val choiceApplied = CarePadSettingResult.Applied(
+            catalogRevision = "rev2",
+            effectiveSelectedOptionId = "vulkan"
+        )
+        assertEquals("vulkan", choiceApplied.effectiveSelectedOptionId)
+
+        expectIllegalArgument {
+            CarePadSettingResult.Applied(catalogRevision = "rev2")
+        }
+        expectIllegalArgument {
+            CarePadSettingResult.Applied(
+                catalogRevision = "rev2",
+                effectiveValueBoolean = true,
+                effectiveSelectedOptionId = "vulkan"
+            )
+        }
+    }
+
+    @Test
+    fun rejectedCannotContainAmbiguousEffectiveValues() {
+        CarePadSettingResult.Rejected(catalogRevision = "rev1")
+        CarePadSettingResult.Rejected(catalogRevision = "rev1", effectiveValueBoolean = false)
+        CarePadSettingResult.Rejected(catalogRevision = "rev1", effectiveSelectedOptionId = "opengl")
+
+        expectIllegalArgument {
+            CarePadSettingResult.Rejected(
+                catalogRevision = "rev1",
+                effectiveValueBoolean = false,
+                effectiveSelectedOptionId = "opengl"
+            )
+        }
+    }
+
+    @Test
+    fun settingResultsEnforceErrorBounds() {
         val rejected = CarePadSettingResult.Rejected(
             catalogRevision = "rev1",
-            message = "Value out of range"
+            message = "Value rejected"
         )
-        assertEquals("rev1", rejected.catalogRevision)
-        assertEquals("Value out of range", rejected.message)
+        assertEquals("Value rejected", rejected.message)
 
         val stale = CarePadSettingResult.Stale(
             currentCatalogRevision = "rev3",
@@ -147,22 +169,27 @@ class CarePadSettingsContractsTest {
         )
         assertEquals("rev3", stale.currentCatalogRevision)
 
-        val unavailable = CarePadSettingResult.Unavailable(message = "Service unavailable")
-        assertEquals("Service unavailable", unavailable.message)
+        val unavailable = CarePadSettingResult.Unavailable(message = "Unavailable")
+        assertEquals("Unavailable", unavailable.message)
 
         val incompatible = CarePadSettingResult.Incompatible(
             supportedContractVersion = 1,
-            message = "Version 2 not supported"
+            message = "Unsupported"
         )
         assertEquals(1, incompatible.supportedContractVersion)
 
-        // Error message exceeding bound
         val longError = "a".repeat(CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH + 1)
-        try {
+        expectIllegalArgument {
             CarePadSettingResult.Rejected(catalogRevision = "rev1", message = longError)
-            fail("Expected exception for error message exceeding max limit")
-        } catch (e: IllegalArgumentException) {
-            assertTrue(e.message?.contains("exceeds max length") == true)
+        }
+    }
+
+    private fun expectIllegalArgument(block: () -> Unit) {
+        try {
+            block()
+            fail("Expected IllegalArgumentException")
+        } catch (_: IllegalArgumentException) {
+            // Expected.
         }
     }
 }

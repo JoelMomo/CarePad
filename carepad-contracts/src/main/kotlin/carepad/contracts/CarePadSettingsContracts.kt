@@ -22,7 +22,7 @@ object CarePadSettingsAuthorities {
     }
 }
 
-/** Defensive transport limits protecting the Binder buffer and preventing excessive allocations. */
+/** Defensive transport limits protecting the Binder buffer and excessive allocations. */
 object CarePadSettingsLimits {
     const val MAX_ITEMS_COUNT = 50
     const val MAX_OPTIONS_PER_CHOICE = 20
@@ -54,10 +54,7 @@ data class CarePadSettingOption(
     val label: String
 ) {
     init {
-        require(optionId.isNotBlank()) { "Option ID must not be blank" }
-        require(optionId.length <= CarePadSettingsLimits.MAX_ID_LENGTH) {
-            "Option ID exceeds max length ${CarePadSettingsLimits.MAX_ID_LENGTH}"
-        }
+        requireValidId(optionId, "Option ID")
         require(label.isNotBlank()) { "Option label must not be blank" }
         require(label.length <= CarePadSettingsLimits.MAX_TITLE_LENGTH) {
             "Option label exceeds max length ${CarePadSettingsLimits.MAX_TITLE_LENGTH}"
@@ -65,11 +62,6 @@ data class CarePadSettingOption(
     }
 }
 
-/**
- * Base sealed class for inline settings items.
- *
- * Fields are common across all items; specific payloads are enclosed in subclasses.
- */
 sealed class CarePadSettingItem {
     abstract val id: String
     abstract val type: CarePadSettingType
@@ -80,10 +72,7 @@ sealed class CarePadSettingItem {
     abstract val errorMessage: String?
 
     protected fun validateCommon() {
-        require(id.isNotBlank()) { "Setting ID must not be blank" }
-        require(id.length <= CarePadSettingsLimits.MAX_ID_LENGTH) {
-            "Setting ID exceeds max length ${CarePadSettingsLimits.MAX_ID_LENGTH}"
-        }
+        requireValidId(id, "Setting ID")
         require(title.isNotBlank()) { "Title must not be blank" }
         require(title.length <= CarePadSettingsLimits.MAX_TITLE_LENGTH) {
             "Title exceeds max length ${CarePadSettingsLimits.MAX_TITLE_LENGTH}"
@@ -93,11 +82,7 @@ sealed class CarePadSettingItem {
                 "Description exceeds max length ${CarePadSettingsLimits.MAX_DESCRIPTION_LENGTH}"
             }
         }
-        errorMessage?.let {
-            require(it.length <= CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH) {
-                "Error message exceeds max length ${CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH}"
-            }
-        }
+        requireValidOptionalMessage(errorMessage)
     }
 
     data class BooleanItem(
@@ -126,6 +111,7 @@ sealed class CarePadSettingItem {
         override val type: CarePadSettingType = CarePadSettingType.SINGLE_CHOICE
         init {
             validateCommon()
+            requireValidId(selectedOptionId, "Selected option ID")
             require(options.isNotEmpty()) { "Single choice setting must have at least one option" }
             require(options.size <= CarePadSettingsLimits.MAX_OPTIONS_PER_CHOICE) {
                 "Single choice exceeds max options count ${CarePadSettingsLimits.MAX_OPTIONS_PER_CHOICE}"
@@ -133,8 +119,9 @@ sealed class CarePadSettingItem {
             require(options.any { it.optionId == selectedOptionId }) {
                 "Selected option ID '$selectedOptionId' must match one of the available options"
             }
-            val uniqueIds = options.map { it.optionId }.toSet()
-            require(uniqueIds.size == options.size) { "Option IDs must be unique" }
+            require(options.map { it.optionId }.toSet().size == options.size) {
+                "Option IDs must be unique"
+            }
         }
     }
 
@@ -160,9 +147,9 @@ sealed class CarePadSettingItem {
 /**
  * Snapshot of inline settings returned by a module.
  *
- * @param contractVersion Version of the settings contract.
- * @param catalogRevision Opaque revision identifier used for equality comparison to detect stale writes.
- * @param items List of settings items currently published by the module.
+ * [catalogRevision] is an opaque equality token for catalog/semantic changes that can make a
+ * previously prepared write obsolete. Ordinary value changes do not, by themselves, require a
+ * new revision.
  */
 data class CarePadSettingsSnapshot(
     val contractVersion: Int = CarePadSettingsProtocol.CONTRACT_VERSION,
@@ -171,15 +158,13 @@ data class CarePadSettingsSnapshot(
 ) {
     init {
         require(contractVersion > 0) { "Contract version must be positive" }
-        require(catalogRevision.isNotBlank()) { "Catalog revision must not be blank" }
-        require(catalogRevision.length <= CarePadSettingsLimits.MAX_REVISION_LENGTH) {
-            "Catalog revision exceeds max length ${CarePadSettingsLimits.MAX_REVISION_LENGTH}"
-        }
+        requireValidRevision(catalogRevision)
         require(items.size <= CarePadSettingsLimits.MAX_ITEMS_COUNT) {
             "Items count exceeds max limit ${CarePadSettingsLimits.MAX_ITEMS_COUNT}"
         }
-        val uniqueIds = items.map { it.id }.toSet()
-        require(uniqueIds.size == items.size) { "Setting item IDs must be unique within a snapshot" }
+        require(items.map { it.id }.toSet().size == items.size) {
+            "Setting item IDs must be unique within a snapshot"
+        }
     }
 }
 
@@ -191,7 +176,11 @@ sealed class CarePadSettingResult {
         val effectiveSelectedOptionId: String? = null
     ) : CarePadSettingResult() {
         init {
-            require(catalogRevision.isNotBlank()) { "Catalog revision must not be blank" }
+            requireValidRevision(catalogRevision)
+            require((effectiveValueBoolean != null) xor (effectiveSelectedOptionId != null)) {
+                "APPLIED must contain exactly one effective value"
+            }
+            effectiveSelectedOptionId?.let { requireValidId(it, "Effective option ID") }
         }
     }
 
@@ -202,12 +191,12 @@ sealed class CarePadSettingResult {
         val message: String? = null
     ) : CarePadSettingResult() {
         init {
-            require(catalogRevision.isNotBlank()) { "Catalog revision must not be blank" }
-            message?.let {
-                require(it.length <= CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH) {
-                    "Error message exceeds max length ${CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH}"
-                }
+            requireValidRevision(catalogRevision)
+            require(!(effectiveValueBoolean != null && effectiveSelectedOptionId != null)) {
+                "REJECTED cannot contain multiple effective value representations"
             }
+            effectiveSelectedOptionId?.let { requireValidId(it, "Effective option ID") }
+            requireValidOptionalMessage(message)
         }
     }
 
@@ -216,25 +205,13 @@ sealed class CarePadSettingResult {
         val message: String? = null
     ) : CarePadSettingResult() {
         init {
-            require(currentCatalogRevision.isNotBlank()) { "Current catalog revision must not be blank" }
-            message?.let {
-                require(it.length <= CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH) {
-                    "Error message exceeds max length ${CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH}"
-                }
-            }
+            requireValidRevision(currentCatalogRevision)
+            requireValidOptionalMessage(message)
         }
     }
 
-    data class Unavailable(
-        val message: String? = null
-    ) : CarePadSettingResult() {
-        init {
-            message?.let {
-                require(it.length <= CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH) {
-                    "Error message exceeds max length ${CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH}"
-                }
-            }
-        }
+    data class Unavailable(val message: String? = null) : CarePadSettingResult() {
+        init { requireValidOptionalMessage(message) }
     }
 
     data class Incompatible(
@@ -242,11 +219,8 @@ sealed class CarePadSettingResult {
         val message: String? = null
     ) : CarePadSettingResult() {
         init {
-            message?.let {
-                require(it.length <= CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH) {
-                    "Error message exceeds max length ${CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH}"
-                }
-            }
+            require(supportedContractVersion > 0) { "Supported contract version must be positive" }
+            requireValidOptionalMessage(message)
         }
     }
 }
@@ -254,9 +228,40 @@ sealed class CarePadSettingResult {
 /** Result of querying a module's settings snapshot. */
 sealed class CarePadSettingsSnapshotResult {
     data class Success(val snapshot: CarePadSettingsSnapshot) : CarePadSettingsSnapshotResult()
-    data class Unavailable(val message: String? = null) : CarePadSettingsSnapshotResult()
+
+    data class Unavailable(val message: String? = null) : CarePadSettingsSnapshotResult() {
+        init { requireValidOptionalMessage(message) }
+    }
+
     data class Incompatible(
         val supportedContractVersion: Int = CarePadSettingsProtocol.CONTRACT_VERSION,
         val message: String? = null
-    ) : CarePadSettingsSnapshotResult()
+    ) : CarePadSettingsSnapshotResult() {
+        init {
+            require(supportedContractVersion > 0) { "Supported contract version must be positive" }
+            requireValidOptionalMessage(message)
+        }
+    }
+}
+
+private fun requireValidId(value: String, label: String) {
+    require(value.isNotBlank()) { "$label must not be blank" }
+    require(value.length <= CarePadSettingsLimits.MAX_ID_LENGTH) {
+        "$label exceeds max length ${CarePadSettingsLimits.MAX_ID_LENGTH}"
+    }
+}
+
+private fun requireValidRevision(value: String) {
+    require(value.isNotBlank()) { "Catalog revision must not be blank" }
+    require(value.length <= CarePadSettingsLimits.MAX_REVISION_LENGTH) {
+        "Catalog revision exceeds max length ${CarePadSettingsLimits.MAX_REVISION_LENGTH}"
+    }
+}
+
+private fun requireValidOptionalMessage(message: String?) {
+    message?.let {
+        require(it.length <= CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH) {
+            "Error message exceeds max length ${CarePadSettingsLimits.MAX_ERROR_MESSAGE_LENGTH}"
+        }
+    }
 }

@@ -17,7 +17,8 @@
 
         <activity
             android:name=".LabDelegatedSettingsActivity"
-            android:exported="true">
+            android:exported="true"
+            android:permission="dev.carepad.permission.MODULE_SETTINGS">
             <intent-filter>
                 <action android:name="dev.carepad.action.OPEN_MODULE_SETTINGS" />
                 <category android:name="android.intent.category.DEFAULT" />
