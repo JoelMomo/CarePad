@@ -552,12 +552,11 @@ fun CarePadShellScreen(
                         CarePadDestination.SETTINGS -> settingsContent(
                             { goTo(CarePadDestination.HOME) },
                             { mode, focused ->
+                                val themeFocus = CarePadFocusKey.Theme(mode)
                                 if (focused) {
-                                    dispatchFocus(
-                                        CarePadFocusEvent.FocusObserved(
-                                            CarePadFocusKey.Theme(mode)
-                                        )
-                                    )
+                                    dispatchFocus(CarePadFocusEvent.FocusObserved(themeFocus))
+                                } else if (focusControllerState.observedFocus == themeFocus) {
+                                    dispatchFocus(CarePadFocusEvent.FocusObserved(null))
                                 }
                             },
                             { mode ->
