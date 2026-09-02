@@ -1,11 +1,9 @@
 package com.joel.thordoctor
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
 import com.joel.thordoctor.modules.gamesbios.library.GameLibraryEntry
-import com.joel.thordoctor.modules.gamesbios.library.GameLibraryRuntime
+import com.joel.thordoctor.modules.gamesbios.library.GameLibraryService
 import com.joel.thordoctor.modules.gamesbios.library.GameLibraryScanResult
 import org.json.JSONObject
 
@@ -28,186 +26,62 @@ object GameLibraryStorage {
     fun setRootFolder(
         context: Context,
         uri: Uri
-    ): Boolean {
-
-        val flags =
-            Intent.FLAG_GRANT_READ_URI_PERMISSION
-
-        val oldUri =
-            AppPreferences.getGameFolderUri(
-                context
-            )
-
-        try {
-            context.contentResolver
-                .takePersistableUriPermission(
-                    uri,
-                    flags
-                )
-        } catch (_: SecurityException) {
-            return false
-        }
-
-        val directory =
-            DocumentFile.fromTreeUri(
-                context,
-                uri
-            )
-
-        if (
-            directory == null ||
-            !directory.exists() ||
-            !directory.canRead()
-        ) {
-            if (
-                oldUri == null ||
-                oldUri != uri
-            ) {
-                try {
-                    context.contentResolver
-                        .releasePersistableUriPermission(
-                            uri,
-                            flags
-                        )
-                } catch (_: Exception) {
-                }
-            }
-
-            return false
-        }
-
-        if (
-            oldUri != null &&
-            oldUri != uri
-        ) {
-            try {
-                context.contentResolver
-                    .releasePersistableUriPermission(
-                        oldUri,
-                        flags
-                    )
-            } catch (_: Exception) {
-            }
-        }
-
-        AppPreferences.setGameFolderUri(
+    ): Boolean =
+        GameLibraryService.setRootFolder(
             context,
             uri
         )
 
-        clearCachedScan(context)
-
-        return true
-    }
-
     fun rootFolderUri(
         context: Context
     ): Uri? =
-        AppPreferences.getGameFolderUri(
+        GameLibraryService.rootFolderUri(
             context
         )
 
     fun hasValidRootFolder(
         context: Context
-    ): Boolean {
-
-        val uri =
-            rootFolderUri(context)
-                ?: return false
-
-        val directory =
-            DocumentFile.fromTreeUri(
-                context,
-                uri
-            )
-                ?: return false
-
-        return directory.exists() &&
-            directory.canRead()
-    }
+    ): Boolean =
+        GameLibraryService.hasValidRootFolder(
+            context
+        )
 
     fun folderDisplayName(
         context: Context
-    ): String? {
-
-        val uri =
-            rootFolderUri(context)
-                ?: return null
-
-        return DocumentFile.fromTreeUri(
-            context,
-            uri
+    ): String? =
+        GameLibraryService.folderDisplayName(
+            context
         )
-            ?.name
-            ?.takeIf {
-                it.isNotBlank()
-            }
-    }
 
     fun cachedGameCount(
         context: Context
     ): Int =
-        GameLibraryRuntime.cachedGameCount(
+        GameLibraryService.cachedGameCount(
             context
         )
 
     fun lastScanTimestamp(
         context: Context
     ): Long =
-        GameLibraryRuntime.lastScanTimestamp(
+        GameLibraryService.lastScanTimestamp(
             context
         )
 
     fun scan(
         context: Context
     ): ScanResult {
-
-        val uri =
-            rootFolderUri(context)
-                ?: return emptyResult(
-                    context
-                )
-
-        val root =
-            DocumentFile.fromTreeUri(
-                context,
-                uri
+        val execution =
+            GameLibraryService.scan(
+                context
             )
 
-        if (
-            root == null ||
-            !root.exists() ||
-            !root.canRead()
-        ) {
-            return emptyResult(
+        if (execution.cacheUpdated) {
+            LegacyGameLibraryDiagnosticBridge.refreshIfPresent(
                 context
             )
         }
 
-        val runtimeResult =
-            GameLibraryRuntime.scan(
-                root
-            )
-
-        val result =
-            runtimeResult.toFacade()
-
-        // The user may change the selected folder while a large scan is still running.
-        // In that case the old result must never overwrite the cache for the new folder.
-        if (rootFolderUri(context) != uri) {
-            return result
-        }
-
-        GameLibraryRuntime.persistScan(
-            context,
-            runtimeResult
-        )
-
-        LegacyGameLibraryDiagnosticBridge.refreshIfPresent(
-            context
-        )
-
-        return result
+        return execution.result.toFacade()
     }
 
     fun buildDiagnosticJson(
@@ -216,32 +90,6 @@ object GameLibraryStorage {
         LegacyGameLibraryDiagnosticBridge.buildDiagnosticJson(
             context
         )
-
-    private fun emptyResult(
-        context: Context
-    ): ScanResult {
-
-        clearCachedScan(context)
-
-        return ScanResult(
-            folderName =
-                folderDisplayName(context)
-                    .orEmpty(),
-            gameCount = 0,
-            scannedAt =
-                System.currentTimeMillis(),
-            games =
-                emptyList()
-        )
-    }
-
-    private fun clearCachedScan(
-        context: Context
-    ) {
-        GameLibraryRuntime.clearCachedScan(
-            context
-        )
-    }
 
     private fun GameLibraryScanResult.toFacade(): ScanResult =
         ScanResult(
