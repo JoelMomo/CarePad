@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.joel.thordoctor.R
 
 @Composable
-fun StorageCompatibilitySetupScreen(
+fun StorageSetupScreen(
     onContinue: () -> Unit
 ) {
     val continueClick = rememberCozyClick(onContinue)
