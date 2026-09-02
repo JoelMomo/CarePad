@@ -5,7 +5,6 @@ import android.net.Uri
 import com.joel.thordoctor.modules.gamesbios.library.GameLibraryEntry
 import com.joel.thordoctor.modules.gamesbios.library.GameLibraryService
 import com.joel.thordoctor.modules.gamesbios.library.GameLibraryScanResult
-import org.json.JSONObject
 
 object GameLibraryStorage {
 
@@ -69,27 +68,10 @@ object GameLibraryStorage {
 
     fun scan(
         context: Context
-    ): ScanResult {
-        val execution =
-            GameLibraryService.scan(
-                context
-            )
-
-        if (execution.cacheUpdated) {
-            LegacyGameLibraryDiagnosticBridge.refreshIfPresent(
-                context
-            )
-        }
-
-        return execution.result.toFacade()
-    }
-
-    fun buildDiagnosticJson(
-        context: Context
-    ): JSONObject =
-        LegacyGameLibraryDiagnosticBridge.buildDiagnosticJson(
+    ): ScanResult =
+        GameLibraryService.scan(
             context
-        )
+        ).result.toFacade()
 
     private fun GameLibraryScanResult.toFacade(): ScanResult =
         ScanResult(
