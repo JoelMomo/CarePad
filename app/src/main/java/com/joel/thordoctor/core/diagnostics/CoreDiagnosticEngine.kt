@@ -2,7 +2,6 @@ package com.joel.thordoctor.core.diagnostics
 
 import android.content.Context
 import android.os.Environment
-import com.joel.thordoctor.GameLibraryStorage
 import com.joel.thordoctor.core.device.DeviceEngine
 import com.joel.thordoctor.core.emulator.EmulatorEngine
 import com.joel.thordoctor.core.emulator.EmulatorRegistry
@@ -25,14 +24,6 @@ object CoreDiagnosticEngine {
             put("device", buildDeviceInfo())
             put("emulators", buildEmulatorInfo(context))
             put("configs", buildConfigInfo(storageRoot))
-
-            // Game-library data is read from the last explicit scan. The Core
-            // must never recursively scan a ROM tree during diagnostic export.
-            put(
-                "gameLibrary",
-                GameLibraryStorage.buildDiagnosticJson(context)
-            )
-
             put("session", readLatestSession(context))
         }
 
