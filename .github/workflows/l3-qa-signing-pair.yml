@@ -97,17 +97,25 @@ jobs:
           test -x "$APKSIGNER"
           test -x "$APKANALYZER"
 
-          "$APKSIGNER" verify "$BASE_APK"
-          "$APKSIGNER" verify "$CANDIDATE_APK"
+          mkdir -p "$RUNNER_TEMP/l3-qa-pair"
 
-          BASE_CERT="$("$APKSIGNER" verify --print-certs "$BASE_APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/{print tolower($2); exit}')"
-          CANDIDATE_CERT="$("$APKSIGNER" verify --print-certs "$CANDIDATE_APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/{print tolower($2); exit}')"
+          "$APKSIGNER" verify --print-certs "$BASE_APK" | tee "$RUNNER_TEMP/l3-qa-pair/baseline-certs.txt"
+          "$APKSIGNER" verify --print-certs "$CANDIDATE_APK" | tee "$RUNNER_TEMP/l3-qa-pair/candidate-certs.txt"
+
+          BASE_CERT="$(awk -F': ' 'tolower($0) ~ /certificate sha-256 digest/ {print tolower($NF); exit}' "$RUNNER_TEMP/l3-qa-pair/baseline-certs.txt")"
+          CANDIDATE_CERT="$(awk -F': ' 'tolower($0) ~ /certificate sha-256 digest/ {print tolower($NF); exit}' "$RUNNER_TEMP/l3-qa-pair/candidate-certs.txt")"
+          echo "baseline_certificate_sha256=$BASE_CERT"
+          echo "candidate_certificate_sha256=$CANDIDATE_CERT"
+          test -n "$BASE_CERT"
+          test -n "$CANDIDATE_CERT"
           test "$BASE_CERT" = "$EXPECTED_CERT_SHA256"
           test "$CANDIDATE_CERT" = "$EXPECTED_CERT_SHA256"
           test "$BASE_CERT" = "$CANDIDATE_CERT"
 
           BASE_PACKAGE="$("$APKANALYZER" manifest application-id "$BASE_APK")"
           CANDIDATE_PACKAGE="$("$APKANALYZER" manifest application-id "$CANDIDATE_APK")"
+          echo "baseline_package=$BASE_PACKAGE"
+          echo "candidate_package=$CANDIDATE_PACKAGE"
           test -n "$BASE_PACKAGE"
           test "$BASE_PACKAGE" = "$CANDIDATE_PACKAGE"
 
@@ -116,8 +124,9 @@ jobs:
 
           BASE_APK_SHA256="$(sha256sum "$BASE_APK" | awk '{print $1}')"
           CANDIDATE_APK_SHA256="$(sha256sum "$CANDIDATE_APK" | awk '{print $1}')"
+          echo "baseline_apk_sha256=$BASE_APK_SHA256"
+          echo "candidate_apk_sha256=$CANDIDATE_APK_SHA256"
 
-          mkdir -p "$RUNNER_TEMP/l3-qa-pair"
           cp "$BASE_APK" "$RUNNER_TEMP/l3-qa-pair/CarePad-L3-QA-baseline-${BASELINE_SHA}.apk"
           cp "$CANDIDATE_APK" "$RUNNER_TEMP/l3-qa-pair/CarePad-L3-QA-candidate-${CANDIDATE_SHA}.apk"
 
@@ -158,6 +167,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CarePad-L3-QA-signing-report
-          path: ${{ runner.temp }}/l3-qa-pair/signing-report.txt
+          path: |
+            ${{ runner.temp }}/l3-qa-pair/signing-report.txt
+            ${{ runner.temp }}/l3-qa-pair/baseline-certs.txt
+            ${{ runner.temp }}/l3-qa-pair/candidate-certs.txt
           if-no-files-found: error
           retention-days: 7
