@@ -1,0 +1,163 @@
+name: L3 QA signed pair
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/l3-qa-signing-pair.yml
+      - .github/qa/l3-qa-debug.keystore.b64
+      - .github/qa/README.md
+
+permissions:
+  contents: read
+
+env:
+  BASELINE_SHA: 75095351e26129a5cd0a4ccfb669adf011c2b15e
+  CANDIDATE_SHA: ed902d80e08aacfb52dd7edaa6c2bd52bf916b18
+  EXPECTED_CERT_SHA256: 8513b30c18d3bb7574830a830461c862fe26c124dd1b1c694f7f58af271662e6
+
+jobs:
+  build-same-signer-pair:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout QA infrastructure
+        uses: actions/checkout@v4
+
+      - name: Checkout exact baseline
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SHA }}
+          path: baseline
+          persist-credentials: false
+
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          path: candidate
+          persist-credentials: false
+
+      - name: Verify exact source SHAs
+        run: |
+          set -euo pipefail
+          test "$(git -C baseline rev-parse HEAD)" = "$BASELINE_SHA"
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build SDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install reproducible QA debug signer
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.android"
+          base64 --decode .github/qa/l3-qa-debug.keystore.b64 > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+
+          CERT_SHA256="$(keytool -list -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            | awk '/SHA256:/{gsub(":", "", $2); print tolower($2); exit}')"
+
+          echo "qa_signer_sha256=$CERT_SHA256"
+          test "$CERT_SHA256" = "$EXPECTED_CERT_SHA256"
+
+      - name: Build exact baseline and candidate debug APKs
+        run: |
+          set -euo pipefail
+          chmod +x baseline/gradlew candidate/gradlew
+          ./baseline/gradlew -p baseline :app:assembleDebug --stacktrace
+          ./candidate/gradlew -p candidate :app:assembleDebug --stacktrace
+
+      - name: Verify package, signer and APK digests
+        run: |
+          set -euo pipefail
+
+          BASE_APK="$GITHUB_WORKSPACE/baseline/app/build/outputs/apk/debug/app-debug.apk"
+          CANDIDATE_APK="$GITHUB_WORKSPACE/candidate/app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$BASE_APK"
+          test -f "$CANDIDATE_APK"
+
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -print -quit)"
+          test -x "$APKSIGNER"
+          test -x "$APKANALYZER"
+
+          "$APKSIGNER" verify "$BASE_APK"
+          "$APKSIGNER" verify "$CANDIDATE_APK"
+
+          BASE_CERT="$("$APKSIGNER" verify --print-certs "$BASE_APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/{print tolower($2); exit}')"
+          CANDIDATE_CERT="$("$APKSIGNER" verify --print-certs "$CANDIDATE_APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/{print tolower($2); exit}')"
+          test "$BASE_CERT" = "$EXPECTED_CERT_SHA256"
+          test "$CANDIDATE_CERT" = "$EXPECTED_CERT_SHA256"
+          test "$BASE_CERT" = "$CANDIDATE_CERT"
+
+          BASE_PACKAGE="$("$APKANALYZER" manifest application-id "$BASE_APK")"
+          CANDIDATE_PACKAGE="$("$APKANALYZER" manifest application-id "$CANDIDATE_APK")"
+          test -n "$BASE_PACKAGE"
+          test "$BASE_PACKAGE" = "$CANDIDATE_PACKAGE"
+
+          BASE_VERSION="$("$APKANALYZER" manifest version-code "$BASE_APK")"
+          CANDIDATE_VERSION="$("$APKANALYZER" manifest version-code "$CANDIDATE_APK")"
+
+          BASE_APK_SHA256="$(sha256sum "$BASE_APK" | awk '{print $1}')"
+          CANDIDATE_APK_SHA256="$(sha256sum "$CANDIDATE_APK" | awk '{print $1}')"
+
+          mkdir -p "$RUNNER_TEMP/l3-qa-pair"
+          cp "$BASE_APK" "$RUNNER_TEMP/l3-qa-pair/CarePad-L3-QA-baseline-${BASELINE_SHA}.apk"
+          cp "$CANDIDATE_APK" "$RUNNER_TEMP/l3-qa-pair/CarePad-L3-QA-candidate-${CANDIDATE_SHA}.apk"
+
+          cat > "$RUNNER_TEMP/l3-qa-pair/signing-report.txt" <<EOF
+          baseline_source_sha=$BASELINE_SHA
+          candidate_source_sha=$CANDIDATE_SHA
+          baseline_apk_sha256=$BASE_APK_SHA256
+          candidate_apk_sha256=$CANDIDATE_APK_SHA256
+          baseline_certificate_sha256=$BASE_CERT
+          candidate_certificate_sha256=$CANDIDATE_CERT
+          package_name=$BASE_PACKAGE
+          baseline_version_code=$BASE_VERSION
+          candidate_version_code=$CANDIDATE_VERSION
+          adb_install_r_cryptographically_possible=true
+          reason=same_package_and_same_signing_certificate
+          signer_scope=QA_LAB_ONLY_NOT_FOR_RELEASE
+          EOF
+
+          cat "$RUNNER_TEMP/l3-qa-pair/signing-report.txt"
+
+      - name: Upload exact baseline QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-L3-QA-baseline-same-signer
+          path: ${{ runner.temp }}/l3-qa-pair/CarePad-L3-QA-baseline-*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload exact candidate QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-L3-QA-candidate-same-signer
+          path: ${{ runner.temp }}/l3-qa-pair/CarePad-L3-QA-candidate-*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload signing verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-L3-QA-signing-report
+          path: ${{ runner.temp }}/l3-qa-pair/signing-report.txt
+          if-no-files-found: error
+          retention-days: 7
