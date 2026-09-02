@@ -63,12 +63,12 @@ jobs:
       - name: Install reproducible QA debug signer
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.android"
-          base64 --decode .github/qa/l3-qa-debug.keystore.b64 > "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
+          mkdir -p "$RUNNER_TEMP/l3-qa-pair"
+          base64 --decode .github/qa/l3-qa-debug.keystore.b64 > "$RUNNER_TEMP/l3-qa-pair/qa-debug.keystore"
+          chmod 600 "$RUNNER_TEMP/l3-qa-pair/qa-debug.keystore"
 
           CERT_SHA256="$(keytool -list -v \
-            -keystore "$HOME/.android/debug.keystore" \
+            -keystore "$RUNNER_TEMP/l3-qa-pair/qa-debug.keystore" \
             -storepass android \
             -alias androiddebugkey \
             | awk '/SHA256:/{gsub(":", "", $2); print tolower($2); exit}')"
@@ -83,21 +83,51 @@ jobs:
           ./baseline/gradlew -p baseline :app:assembleDebug --stacktrace
           ./candidate/gradlew -p candidate :app:assembleDebug --stacktrace
 
+      - name: Re-sign both APKs explicitly with the QA signer
+        run: |
+          set -euo pipefail
+
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          QA_KEYSTORE="$RUNNER_TEMP/l3-qa-pair/qa-debug.keystore"
+          BASE_RAW="$GITHUB_WORKSPACE/baseline/app/build/outputs/apk/debug/app-debug.apk"
+          CANDIDATE_RAW="$GITHUB_WORKSPACE/candidate/app/build/outputs/apk/debug/app-debug.apk"
+          BASE_APK="$RUNNER_TEMP/l3-qa-pair/CarePad-L3-QA-baseline-${BASELINE_SHA}.apk"
+          CANDIDATE_APK="$RUNNER_TEMP/l3-qa-pair/CarePad-L3-QA-candidate-${CANDIDATE_SHA}.apk"
+
+          test -x "$APKSIGNER"
+          test -f "$QA_KEYSTORE"
+          test -f "$BASE_RAW"
+          test -f "$CANDIDATE_RAW"
+
+          "$APKSIGNER" sign \
+            --ks "$QA_KEYSTORE" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out "$BASE_APK" \
+            "$BASE_RAW"
+
+          "$APKSIGNER" sign \
+            --ks "$QA_KEYSTORE" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out "$CANDIDATE_APK" \
+            "$CANDIDATE_RAW"
+
       - name: Verify package, signer and APK digests
         run: |
           set -euo pipefail
 
-          BASE_APK="$GITHUB_WORKSPACE/baseline/app/build/outputs/apk/debug/app-debug.apk"
-          CANDIDATE_APK="$GITHUB_WORKSPACE/candidate/app/build/outputs/apk/debug/app-debug.apk"
-          test -f "$BASE_APK"
-          test -f "$CANDIDATE_APK"
-
+          BASE_APK="$RUNNER_TEMP/l3-qa-pair/CarePad-L3-QA-baseline-${BASELINE_SHA}.apk"
+          CANDIDATE_APK="$RUNNER_TEMP/l3-qa-pair/CarePad-L3-QA-candidate-${CANDIDATE_SHA}.apk"
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -print -quit)"
+
+          test -f "$BASE_APK"
+          test -f "$CANDIDATE_APK"
           test -x "$APKSIGNER"
           test -x "$APKANALYZER"
-
-          mkdir -p "$RUNNER_TEMP/l3-qa-pair"
 
           "$APKSIGNER" verify --print-certs "$BASE_APK" | tee "$RUNNER_TEMP/l3-qa-pair/baseline-certs.txt"
           "$APKSIGNER" verify --print-certs "$CANDIDATE_APK" | tee "$RUNNER_TEMP/l3-qa-pair/candidate-certs.txt"
@@ -127,9 +157,6 @@ jobs:
           echo "baseline_apk_sha256=$BASE_APK_SHA256"
           echo "candidate_apk_sha256=$CANDIDATE_APK_SHA256"
 
-          cp "$BASE_APK" "$RUNNER_TEMP/l3-qa-pair/CarePad-L3-QA-baseline-${BASELINE_SHA}.apk"
-          cp "$CANDIDATE_APK" "$RUNNER_TEMP/l3-qa-pair/CarePad-L3-QA-candidate-${CANDIDATE_SHA}.apk"
-
           cat > "$RUNNER_TEMP/l3-qa-pair/signing-report.txt" <<EOF
           baseline_source_sha=$BASELINE_SHA
           candidate_source_sha=$CANDIDATE_SHA
@@ -143,6 +170,7 @@ jobs:
           adb_install_r_cryptographically_possible=true
           reason=same_package_and_same_signing_certificate
           signer_scope=QA_LAB_ONLY_NOT_FOR_RELEASE
+          signing_method=explicit_apksigner_resign_after_exact_source_build
           EOF
 
           cat "$RUNNER_TEMP/l3-qa-pair/signing-report.txt"
