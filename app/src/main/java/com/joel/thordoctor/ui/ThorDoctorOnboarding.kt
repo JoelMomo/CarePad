@@ -385,7 +385,7 @@ private fun SetupScreen(
                         .align(Alignment.TopEnd)
                         .padding(16.dp)
                         .size(58.dp),
-                    shape = RoundedCornerShape(50),
+                    shape = CircleShape,
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f)
                 ) {}
 
