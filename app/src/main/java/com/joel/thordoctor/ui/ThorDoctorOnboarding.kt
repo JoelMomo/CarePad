@@ -65,7 +65,7 @@ fun PermissionSetupScreen(
             title = stringResource(R.string.permission_usage_title),
             description = stringResource(R.string.permission_usage_description),
             granted = status.usageAccess,
-            required = true,
+            required = false,
             buttonText = stringResource(R.string.grant_access),
             onClick = onUsagePermission
         )
@@ -75,7 +75,7 @@ fun PermissionSetupScreen(
             title = stringResource(R.string.permission_files_title),
             description = stringResource(R.string.permission_files_description),
             granted = status.allFilesAccess,
-            required = true,
+            required = false,
             buttonText = stringResource(R.string.grant_access),
             onClick = onFilesPermission
         )
@@ -90,23 +90,21 @@ fun PermissionSetupScreen(
             onClick = onNotificationPermission
         )
 
-        if (status.requiredGranted) {
-            Button(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(20.dp),
-                onClick = continueClick
-            ) {
-                Text(
-                    text = if (status.notifications) {
-                        stringResource(R.string.continue_button)
-                    } else {
-                        stringResource(R.string.continue_without_notifications)
-                    },
-                    fontWeight = FontWeight.Bold
-                )
-            }
+        Button(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(20.dp),
+            onClick = continueClick
+        ) {
+            Text(
+                text = if (status.notifications) {
+                    stringResource(R.string.continue_button)
+                } else {
+                    stringResource(R.string.continue_without_notifications)
+                },
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -329,7 +327,7 @@ fun GameLibrarySetupScreen(
         }
 
         Text(
-            text = stringResource(R.string.game_library_optional),
+            text = stringResource(R.string.game_library_note),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
