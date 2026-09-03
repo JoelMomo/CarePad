@@ -16,10 +16,7 @@ object PermissionManager {
         val usageAccess: Boolean,
         val allFilesAccess: Boolean,
         val notifications: Boolean
-    ) {
-        val requiredGranted: Boolean
-            get() = usageAccess && allFilesAccess
-    }
+    )
 
     fun status(context: Context): Status {
         val status = CorePermissionManager.status(context)
