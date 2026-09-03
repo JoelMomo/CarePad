@@ -256,8 +256,7 @@ private fun ThorDoctorApp(
     }
 
     val showPermissionSetup =
-        !onboardingComplete ||
-            !permissionStatus.requiredGranted
+        !onboardingComplete
 
     if (showPermissionSetup) {
         PermissionSetupScreen(
