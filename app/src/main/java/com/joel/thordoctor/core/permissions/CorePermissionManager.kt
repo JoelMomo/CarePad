@@ -17,10 +17,7 @@ data class PermissionStatus(
     val usageAccess: Boolean,
     val allFilesAccess: Boolean,
     val notifications: Boolean
-) {
-    val requiredGranted: Boolean
-        get() = usageAccess && allFilesAccess
-}
+)
 
 object CorePermissionManager {
 
