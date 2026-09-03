@@ -327,7 +327,7 @@ fun GameLibrarySetupScreen(
         }
 
         Text(
-            text = stringResource(R.string.game_library_note),
+            text = stringResource(R.string.game_library_optional),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -385,7 +385,7 @@ private fun SetupScreen(
                         .align(Alignment.TopEnd)
                         .padding(16.dp)
                         .size(58.dp),
-                    shape = CircleShape,
+                    shape = RoundedCornerShape(50),
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f)
                 ) {}
 
