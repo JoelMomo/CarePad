@@ -24,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
-import com.joel.thordoctor.core.diagnostics.CoreDiagnosticStorage
 import com.joel.thordoctor.ui.CarePadSettingsScreen
 import com.joel.thordoctor.ui.CarePadShellScreen
 import com.joel.thordoctor.ui.GameLibrarySetupScreen
@@ -100,12 +99,6 @@ private fun ThorDoctorApp(
     }
     var permissionStatus by remember {
         mutableStateOf(PermissionManager.status(context))
-    }
-    var diagnosticFolderName by remember {
-        mutableStateOf(CoreDiagnosticStorage.folderDisplayName(context))
-    }
-    var hasValidDiagnosticFolder by remember {
-        mutableStateOf(CoreDiagnosticStorage.hasValidCustomFolder(context))
     }
     var gameFolderName by remember {
         mutableStateOf(GameLibraryStorage.folderDisplayName(context))
@@ -204,25 +197,6 @@ private fun ThorDoctorApp(
             permissionStatus = PermissionManager.status(context)
         }
 
-    val diagnosticFolderLauncher =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.OpenDocumentTree()
-        ) { uri ->
-            if (uri != null) {
-                val success =
-                    CoreDiagnosticStorage.setCustomFolder(
-                        context,
-                        uri
-                    )
-
-                if (success) {
-                    diagnosticFolderName =
-                        CoreDiagnosticStorage.folderDisplayName(context)
-                    hasValidDiagnosticFolder = true
-                }
-            }
-        }
-
     val gameFolderLauncher =
         rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocumentTree()
@@ -265,17 +239,10 @@ private fun ThorDoctorApp(
 
         while (true) {
             permissionStatus = PermissionManager.status(context)
-            hasValidDiagnosticFolder =
-                CoreDiagnosticStorage.hasValidCustomFolder(context)
             hasValidGameFolder =
                 GameLibraryStorage.hasValidRootFolder(context)
             gameCount =
                 GameLibraryStorage.cachedGameCount(context)
-
-            if (hasValidDiagnosticFolder) {
-                diagnosticFolderName =
-                    CoreDiagnosticStorage.folderDisplayName(context)
-            }
 
             gameFolderName =
                 if (hasValidGameFolder) {
@@ -322,30 +289,14 @@ private fun ThorDoctorApp(
         return
     }
 
-    val showStorageSetup =
-        !storageOnboardingComplete ||
-            !hasValidDiagnosticFolder
-
-    if (showStorageSetup) {
+    if (!storageOnboardingComplete) {
         StorageSetupScreen(
-            folderSelected = hasValidDiagnosticFolder,
-            folderName =
-                if (hasValidDiagnosticFolder) {
-                    diagnosticFolderName
-                } else {
-                    null
-                },
-            onSelectFolder = {
-                diagnosticFolderLauncher.launch(null)
-            },
             onContinue = {
-                if (hasValidDiagnosticFolder) {
-                    AppPreferences.setStorageOnboardingComplete(
-                        context,
-                        true
-                    )
-                    storageOnboardingComplete = true
-                }
+                AppPreferences.setStorageOnboardingComplete(
+                    context,
+                    true
+                )
+                storageOnboardingComplete = true
             }
         )
         return

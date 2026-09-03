@@ -1,0 +1,4 @@
+<resources>
+    <string name="storage_compatibility_title">Storage</string>
+    <string name="storage_compatibility_intro">CarePad no longer requires you to choose a global diagnostic folder. You can continue without changing your existing access grants.</string>
+</resources>

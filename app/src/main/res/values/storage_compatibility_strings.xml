@@ -1,0 +1,4 @@
+<resources>
+    <string name="storage_compatibility_title">Almacenamiento</string>
+    <string name="storage_compatibility_intro">CarePad ya no necesita que elijas una carpeta global de diagnósticos. Puedes continuar sin cambiar tus accesos existentes.</string>
+</resources>
