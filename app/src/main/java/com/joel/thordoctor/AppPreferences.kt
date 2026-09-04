@@ -2,7 +2,6 @@ package com.joel.thordoctor
 
 import android.content.Context
 import android.net.Uri
-import com.joel.thordoctor.modules.gamesbios.library.GameLibraryRootPreferences
 
 enum class AppThemeMode {
     SYSTEM,
@@ -22,15 +21,6 @@ object AppPreferences {
     private const val PREFERENCES_NAME =
         "thor_doctor_preferences"
 
-    private const val KEY_ONBOARDING_COMPLETE =
-        "permissions_onboarding_complete"
-
-    private const val KEY_STORAGE_ONBOARDING_COMPLETE =
-        "storage_onboarding_complete"
-
-    private const val KEY_GAME_LIBRARY_ONBOARDING_COMPLETE =
-        "game_library_onboarding_complete"
-
     private const val KEY_THEME_MODE =
         "theme_mode"
 
@@ -39,36 +29,6 @@ object AppPreferences {
 
     private const val KEY_DIAGNOSTIC_FOLDER_URI =
         "diagnostic_folder_uri"
-
-    fun isOnboardingComplete(context: Context): Boolean =
-        preferences(context).getBoolean(KEY_ONBOARDING_COMPLETE, false)
-
-    fun setOnboardingComplete(context: Context, complete: Boolean) {
-        preferences(context)
-            .edit()
-            .putBoolean(KEY_ONBOARDING_COMPLETE, complete)
-            .apply()
-    }
-
-    fun isStorageOnboardingComplete(context: Context): Boolean =
-        preferences(context).getBoolean(KEY_STORAGE_ONBOARDING_COMPLETE, false)
-
-    fun setStorageOnboardingComplete(context: Context, complete: Boolean) {
-        preferences(context)
-            .edit()
-            .putBoolean(KEY_STORAGE_ONBOARDING_COMPLETE, complete)
-            .apply()
-    }
-
-    fun isGameLibraryOnboardingComplete(context: Context): Boolean =
-        preferences(context).getBoolean(KEY_GAME_LIBRARY_ONBOARDING_COMPLETE, false)
-
-    fun setGameLibraryOnboardingComplete(context: Context, complete: Boolean) {
-        preferences(context)
-            .edit()
-            .putBoolean(KEY_GAME_LIBRARY_ONBOARDING_COMPLETE, complete)
-            .apply()
-    }
 
     fun getThemeMode(context: Context): AppThemeMode {
         val value = preferences(context)
@@ -121,24 +81,6 @@ object AppPreferences {
             .edit()
             .remove(KEY_DIAGNOSTIC_FOLDER_URI)
             .apply()
-    }
-
-    fun getGameFolderUri(context: Context): Uri? =
-        GameLibraryRootPreferences.rootFolderUri(
-            context
-        )
-
-    fun setGameFolderUri(context: Context, uri: Uri) {
-        GameLibraryRootPreferences.setRootFolderUri(
-            context,
-            uri
-        )
-    }
-
-    fun clearGameFolder(context: Context) {
-        GameLibraryRootPreferences.clearRootFolder(
-            context
-        )
     }
 
     private fun readUri(context: Context, key: String): Uri? {

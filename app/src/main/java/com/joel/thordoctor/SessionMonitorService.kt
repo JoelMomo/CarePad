@@ -8,6 +8,9 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.joel.thordoctor.core.diagnostics.CoreDiagnosticEngine
+import com.joel.thordoctor.core.diagnostics.CoreDiagnosticStorage
+import com.joel.thordoctor.core.emulator.ForegroundEmulatorDetector
 import com.joel.thordoctor.modules.performance.PerformanceMetrics
 import com.joel.thordoctor.modules.performance.PerformanceMonitoringPhase
 import com.joel.thordoctor.modules.performance.PerformanceMonitoringPolicy
@@ -251,9 +254,9 @@ class SessionMonitorService : Service() {
 
         try {
 
-            DiagnosticStorage.delete(
+            CoreDiagnosticStorage.delete(
                 this,
-                DiagnosticStorage.SESSION_FILENAME
+                CoreDiagnosticStorage.SESSION_FILENAME
             )
 
         } catch (_: Exception) {
@@ -387,7 +390,7 @@ class SessionMonitorService : Service() {
                 .Monitoring -> {
 
                 val emulator =
-                    UsageDetector
+                    ForegroundEmulatorDetector
                         .DetectedEmulator(
                             name = recovery.emulatorName,
                             packageName = recovery.emulatorPackage
@@ -494,12 +497,12 @@ class SessionMonitorService : Service() {
     }
 
     private fun waitForEmulator():
-            UsageDetector.DetectedEmulator? {
+            ForegroundEmulatorDetector.DetectedEmulator? {
 
         while (shouldRun) {
 
             val emulator =
-                UsageDetector
+                ForegroundEmulatorDetector
                     .currentEmulator(
                         this
                     )
@@ -518,7 +521,7 @@ class SessionMonitorService : Service() {
 
     private fun monitorEmulator(
         emulator:
-        UsageDetector.DetectedEmulator
+        ForegroundEmulatorDetector.DetectedEmulator
     ) {
 
         val sessionStartedAt =
@@ -544,7 +547,7 @@ class SessionMonitorService : Service() {
 
     private fun monitorEmulator(
         emulator:
-        UsageDetector.DetectedEmulator,
+        ForegroundEmulatorDetector.DetectedEmulator,
         sessionId: String,
         sessionStartedAt: Long,
         samples: JSONArray
@@ -589,7 +592,7 @@ class SessionMonitorService : Service() {
 
         var lastForegroundPackage =
             if (
-                UsageDetector
+                ForegroundEmulatorDetector
                     .currentEmulator(this)
                     ?.packageName ==
                 emulator.packageName
@@ -626,7 +629,7 @@ class SessionMonitorService : Service() {
                 System.currentTimeMillis()
 
             val foregroundEvent =
-                UsageDetector
+                ForegroundEmulatorDetector
                     .latestForegroundEvent(
                         this,
                         usageCursor
@@ -848,7 +851,7 @@ class SessionMonitorService : Service() {
     private fun finishSession(
         sessionId: String,
         emulator:
-        UsageDetector.DetectedEmulator,
+        ForegroundEmulatorDetector.DetectedEmulator,
         startedAt: Long,
         endedAt: Long,
         endReason: String,
@@ -907,9 +910,9 @@ class SessionMonitorService : Service() {
 
         try {
 
-            DiagnosticStorage.delete(
+            CoreDiagnosticStorage.delete(
                 this,
-                DiagnosticStorage.DIAGNOSTIC_FILENAME
+                CoreDiagnosticStorage.DIAGNOSTIC_FILENAME
             )
 
         } catch (_: Exception) {
@@ -917,7 +920,7 @@ class SessionMonitorService : Service() {
 
         try {
 
-            DiagnosticEngine.generate(
+            CoreDiagnosticEngine.generate(
                 this
             )
 
@@ -943,19 +946,19 @@ class SessionMonitorService : Service() {
     private fun writeSession(
         sessionId: String,
         emulator:
-        UsageDetector.DetectedEmulator,
+        ForegroundEmulatorDetector.DetectedEmulator,
         startedAt: Long,
         endedAt: Long,
         endReason: String,
         samples: JSONArray
     ) {
 
-        DiagnosticStorage.writeText(
+        CoreDiagnosticStorage.writeText(
             context =
                 this,
 
             filename =
-                DiagnosticStorage.SESSION_FILENAME,
+                CoreDiagnosticStorage.SESSION_FILENAME,
 
             text =
                 PerformanceSessionSerializer
