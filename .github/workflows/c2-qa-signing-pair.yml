@@ -100,15 +100,27 @@ jobs:
           QA_KEYSTORE="$RUNNER_TEMP/c2-qa-pair/qa-debug.keystore"
           BASE_RAW="$GITHUB_WORKSPACE/baseline/app/build/outputs/apk/debug/app-debug.apk"
           CANDIDATE_RAW="$GITHUB_WORKSPACE/candidate/app/build/outputs/apk/debug/app-debug.apk"
-          PERFORMANCE_RAW="$GITHUB_WORKSPACE/candidate/modules/performance/app/build/outputs/apk/debug/app-debug.apk"
+          PERFORMANCE_DIR="$GITHUB_WORKSPACE/candidate/modules/performance/app/build/outputs/apk/debug"
+          PERFORMANCE_RAW="$(find "$PERFORMANCE_DIR" -maxdepth 1 -type f -name '*.apk' -print -quit)"
           BASE_APK="$RUNNER_TEMP/c2-qa-pair/CarePad-C2-QA-baseline-${BASELINE_SHA}.apk"
           CANDIDATE_APK="$RUNNER_TEMP/c2-qa-pair/CarePad-C2-QA-candidate-${CANDIDATE_SHA}.apk"
           PERFORMANCE_APK="$RUNNER_TEMP/c2-qa-pair/CarePad-C2-QA-performance-${CANDIDATE_SHA}.apk"
+
+          echo "APKSIGNER=$APKSIGNER"
+          echo "QA_KEYSTORE=$QA_KEYSTORE"
+          echo "BASE_RAW=$BASE_RAW"
+          echo "CANDIDATE_RAW=$CANDIDATE_RAW"
+          echo "PERFORMANCE_DIR=$PERFORMANCE_DIR"
+          echo "PERFORMANCE_RAW=$PERFORMANCE_RAW"
+          ls -la "$GITHUB_WORKSPACE/baseline/app/build/outputs/apk/debug"
+          ls -la "$GITHUB_WORKSPACE/candidate/app/build/outputs/apk/debug"
+          ls -la "$PERFORMANCE_DIR"
 
           test -x "$APKSIGNER"
           test -f "$QA_KEYSTORE"
           test -f "$BASE_RAW"
           test -f "$CANDIDATE_RAW"
+          test -n "$PERFORMANCE_RAW"
           test -f "$PERFORMANCE_RAW"
 
           for pair in \
