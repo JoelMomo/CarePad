@@ -53,7 +53,6 @@ android {
 dependencies {
     implementation(project(":carepad-contracts"))
     implementation(project(":carepad-core-android"))
-    implementation(project(":performance-runtime"))
     implementation(project(":games-bios-runtime"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
