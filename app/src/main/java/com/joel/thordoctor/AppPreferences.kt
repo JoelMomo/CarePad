@@ -1,7 +1,6 @@
 package com.joel.thordoctor
 
 import android.content.Context
-import android.net.Uri
 
 enum class AppThemeMode {
     SYSTEM,
@@ -26,9 +25,6 @@ object AppPreferences {
 
     private const val KEY_CONTROL_GLYPH_PROFILE =
         "control_glyph_profile"
-
-    private const val KEY_DIAGNOSTIC_FOLDER_URI =
-        "diagnostic_folder_uri"
 
     fun getThemeMode(context: Context): AppThemeMode {
         val value = preferences(context)
@@ -64,32 +60,6 @@ object AppPreferences {
             .edit()
             .putString(KEY_CONTROL_GLYPH_PROFILE, profile.name)
             .apply()
-    }
-
-    fun getDiagnosticFolderUri(context: Context): Uri? =
-        readUri(context, KEY_DIAGNOSTIC_FOLDER_URI)
-
-    fun setDiagnosticFolderUri(context: Context, uri: Uri) {
-        preferences(context)
-            .edit()
-            .putString(KEY_DIAGNOSTIC_FOLDER_URI, uri.toString())
-            .apply()
-    }
-
-    fun clearDiagnosticFolder(context: Context) {
-        preferences(context)
-            .edit()
-            .remove(KEY_DIAGNOSTIC_FOLDER_URI)
-            .apply()
-    }
-
-    private fun readUri(context: Context, key: String): Uri? {
-        val value = preferences(context).getString(key, null) ?: return null
-        return try {
-            Uri.parse(value)
-        } catch (_: Exception) {
-            null
-        }
     }
 
     private fun preferences(context: Context) =
