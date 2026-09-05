@@ -1,6 +1,5 @@
 package com.joel.thordoctor
 
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,14 +9,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.core.content.ContextCompat
 import com.joel.thordoctor.ui.CarePadSettingsScreen
 import com.joel.thordoctor.ui.CarePadShellScreen
 import com.joel.thordoctor.ui.theme.ThorDoctorTheme
@@ -70,28 +67,6 @@ private fun ThorDoctorApp(
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit
 ) {
-    val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
-        if (
-            !SessionMonitorService.isRunning &&
-            SessionMonitorService.hasRecoverableSession(context)
-        ) {
-            val resumeIntent =
-                Intent(
-                    context,
-                    SessionMonitorService::class.java
-                ).apply {
-                    action = SessionMonitorService.ACTION_RESUME
-                }
-
-            ContextCompat.startForegroundService(
-                context,
-                resumeIntent
-            )
-        }
-    }
-
     CarePadShellScreen(
         onThemeModeChange = onThemeModeChange,
         settingsContent = {
