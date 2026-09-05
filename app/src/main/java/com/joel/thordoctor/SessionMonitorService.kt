@@ -8,7 +8,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.joel.thordoctor.core.diagnostics.CoreDiagnosticEngine
 import com.joel.thordoctor.core.diagnostics.CoreDiagnosticStorage
 import com.joel.thordoctor.core.emulator.ForegroundEmulatorDetector
 import com.joel.thordoctor.modules.performance.PerformanceMetrics
@@ -27,14 +26,12 @@ enum class MonitorState {
     WAITING_EMULATOR,
     MONITORING,
     FINISHING,
-    GENERATING,
     COMPLETED,
     ERROR
 }
 
 enum class MonitorError {
-    SESSION_SAVE_FAILED,
-    DIAGNOSTIC_GENERATION_FAILED
+    SESSION_SAVE_FAILED
 }
 
 class SessionMonitorService : Service() {
@@ -204,15 +201,7 @@ class SessionMonitorService : Service() {
             intent?.action
         ) {
 
-            ACTION_START -> {
-
-                if (!isRunning) {
-                    startMonitor()
-                }
-
-                START_STICKY
-            }
-
+            ACTION_START,
             ACTION_RESUME -> {
 
                 if (!isRunning) {
@@ -247,73 +236,6 @@ class SessionMonitorService : Service() {
 
             else ->
                 START_NOT_STICKY
-        }
-    }
-
-    private fun startMonitor() {
-
-        try {
-
-            CoreDiagnosticStorage.delete(
-                this,
-                CoreDiagnosticStorage.SESSION_FILENAME
-            )
-
-        } catch (_: Exception) {
-        }
-
-        manualStopRequested =
-            false
-
-        currentSessionElapsedSeconds =
-            0L
-
-        currentSessionStartedAt =
-            0L
-
-        currentEmulatorName =
-            null
-
-        currentRemainingSeconds =
-            0L
-
-        currentError =
-            null
-
-        shouldRun =
-            true
-
-        isRunning =
-            true
-
-        currentState =
-            MonitorState.WAITING_EMULATOR
-
-        PerformanceSessionRecoveryStore
-            .markWaiting(
-                this
-            )
-
-        startForeground(
-            NOTIFICATION_ID,
-            buildNotification(
-                getString(
-                    R.string
-                        .notification_waiting_emulator
-                )
-            )
-        )
-
-        Thread {
-
-            monitorLoop()
-
-        }.apply {
-
-            name =
-                "ThorDoctorSessionMonitor"
-
-            start()
         }
     }
 
@@ -858,15 +780,6 @@ class SessionMonitorService : Service() {
         samples: JSONArray
     ) {
 
-        currentState =
-            MonitorState.GENERATING
-
-        updateNotification(
-            getString(
-                R.string.notification_generating
-            )
-        )
-
         try {
 
             writeSession(
@@ -908,37 +821,11 @@ class SessionMonitorService : Service() {
         PerformanceSessionRecoveryStore
             .clear(this)
 
-        try {
+        currentError =
+            null
 
-            CoreDiagnosticStorage.delete(
-                this,
-                CoreDiagnosticStorage.DIAGNOSTIC_FILENAME
-            )
-
-        } catch (_: Exception) {
-        }
-
-        try {
-
-            CoreDiagnosticEngine.generate(
-                this
-            )
-
-            currentError =
-                null
-
-            currentState =
-                MonitorState.COMPLETED
-
-        } catch (_: Exception) {
-
-            currentError =
-                MonitorError
-                    .DIAGNOSTIC_GENERATION_FAILED
-
-            currentState =
-                MonitorState.ERROR
-        }
+        currentState =
+            MonitorState.COMPLETED
 
         finishService()
     }
