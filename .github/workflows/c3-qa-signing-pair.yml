@@ -1,0 +1,209 @@
+name: C3 QA signed upgrade pair
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/c3-qa-signing-pair.yml
+
+permissions:
+  contents: read
+
+env:
+  C2_SHA: b8faf939295070323dd00b19ae81ea2b640d4f22
+  C3_SHA: 27a1117ab7ff38f0b6aef28e5d3523c40201cebd
+  SIGNER_SOURCE_SHA: 81936e0282c1d5cc2da7621f9fb26339759ead5f
+  EXPECTED_HOST_PACKAGE: com.joel.thordoctor
+  EXPECTED_PERFORMANCE_PACKAGE: dev.carepad.module.performance
+  EXPECTED_CERT_SHA256: 8513b30c18d3bb7574830a830461c862fe26c124dd1b1c694f7f58af271662e6
+
+jobs:
+  build-same-signer-upgrade-set:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout QA infrastructure
+        uses: actions/checkout@v4
+
+      - name: Checkout validated QA signer source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SIGNER_SOURCE_SHA }}
+          path: signer-source
+          persist-credentials: false
+
+      - name: Checkout exact C2 merged baseline
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.C2_SHA }}
+          path: c2
+          persist-credentials: false
+
+      - name: Checkout exact C3 candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.C3_SHA }}
+          path: c3
+          persist-credentials: false
+
+      - name: Verify exact source SHAs
+        run: |
+          set -euo pipefail
+          test "$(git -C signer-source rev-parse HEAD)" = "$SIGNER_SOURCE_SHA"
+          test "$(git -C c2 rev-parse HEAD)" = "$C2_SHA"
+          test "$(git -C c3 rev-parse HEAD)" = "$C3_SHA"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build SDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install reproducible QA signer
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/c3-qa-pair"
+          base64 --decode signer-source/.github/qa/l6-qa-debug.keystore.b64 > "$RUNNER_TEMP/c3-qa-pair/qa-debug.keystore"
+          chmod 600 "$RUNNER_TEMP/c3-qa-pair/qa-debug.keystore"
+          CERT_SHA256="$(keytool -list -v -keystore "$RUNNER_TEMP/c3-qa-pair/qa-debug.keystore" -storepass android -alias androiddebugkey | awk '/SHA256:/{gsub(":", "", $2); print tolower($2); exit}')"
+          echo "qa_signer_sha256=$CERT_SHA256"
+          test "$CERT_SHA256" = "$EXPECTED_CERT_SHA256"
+
+      - name: Build exact C2, C3 and C3 Performance APKs
+        run: |
+          set -euo pipefail
+          chmod +x c2/gradlew c3/gradlew
+          ./c2/gradlew -p c2 :app:assembleDebug --stacktrace
+          ./c3/gradlew -p c3 :app:assembleDebug :performance-module:assembleDebug --stacktrace
+
+      - name: Re-sign QA APKs with one signer
+        run: |
+          set -euo pipefail
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          QA_KEYSTORE="$RUNNER_TEMP/c3-qa-pair/qa-debug.keystore"
+          C2_RAW="$GITHUB_WORKSPACE/c2/app/build/outputs/apk/debug/app-debug.apk"
+          C3_RAW="$GITHUB_WORKSPACE/c3/app/build/outputs/apk/debug/app-debug.apk"
+          PERFORMANCE_DIR="$GITHUB_WORKSPACE/c3/modules/performance/app/build/outputs/apk/debug"
+          PERFORMANCE_RAW="$(find "$PERFORMANCE_DIR" -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          C2_APK="$RUNNER_TEMP/c3-qa-pair/CarePad-C3-QA-c2-${C2_SHA}.apk"
+          C3_APK="$RUNNER_TEMP/c3-qa-pair/CarePad-C3-QA-candidate-${C3_SHA}.apk"
+          PERFORMANCE_APK="$RUNNER_TEMP/c3-qa-pair/CarePad-C3-QA-performance-${C3_SHA}.apk"
+          echo "C2_RAW=$C2_RAW"
+          echo "C3_RAW=$C3_RAW"
+          echo "PERFORMANCE_RAW=$PERFORMANCE_RAW"
+          ls -la "$GITHUB_WORKSPACE/c2/app/build/outputs/apk/debug"
+          ls -la "$GITHUB_WORKSPACE/c3/app/build/outputs/apk/debug"
+          ls -la "$PERFORMANCE_DIR"
+          test -x "$APKSIGNER"
+          test -f "$QA_KEYSTORE"
+          test -f "$C2_RAW"
+          test -f "$C3_RAW"
+          test -n "$PERFORMANCE_RAW"
+          test -f "$PERFORMANCE_RAW"
+          for pair in "$C2_RAW|$C2_APK" "$C3_RAW|$C3_APK" "$PERFORMANCE_RAW|$PERFORMANCE_APK"; do
+            INPUT="${pair%%|*}"
+            OUTPUT="${pair#*|}"
+            "$APKSIGNER" sign --ks "$QA_KEYSTORE" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out "$OUTPUT" "$INPUT"
+          done
+
+      - name: Verify package, signer, versions and APK digests
+        run: |
+          set -euo pipefail
+          C2_APK="$RUNNER_TEMP/c3-qa-pair/CarePad-C3-QA-c2-${C2_SHA}.apk"
+          C3_APK="$RUNNER_TEMP/c3-qa-pair/CarePad-C3-QA-candidate-${C3_SHA}.apk"
+          PERFORMANCE_APK="$RUNNER_TEMP/c3-qa-pair/CarePad-C3-QA-performance-${C3_SHA}.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -print -quit)"
+          "$APKSIGNER" verify --print-certs "$C2_APK" | tee "$RUNNER_TEMP/c3-qa-pair/c2-certs.txt"
+          "$APKSIGNER" verify --print-certs "$C3_APK" | tee "$RUNNER_TEMP/c3-qa-pair/c3-certs.txt"
+          "$APKSIGNER" verify --print-certs "$PERFORMANCE_APK" | tee "$RUNNER_TEMP/c3-qa-pair/performance-certs.txt"
+          cert_digest() { awk -F': ' 'tolower($0) ~ /certificate sha-256 digest/ {print tolower($NF); exit}' "$1"; }
+          C2_CERT="$(cert_digest "$RUNNER_TEMP/c3-qa-pair/c2-certs.txt")"
+          C3_CERT="$(cert_digest "$RUNNER_TEMP/c3-qa-pair/c3-certs.txt")"
+          PERFORMANCE_CERT="$(cert_digest "$RUNNER_TEMP/c3-qa-pair/performance-certs.txt")"
+          test "$C2_CERT" = "$EXPECTED_CERT_SHA256"
+          test "$C3_CERT" = "$EXPECTED_CERT_SHA256"
+          test "$PERFORMANCE_CERT" = "$EXPECTED_CERT_SHA256"
+          test "$C2_CERT" = "$C3_CERT"
+          test "$C3_CERT" = "$PERFORMANCE_CERT"
+          C2_PACKAGE="$("$APKANALYZER" manifest application-id "$C2_APK")"
+          C3_PACKAGE="$("$APKANALYZER" manifest application-id "$C3_APK")"
+          PERFORMANCE_PACKAGE="$("$APKANALYZER" manifest application-id "$PERFORMANCE_APK")"
+          test "$C2_PACKAGE" = "$EXPECTED_HOST_PACKAGE"
+          test "$C3_PACKAGE" = "$EXPECTED_HOST_PACKAGE"
+          test "$PERFORMANCE_PACKAGE" = "$EXPECTED_PERFORMANCE_PACKAGE"
+          C2_VERSION="$("$APKANALYZER" manifest version-code "$C2_APK")"
+          C3_VERSION="$("$APKANALYZER" manifest version-code "$C3_APK")"
+          PERFORMANCE_VERSION="$("$APKANALYZER" manifest version-code "$PERFORMANCE_APK")"
+          C2_APK_SHA256="$(sha256sum "$C2_APK" | awk '{print $1}')"
+          C3_APK_SHA256="$(sha256sum "$C3_APK" | awk '{print $1}')"
+          PERFORMANCE_APK_SHA256="$(sha256sum "$PERFORMANCE_APK" | awk '{print $1}')"
+          cat > "$RUNNER_TEMP/c3-qa-pair/signing-report.txt" <<EOF
+          c2_source_sha=$C2_SHA
+          c3_source_sha=$C3_SHA
+          performance_source_sha=$C3_SHA
+          c2_apk_sha256=$C2_APK_SHA256
+          c3_apk_sha256=$C3_APK_SHA256
+          performance_apk_sha256=$PERFORMANCE_APK_SHA256
+          c2_certificate_sha256=$C2_CERT
+          c3_certificate_sha256=$C3_CERT
+          performance_certificate_sha256=$PERFORMANCE_CERT
+          host_package_name=$C2_PACKAGE
+          performance_package_name=$PERFORMANCE_PACKAGE
+          c2_version_code=$C2_VERSION
+          c3_version_code=$C3_VERSION
+          performance_version_code=$PERFORMANCE_VERSION
+          adb_install_r_prerequisites_met=true
+          host_reason=same_package_and_same_signing_certificate
+          module_discovery_signer_prerequisite_met=true
+          signer_scope=QA_LAB_ONLY_NOT_FOR_RELEASE
+          signing_method=explicit_apksigner_resign_after_exact_source_build
+          c2_to_c3_same_signer=true
+          EOF
+          cat "$RUNNER_TEMP/c3-qa-pair/signing-report.txt"
+
+      - name: Upload exact C2 QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-C3-QA-c2-same-signer
+          path: ${{ runner.temp }}/c3-qa-pair/CarePad-C3-QA-c2-*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload exact C3 candidate QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-C3-QA-candidate-same-signer
+          path: ${{ runner.temp }}/c3-qa-pair/CarePad-C3-QA-candidate-*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload same-signer C3 Performance QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-C3-QA-performance-same-signer
+          path: ${{ runner.temp }}/c3-qa-pair/CarePad-C3-QA-performance-*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload signing verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-C3-QA-signing-report
+          path: |
+            ${{ runner.temp }}/c3-qa-pair/signing-report.txt
+            ${{ runner.temp }}/c3-qa-pair/c2-certs.txt
+            ${{ runner.temp }}/c3-qa-pair/c3-certs.txt
+            ${{ runner.temp }}/c3-qa-pair/performance-certs.txt
+          if-no-files-found: error
+          retention-days: 7
