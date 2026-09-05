@@ -1,0 +1,238 @@
+name: C2 QA signed upgrade pair
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/c2-qa-signing-pair.yml
+
+permissions:
+  contents: read
+
+env:
+  BASELINE_SHA: 745909643667ef7831d6d86d6e500f4f47e71104
+  CANDIDATE_SHA: 24ef495e47626b45dd4ae91582b6a5cc4088a799
+  SIGNER_SOURCE_SHA: 81936e0282c1d5cc2da7621f9fb26339759ead5f
+  EXPECTED_HOST_PACKAGE: com.joel.thordoctor
+  EXPECTED_PERFORMANCE_PACKAGE: dev.carepad.module.performance
+  EXPECTED_CERT_SHA256: 8513b30c18d3bb7574830a830461c862fe26c124dd1b1c694f7f58af271662e6
+
+jobs:
+  build-same-signer-upgrade-set:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout QA infrastructure
+        uses: actions/checkout@v4
+
+      - name: Checkout validated QA signer source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SIGNER_SOURCE_SHA }}
+          path: signer-source
+          persist-credentials: false
+
+      - name: Checkout exact legacy baseline
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SHA }}
+          path: baseline
+          persist-credentials: false
+
+      - name: Checkout exact C2 candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          path: candidate
+          persist-credentials: false
+
+      - name: Verify exact source SHAs
+        run: |
+          set -euo pipefail
+          test "$(git -C signer-source rev-parse HEAD)" = "$SIGNER_SOURCE_SHA"
+          test "$(git -C baseline rev-parse HEAD)" = "$BASELINE_SHA"
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build SDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install reproducible QA signer
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/c2-qa-pair"
+          base64 --decode signer-source/.github/qa/l6-qa-debug.keystore.b64 > "$RUNNER_TEMP/c2-qa-pair/qa-debug.keystore"
+          chmod 600 "$RUNNER_TEMP/c2-qa-pair/qa-debug.keystore"
+
+          CERT_SHA256="$(keytool -list -v \
+            -keystore "$RUNNER_TEMP/c2-qa-pair/qa-debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            | awk '/SHA256:/{gsub(":", "", $2); print tolower($2); exit}')"
+
+          echo "qa_signer_sha256=$CERT_SHA256"
+          test "$CERT_SHA256" = "$EXPECTED_CERT_SHA256"
+
+      - name: Build exact baseline, candidate and Performance APKs
+        run: |
+          set -euo pipefail
+          chmod +x baseline/gradlew candidate/gradlew
+          ./baseline/gradlew -p baseline :app:assembleDebug --stacktrace
+          ./candidate/gradlew -p candidate :app:assembleDebug :performance-module:assembleDebug --stacktrace
+
+      - name: Re-sign QA APKs with one signer
+        run: |
+          set -euo pipefail
+
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          QA_KEYSTORE="$RUNNER_TEMP/c2-qa-pair/qa-debug.keystore"
+          BASE_RAW="$GITHUB_WORKSPACE/baseline/app/build/outputs/apk/debug/app-debug.apk"
+          CANDIDATE_RAW="$GITHUB_WORKSPACE/candidate/app/build/outputs/apk/debug/app-debug.apk"
+          PERFORMANCE_RAW="$GITHUB_WORKSPACE/candidate/modules/performance/app/build/outputs/apk/debug/app-debug.apk"
+          BASE_APK="$RUNNER_TEMP/c2-qa-pair/CarePad-C2-QA-baseline-${BASELINE_SHA}.apk"
+          CANDIDATE_APK="$RUNNER_TEMP/c2-qa-pair/CarePad-C2-QA-candidate-${CANDIDATE_SHA}.apk"
+          PERFORMANCE_APK="$RUNNER_TEMP/c2-qa-pair/CarePad-C2-QA-performance-${CANDIDATE_SHA}.apk"
+
+          test -x "$APKSIGNER"
+          test -f "$QA_KEYSTORE"
+          test -f "$BASE_RAW"
+          test -f "$CANDIDATE_RAW"
+          test -f "$PERFORMANCE_RAW"
+
+          for pair in \
+            "$BASE_RAW|$BASE_APK" \
+            "$CANDIDATE_RAW|$CANDIDATE_APK" \
+            "$PERFORMANCE_RAW|$PERFORMANCE_APK"; do
+            INPUT="${pair%%|*}"
+            OUTPUT="${pair#*|}"
+            "$APKSIGNER" sign \
+              --ks "$QA_KEYSTORE" \
+              --ks-key-alias androiddebugkey \
+              --ks-pass pass:android \
+              --key-pass pass:android \
+              --out "$OUTPUT" \
+              "$INPUT"
+          done
+
+      - name: Verify package, signer, versions and APK digests
+        run: |
+          set -euo pipefail
+
+          BASE_APK="$RUNNER_TEMP/c2-qa-pair/CarePad-C2-QA-baseline-${BASELINE_SHA}.apk"
+          CANDIDATE_APK="$RUNNER_TEMP/c2-qa-pair/CarePad-C2-QA-candidate-${CANDIDATE_SHA}.apk"
+          PERFORMANCE_APK="$RUNNER_TEMP/c2-qa-pair/CarePad-C2-QA-performance-${CANDIDATE_SHA}.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -print -quit)"
+
+          test -f "$BASE_APK"
+          test -f "$CANDIDATE_APK"
+          test -f "$PERFORMANCE_APK"
+          test -x "$APKSIGNER"
+          test -x "$APKANALYZER"
+
+          "$APKSIGNER" verify --print-certs "$BASE_APK" | tee "$RUNNER_TEMP/c2-qa-pair/baseline-certs.txt"
+          "$APKSIGNER" verify --print-certs "$CANDIDATE_APK" | tee "$RUNNER_TEMP/c2-qa-pair/candidate-certs.txt"
+          "$APKSIGNER" verify --print-certs "$PERFORMANCE_APK" | tee "$RUNNER_TEMP/c2-qa-pair/performance-certs.txt"
+
+          cert_digest() {
+            awk -F': ' 'tolower($0) ~ /certificate sha-256 digest/ {print tolower($NF); exit}' "$1"
+          }
+
+          BASE_CERT="$(cert_digest "$RUNNER_TEMP/c2-qa-pair/baseline-certs.txt")"
+          CANDIDATE_CERT="$(cert_digest "$RUNNER_TEMP/c2-qa-pair/candidate-certs.txt")"
+          PERFORMANCE_CERT="$(cert_digest "$RUNNER_TEMP/c2-qa-pair/performance-certs.txt")"
+          test -n "$BASE_CERT"
+          test -n "$CANDIDATE_CERT"
+          test -n "$PERFORMANCE_CERT"
+          test "$BASE_CERT" = "$EXPECTED_CERT_SHA256"
+          test "$CANDIDATE_CERT" = "$EXPECTED_CERT_SHA256"
+          test "$PERFORMANCE_CERT" = "$EXPECTED_CERT_SHA256"
+          test "$BASE_CERT" = "$CANDIDATE_CERT"
+          test "$CANDIDATE_CERT" = "$PERFORMANCE_CERT"
+
+          BASE_PACKAGE="$("$APKANALYZER" manifest application-id "$BASE_APK")"
+          CANDIDATE_PACKAGE="$("$APKANALYZER" manifest application-id "$CANDIDATE_APK")"
+          PERFORMANCE_PACKAGE="$("$APKANALYZER" manifest application-id "$PERFORMANCE_APK")"
+          test "$BASE_PACKAGE" = "$EXPECTED_HOST_PACKAGE"
+          test "$CANDIDATE_PACKAGE" = "$EXPECTED_HOST_PACKAGE"
+          test "$PERFORMANCE_PACKAGE" = "$EXPECTED_PERFORMANCE_PACKAGE"
+
+          BASE_VERSION="$("$APKANALYZER" manifest version-code "$BASE_APK")"
+          CANDIDATE_VERSION="$("$APKANALYZER" manifest version-code "$CANDIDATE_APK")"
+          PERFORMANCE_VERSION="$("$APKANALYZER" manifest version-code "$PERFORMANCE_APK")"
+          BASE_APK_SHA256="$(sha256sum "$BASE_APK" | awk '{print $1}')"
+          CANDIDATE_APK_SHA256="$(sha256sum "$CANDIDATE_APK" | awk '{print $1}')"
+          PERFORMANCE_APK_SHA256="$(sha256sum "$PERFORMANCE_APK" | awk '{print $1}')"
+
+          cat > "$RUNNER_TEMP/c2-qa-pair/signing-report.txt" <<EOF
+          baseline_source_sha=$BASELINE_SHA
+          candidate_source_sha=$CANDIDATE_SHA
+          performance_source_sha=$CANDIDATE_SHA
+          baseline_apk_sha256=$BASE_APK_SHA256
+          candidate_apk_sha256=$CANDIDATE_APK_SHA256
+          performance_apk_sha256=$PERFORMANCE_APK_SHA256
+          baseline_certificate_sha256=$BASE_CERT
+          candidate_certificate_sha256=$CANDIDATE_CERT
+          performance_certificate_sha256=$PERFORMANCE_CERT
+          host_package_name=$BASE_PACKAGE
+          performance_package_name=$PERFORMANCE_PACKAGE
+          baseline_version_code=$BASE_VERSION
+          candidate_version_code=$CANDIDATE_VERSION
+          performance_version_code=$PERFORMANCE_VERSION
+          adb_install_r_prerequisites_met=true
+          host_reason=same_package_and_same_signing_certificate
+          module_discovery_signer_prerequisite_met=true
+          signer_scope=QA_LAB_ONLY_NOT_FOR_RELEASE
+          signing_method=explicit_apksigner_resign_after_exact_source_build
+          legacy_baseline_can_create_host_recovery=true
+          EOF
+
+          cat "$RUNNER_TEMP/c2-qa-pair/signing-report.txt"
+
+      - name: Upload exact legacy baseline QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-C2-QA-baseline-same-signer
+          path: ${{ runner.temp }}/c2-qa-pair/CarePad-C2-QA-baseline-*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload exact C2 candidate QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-C2-QA-candidate-same-signer
+          path: ${{ runner.temp }}/c2-qa-pair/CarePad-C2-QA-candidate-*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload same-signer Performance QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-C2-QA-performance-same-signer
+          path: ${{ runner.temp }}/c2-qa-pair/CarePad-C2-QA-performance-*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload signing verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-C2-QA-signing-report
+          path: |
+            ${{ runner.temp }}/c2-qa-pair/signing-report.txt
+            ${{ runner.temp }}/c2-qa-pair/baseline-certs.txt
+            ${{ runner.temp }}/c2-qa-pair/candidate-certs.txt
+            ${{ runner.temp }}/c2-qa-pair/performance-certs.txt
+          if-no-files-found: error
+          retention-days: 7
