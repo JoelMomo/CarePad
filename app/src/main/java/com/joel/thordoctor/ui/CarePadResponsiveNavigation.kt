@@ -35,6 +35,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -84,10 +86,6 @@ internal fun CarePadResponsiveNavigationScaffold(
         }
         false
     }
-    val onSelectedWithFeedback: (CarePadDestination) -> Unit = { destination ->
-        performFeedback()
-        onSelected(destination)
-    }
 
     BoxWithConstraints(modifier = navigationFeedbackModifier.then(modifier)) {
         when (carePadNavigationLayout(maxWidth, maxHeight)) {
@@ -97,7 +95,8 @@ internal fun CarePadResponsiveNavigationScaffold(
                     visualState = railVisualState,
                     focusRequesters = focusRequesters,
                     onFocusChanged = onFocusChanged,
-                    onSelected = onSelectedWithFeedback,
+                    onTouchFeedback = performFeedback,
+                    onSelected = onSelected,
                 )
                 content(
                     Modifier
@@ -116,7 +115,8 @@ internal fun CarePadResponsiveNavigationScaffold(
                     selected = selected,
                     focusRequesters = focusRequesters,
                     onFocusChanged = onFocusChanged,
-                    onSelected = onSelectedWithFeedback,
+                    onTouchFeedback = performFeedback,
+                    onSelected = onSelected,
                 )
             }
         }
@@ -130,6 +130,7 @@ internal fun CarePadZonedNavigationRail(
     visualState: CarePadRailVisualState,
     focusRequesters: Map<CarePadDestination, FocusRequester>,
     onFocusChanged: (CarePadDestination, Boolean) -> Unit,
+    onTouchFeedback: () -> Unit,
     onSelected: (CarePadDestination) -> Unit,
 ) {
     val expanded = visualState == CarePadRailVisualState.EXPANDED
@@ -180,6 +181,7 @@ internal fun CarePadZonedNavigationRail(
                         alwaysShowLabel = expanded,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .navigationTouchFeedback(onTouchFeedback)
                             .focusProperties { canFocus = true }
                             .focusRequester(focusRequesters.getValue(item.destination))
                             .onFocusChanged { state ->
@@ -198,6 +200,7 @@ private fun CarePadNavigationBar(
     selected: CarePadDestination,
     focusRequesters: Map<CarePadDestination, FocusRequester>,
     onFocusChanged: (CarePadDestination, Boolean) -> Unit,
+    onTouchFeedback: () -> Unit,
     onSelected: (CarePadDestination) -> Unit,
 ) {
     NavigationBar(
@@ -221,12 +224,29 @@ private fun CarePadNavigationBar(
                 alwaysShowLabel = true,
                 modifier = Modifier
                     .weight(1f)
+                    .navigationTouchFeedback(onTouchFeedback)
                     .focusProperties { canFocus = true }
                     .focusRequester(focusRequesters.getValue(item.destination))
                     .onFocusChanged { state ->
                         onFocusChanged(item.destination, state.isFocused)
                     },
             )
+        }
+    }
+}
+
+private fun Modifier.navigationTouchFeedback(
+    onFeedback: () -> Unit,
+): Modifier = pointerInput(onFeedback) {
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            if (event.changes.any { change ->
+                    change.pressed && !change.previousPressed
+                }
+            ) {
+                onFeedback()
+            }
         }
     }
 }
