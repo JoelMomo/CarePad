@@ -1,0 +1,18 @@
+<resources>
+    <string name="app_name">Controles</string>
+    <string name="controls_intro">Comprueba qué mando reconoce Android y qué entradas recibe CarePad.</string>
+    <string name="refresh_devices">Actualizar mandos</string>
+    <string name="no_devices">No se ha detectado ningún mando físico compatible.</string>
+    <string name="select_device">Probar %1$s</string>
+    <string name="no_device_selected">Selecciona un mando para empezar la prueba.</string>
+    <string name="selected_device">Mando: %1$s</string>
+    <string name="session_state">Estado: %1$s</string>
+    <string name="mapping_state">Sticks: %1$s / %2$s · D-pad: %3$s</string>
+    <string name="session_issues">Incidencias observadas: %1$s</string>
+    <string name="received_events">Entradas recibidas: %1$d botones · %2$d movimientos</string>
+    <string name="left_stick">Stick izquierdo · X %1$s · Y %2$s</string>
+    <string name="right_stick">Stick derecho · X %1$s · Y %2$s</string>
+    <string name="none">ninguna</string>
+    <string name="no_samples">sin muestras</string>
+    <string name="controls_scope_note">La prueba muestra únicamente las entradas que Android entrega a este módulo; no concluye por sí sola que exista drift o un fallo físico.</string>
+</resources>

@@ -1,0 +1,18 @@
+<resources>
+    <string name="app_name">Controls</string>
+    <string name="controls_intro">Check which controller Android recognizes and which inputs CarePad receives.</string>
+    <string name="refresh_devices">Refresh controllers</string>
+    <string name="no_devices">No compatible physical controller was detected.</string>
+    <string name="select_device">Test %1$s</string>
+    <string name="no_device_selected">Select a controller to start the test.</string>
+    <string name="selected_device">Controller: %1$s</string>
+    <string name="session_state">State: %1$s</string>
+    <string name="mapping_state">Sticks: %1$s / %2$s · D-pad: %3$s</string>
+    <string name="session_issues">Observed issues: %1$s</string>
+    <string name="received_events">Received inputs: %1$d buttons · %2$d motion frames</string>
+    <string name="left_stick">Left stick · X %1$s · Y %2$s</string>
+    <string name="right_stick">Right stick · X %1$s · Y %2$s</string>
+    <string name="none">none</string>
+    <string name="no_samples">no samples</string>
+    <string name="controls_scope_note">This test only shows the inputs Android delivers to this module; by itself it does not conclude that drift or a physical fault exists.</string>
+</resources>

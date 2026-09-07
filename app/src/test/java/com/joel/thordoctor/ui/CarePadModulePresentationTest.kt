@@ -9,15 +9,17 @@ import org.junit.Test
 
 class CarePadModulePresentationTest {
     @Test
-    fun firstSliceOnlyPresentsPerformanceAndGamesBios() {
+    fun consolidationSlicePresentsPerformanceGamesBiosAndControls() {
         val performance = CarePadModulePresentations.forModuleId(CarePadModuleIds.PERFORMANCE)
         val gamesBios = CarePadModulePresentations.forModuleId(CarePadModuleIds.GAMES_BIOS)
+        val controls = CarePadModulePresentations.forModuleId(CarePadModuleIds.CONTROLS)
 
         assertNotNull(performance)
         assertNotNull(gamesBios)
+        assertNotNull(controls)
         assertEquals(R.string.carepad_module_performance, performance?.nameRes)
         assertEquals(R.string.carepad_module_games_bios, gamesBios?.nameRes)
-        assertNull(CarePadModulePresentations.forModuleId(CarePadModuleIds.CONTROLS))
+        assertEquals(R.string.carepad_module_controls, controls?.nameRes)
         assertNull(CarePadModulePresentations.forModuleId(CarePadModuleIds.UPDATES))
     }
 
