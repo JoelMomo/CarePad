@@ -3,11 +3,15 @@ package com.joel.thordoctor.ui
 import android.content.Context
 import android.media.AudioManager
 import android.view.HapticFeedbackConstants
+import android.view.KeyEvent as AndroidKeyEvent
 import android.view.SoundEffectConstants
 import android.view.View
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.Composable
@@ -17,6 +21,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 
@@ -82,6 +89,69 @@ internal fun rememberCozyClick(
         {
             performFeedback()
             currentOnClick()
+        }
+    }
+}
+
+@Composable
+internal fun Modifier.cozyClickable(
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+): Modifier {
+    val onClickWithFeedback = rememberCozyClick(onClick)
+    return clickable(
+        enabled = enabled,
+        onClick = onClickWithFeedback,
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun Modifier.cozyCombinedClickable(
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+): Modifier {
+    val onClickWithFeedback = rememberCozyClick(onClick)
+    val performFeedback = rememberCozyFeedback()
+    val currentOnLongClick by rememberUpdatedState(onLongClick)
+    val onLongClickWithFeedback = remember(performFeedback) {
+        {
+            performFeedback()
+            currentOnLongClick?.invoke()
+        }
+    }
+
+    return combinedClickable(
+        enabled = enabled,
+        onClick = onClickWithFeedback,
+        onLongClick = if (onLongClick == null) null else onLongClickWithFeedback,
+    )
+}
+
+@Composable
+internal fun Modifier.cozyControllerActivation(
+    enabled: Boolean,
+    onActivate: () -> Unit,
+): Modifier {
+    val onActivateWithFeedback = rememberCozyClick(onActivate)
+    return onPreviewKeyEvent { event ->
+        val native = event.nativeKeyEvent
+        if (
+            enabled &&
+            event.type == KeyEventType.KeyDown &&
+            native.repeatCount == 0 &&
+            native.keyCode in setOf(
+                AndroidKeyEvent.KEYCODE_BUTTON_A,
+                AndroidKeyEvent.KEYCODE_DPAD_CENTER,
+                AndroidKeyEvent.KEYCODE_ENTER,
+                AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
+            )
+        ) {
+            onActivateWithFeedback()
+            true
+        } else {
+            false
         }
     }
 }
