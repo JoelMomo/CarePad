@@ -55,6 +55,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -140,8 +141,17 @@ fun CarePadShellScreen(
     ) -> Unit,
 ) {
     val context = LocalContext.current
+    var savedDestinationName by rememberSaveable {
+        mutableStateOf(CarePadDestination.HOME.name)
+    }
     var discovery by remember { mutableStateOf(ModuleManager.discover(context)) }
-    var focusControllerState by remember { mutableStateOf(CarePadFocusControllerState()) }
+    var focusControllerState by remember {
+        mutableStateOf(
+            CarePadFocusControllerState(
+                selectedDestination = CarePadDestination.valueOf(savedDestinationName)
+            )
+        )
+    }
     var expandedPackage by remember { mutableStateOf<String?>(null) }
     var pendingUninstall by remember { mutableStateOf<VisibleModule?>(null) }
 
@@ -203,7 +213,9 @@ fun CarePadShellScreen(
     }
 
     fun dispatchFocus(event: CarePadFocusEvent) {
-        focusControllerState = reduceCarePadFocus(focusControllerState, event)
+        val nextState = reduceCarePadFocus(focusControllerState, event)
+        focusControllerState = nextState
+        savedDestinationName = nextState.selectedDestination.name
     }
 
     fun refreshModules() {
@@ -328,7 +340,7 @@ fun CarePadShellScreen(
         )
     }
 
-    Row(
+    CarePadResponsiveNavigationScaffold(
         modifier = Modifier
             .fillMaxSize()
             .pointerInteropFilter { event ->
@@ -447,32 +459,27 @@ fun CarePadShellScreen(
                     }
                 }
             },
-    ) {
-        CarePadNavigationRail(
-            selected = destination,
-            visualState = carePadRailVisualState(focusControllerState.observedFocus),
-            focusRequesters = railFocusRequesters,
-            onFocusChanged = { focusedDestination, focused ->
-                val railFocus = CarePadFocusKey.Rail(focusedDestination)
-                if (focused) {
-                    dispatchFocus(CarePadFocusEvent.FocusObserved(railFocus))
-                } else if (focusControllerState.observedFocus == railFocus) {
-                    dispatchFocus(CarePadFocusEvent.FocusObserved(null))
-                }
-            },
-            onSelected = { selectedDestination ->
-                goTo(selectedDestination)
-                if (focusControllerState.modality == CarePadInputMethod.TOUCH) {
-                    requestFocusTarget(CarePadFocusKey.Rail(selectedDestination))
-                }
-            },
-        )
-
+        selected = destination,
+        railVisualState = carePadRailVisualState(focusControllerState.observedFocus),
+        focusRequesters = railFocusRequesters,
+        onFocusChanged = { focusedDestination, focused ->
+            val railFocus = CarePadFocusKey.Rail(focusedDestination)
+            if (focused) {
+                dispatchFocus(CarePadFocusEvent.FocusObserved(railFocus))
+            } else if (focusControllerState.observedFocus == railFocus) {
+                dispatchFocus(CarePadFocusEvent.FocusObserved(null))
+            }
+        },
+        onSelected = { selectedDestination ->
+            goTo(selectedDestination)
+            if (focusControllerState.modality == CarePadInputMethod.TOUCH) {
+                requestFocusTarget(CarePadFocusKey.Rail(selectedDestination))
+            }
+        },
+    ) { contentModifier ->
         Surface(
-            modifier = Modifier
+            modifier = contentModifier
                 .focusGroup()
-                .weight(1f)
-                .fillMaxHeight()
                 .pointerInteropFilter { event ->
                     if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                         dispatchFocus(CarePadFocusEvent.TouchContext)
@@ -581,7 +588,7 @@ fun CarePadShellScreen(
 }
 
 @Composable
-private fun CarePadNavigationRail(
+internal fun CarePadNavigationRail(
     selected: CarePadDestination,
     visualState: CarePadRailVisualState,
     focusRequesters: Map<CarePadDestination, FocusRequester>,
@@ -631,13 +638,13 @@ private fun CarePadNavigationRail(
     }
 }
 
-private data class RailItem(
+internal data class RailItem(
     val destination: CarePadDestination,
     val labelRes: Int,
     val icon: ImageVector,
 )
 
-private fun railItems(): List<RailItem> = listOf(
+internal fun railItems(): List<RailItem> = listOf(
     RailItem(CarePadDestination.HOME, R.string.carepad_nav_home, Icons.Rounded.Home),
     RailItem(
         CarePadDestination.ADD_MODULES,

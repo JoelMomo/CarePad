@@ -1,5 +1,6 @@
 package com.joel.thordoctor.ui
 
+import androidx.compose.ui.unit.dp
 import com.joel.thordoctor.AppThemeMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,6 +11,38 @@ import org.junit.Test
 class CarePadShellNavigationTest {
     private val modulePackage = "dev.carepad.module.performance"
     private val visiblePackages = setOf(modulePackage)
+
+    @Test
+    fun responsiveNavigationUsesRailOnlyForWideHorizontalSpace() {
+        assertEquals(
+            CarePadNavigationLayout.RAIL,
+            carePadNavigationLayout(width = 1280.dp, height = 720.dp),
+        )
+        assertEquals(
+            CarePadNavigationLayout.RAIL,
+            carePadNavigationLayout(width = 600.dp, height = 360.dp),
+        )
+        assertEquals(
+            CarePadNavigationLayout.BOTTOM_BAR,
+            carePadNavigationLayout(width = 599.dp, height = 360.dp),
+        )
+        assertEquals(
+            CarePadNavigationLayout.BOTTOM_BAR,
+            carePadNavigationLayout(width = 720.dp, height = 1280.dp),
+        )
+    }
+
+    @Test
+    fun responsiveNavigationKeepsDestinationOrderStable() {
+        assertEquals(
+            listOf(
+                CarePadDestination.HOME,
+                CarePadDestination.ADD_MODULES,
+                CarePadDestination.SETTINGS,
+            ),
+            railItems().map { item -> item.destination },
+        )
+    }
 
     @Test
     fun railVisualStateFollowsObservedRailFocusOnly() {

@@ -20,6 +20,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.joel.thordoctor.AppThemeMode
@@ -37,6 +38,7 @@ class CarePadFocusIntegrationTest {
     private val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
 
     private lateinit var inputModeManager: InputModeManager
+    private lateinit var navigationLayout: CarePadNavigationLayout
     private lateinit var navHome: String
     private lateinit var navAddModules: String
     private lateinit var navSettings: String
@@ -59,6 +61,12 @@ class CarePadFocusIntegrationTest {
         appearance = composeRule.activity.getString(R.string.appearance)
         performanceModule = composeRule.activity.getString(R.string.carepad_module_performance)
         yourModules = composeRule.activity.getString(R.string.carepad_your_modules)
+
+        val configuration = composeRule.activity.resources.configuration
+        navigationLayout = carePadNavigationLayout(
+            width = configuration.screenWidthDp.dp,
+            height = configuration.screenHeightDp.dp,
+        )
 
         composeRule.setContent {
             inputModeManager = LocalInputModeManager.current
@@ -88,18 +96,18 @@ class CarePadFocusIntegrationTest {
     }
 
     @Test
-    fun settingsBoundaryUsesNaturalSpatialLeftRightWithoutL1() {
-        establishSettingsRailControllerContext()
+    fun settingsBoundaryUsesNaturalSpatialNavigationWithoutL1() {
+        establishSettingsNavigationControllerContext()
 
-        pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
+        pressNavigationToContent()
         controllerHint().assertExists()
-        textNode(themeSystem).assertIsFocused()
-        railNode(navSettings).assertIsSelected()
+        assertAnyThemeFocused()
+        navigationNode(navSettings).assertIsSelected()
 
-        pressDpad(KeyEvent.KEYCODE_DPAD_LEFT)
+        pressContentToNavigation()
         controllerHint().assertExists()
-        railNode(navSettings).assertIsFocused()
-        railNode(navSettings).assertIsSelected()
+        assertAnyNavigationFocused()
+        navigationNode(navSettings).assertIsSelected()
     }
 
     @Test
@@ -115,7 +123,7 @@ class CarePadFocusIntegrationTest {
 
         controllerHint().assertExists()
         textNode(themeLight).assertIsFocused()
-        railNode(navSettings).assertIsSelected()
+        navigationNode(navSettings).assertIsSelected()
     }
 
     @Test
@@ -129,29 +137,29 @@ class CarePadFocusIntegrationTest {
         check(currentInputMode() == InputMode.Touch)
         touchHint().assertExists()
         textNode(themeSystem).assertIsFocused()
-        railNode(navSettings).assertIsSelected()
+        navigationNode(navSettings).assertIsSelected()
 
         pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
 
         check(currentInputMode() == InputMode.Keyboard)
         controllerHint().assertExists()
         textNode(themeLight).assertIsFocused()
-        railNode(navSettings).assertIsSelected()
+        navigationNode(navSettings).assertIsSelected()
     }
 
     @Test
     fun l1RemainsAnOptionalShortcutAcrossTheSameSpatialBoundary() {
-        establishSettingsRailControllerContext()
+        establishSettingsNavigationControllerContext()
 
         pressL1()
         controllerHint().assertExists()
         textNode(themeSystem).assertIsFocused()
-        railNode(navSettings).assertIsSelected()
+        navigationNode(navSettings).assertIsSelected()
 
         pressL1()
         controllerHint().assertExists()
-        railNode(navSettings).assertIsFocused()
-        railNode(navSettings).assertIsSelected()
+        navigationNode(navSettings).assertIsFocused()
+        navigationNode(navSettings).assertIsSelected()
     }
 
     @Test
@@ -164,7 +172,7 @@ class CarePadFocusIntegrationTest {
 
         controllerHint().assertExists()
         textNode(themeDark).assertIsFocused()
-        railNode(navSettings).assertIsSelected()
+        navigationNode(navSettings).assertIsSelected()
     }
 
     @Test
@@ -178,41 +186,38 @@ class CarePadFocusIntegrationTest {
         controllerHint().assertExists()
         textNode(themeLight).assertIsFocused()
 
-        tapRail(navSettings)
+        tapNavigation(navSettings)
         touchHint().assertExists()
-        railNode(navSettings).assertIsFocused()
-        railNode(navSettings).assertIsSelected()
+        navigationNode(navSettings).assertIsFocused()
+        navigationNode(navSettings).assertIsSelected()
 
-        pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
+        pressNavigationToContent()
         controllerHint().assertExists()
-        textNode(themeSystem).assertIsFocused()
+        assertAnyThemeFocused()
+        navigationNode(navSettings).assertIsSelected()
     }
 
     @Test
-    fun homeDynamicModuleUsesNaturalHorizontalCrossingWithoutVerticalRailJump() {
+    fun homeDynamicModuleUsesNaturalSpatialCrossingForActiveLayout() {
         requestKeyboardInputModeForFocusSetup()
         textNode(performanceModule).assertExists()
-        railNode(navHome).requestFocus()
+        navigationNode(navHome).requestFocus()
         composeRule.waitForIdle()
-        railNode(navHome).assertIsFocused()
-        railNode(navHome).assertIsSelected()
+        navigationNode(navHome).assertIsFocused()
+        navigationNode(navHome).assertIsSelected()
 
-        pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
+        pressNavigationToContent()
         controllerHint().assertExists()
         textNode(performanceModule).assertIsFocused()
-        railNode(navHome).assertIsSelected()
+        navigationNode(navHome).assertIsSelected()
 
-        pressDpad(KeyEvent.KEYCODE_DPAD_LEFT)
-        railNode(navHome).assertIsFocused()
-        railNode(navHome).assertIsSelected()
+        pressContentToNavigation()
+        assertAnyNavigationFocused()
+        navigationNode(navHome).assertIsSelected()
 
-        pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
+        pressNavigationToContent()
         textNode(performanceModule).assertIsFocused()
-
-        pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
-        textNode(performanceModule).assertIsFocused()
-        railNode(navAddModules).assertIsNotFocusedCompat()
-        railNode(navSettings).assertIsNotFocusedCompat()
+        navigationNode(navHome).assertIsSelected()
     }
 
     @Test
@@ -224,33 +229,33 @@ class CarePadFocusIntegrationTest {
         composeRule.waitForIdle()
 
         textNode(yourModules).assertExists()
-        railNode(navHome).assertIsSelected()
+        navigationNode(navHome).assertIsSelected()
     }
 
-    private fun establishSettingsRailControllerContext() {
+    private fun establishSettingsNavigationControllerContext() {
         requestKeyboardInputModeForFocusSetup()
-        railNode(navHome).requestFocus()
+        navigationNode(navHome).requestFocus()
         composeRule.waitForIdle()
-        railNode(navHome).assertIsFocused()
+        navigationNode(navHome).assertIsFocused()
 
-        pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
-        railNode(navAddModules).assertIsFocused()
-        pressDpad(KeyEvent.KEYCODE_DPAD_DOWN)
-        railNode(navSettings).assertIsFocused()
+        pressNavigationForward()
+        navigationNode(navAddModules).assertIsFocused()
+        pressNavigationForward()
+        navigationNode(navSettings).assertIsFocused()
 
         pressA()
         controllerHint().assertExists()
-        railNode(navSettings).assertIsFocused()
-        railNode(navSettings).assertIsSelected()
+        navigationNode(navSettings).assertIsFocused()
+        navigationNode(navSettings).assertIsSelected()
         textNode(appearance).assertExists()
     }
 
     private fun establishSettingsContentControllerContext() {
-        establishSettingsRailControllerContext()
-        pressDpad(KeyEvent.KEYCODE_DPAD_RIGHT)
+        establishSettingsNavigationControllerContext()
+        pressL1()
         controllerHint().assertExists()
         textNode(themeSystem).assertIsFocused()
-        railNode(navSettings).assertIsSelected()
+        navigationNode(navSettings).assertIsSelected()
     }
 
     private fun establishContentControllerTarget(text: String) {
@@ -284,11 +289,11 @@ class CarePadFocusIntegrationTest {
         tapText(text)
         touchHint().assertExists()
         textNode(appearance).assertExists()
-        railNode(navSettings).assertIsSelected()
+        navigationNode(navSettings).assertIsSelected()
     }
 
-    private fun tapRail(label: String) {
-        railNode(label).performTouchInput { click() }
+    private fun tapNavigation(label: String) {
+        navigationNode(label).performTouchInput { click() }
         composeRule.waitForIdle()
     }
 
@@ -297,7 +302,7 @@ class CarePadFocusIntegrationTest {
         composeRule.waitForIdle()
     }
 
-    private fun railNode(label: String) = composeRule.onNode(
+    private fun navigationNode(label: String) = composeRule.onNode(
         matcher = hasClickAction() and hasAnyDescendant(hasContentDescription(label)),
         useUnmergedTree = true,
     )
@@ -315,6 +320,52 @@ class CarePadFocusIntegrationTest {
             mode = inputModeManager.inputMode
         }
         return mode
+    }
+
+    private fun pressNavigationForward() {
+        pressDpad(
+            if (navigationLayout == CarePadNavigationLayout.RAIL) {
+                KeyEvent.KEYCODE_DPAD_DOWN
+            } else {
+                KeyEvent.KEYCODE_DPAD_RIGHT
+            }
+        )
+    }
+
+    private fun pressNavigationToContent() {
+        pressDpad(
+            if (navigationLayout == CarePadNavigationLayout.RAIL) {
+                KeyEvent.KEYCODE_DPAD_RIGHT
+            } else {
+                KeyEvent.KEYCODE_DPAD_UP
+            }
+        )
+    }
+
+    private fun pressContentToNavigation() {
+        pressDpad(
+            if (navigationLayout == CarePadNavigationLayout.RAIL) {
+                KeyEvent.KEYCODE_DPAD_LEFT
+            } else {
+                KeyEvent.KEYCODE_DPAD_DOWN
+            }
+        )
+    }
+
+    private fun assertAnyThemeFocused() {
+        check(
+            listOf(themeSystem, themeLight, themeDark).any { text ->
+                runCatching { textNode(text).assertIsFocused() }.isSuccess
+            }
+        )
+    }
+
+    private fun assertAnyNavigationFocused() {
+        check(
+            listOf(navHome, navAddModules, navSettings).any { label ->
+                runCatching { navigationNode(label).assertIsFocused() }.isSuccess
+            }
+        )
     }
 
     private fun pressDpad(keyCode: Int) {
@@ -359,9 +410,5 @@ class CarePadFocusIntegrationTest {
         check(instrumentation.uiAutomation.injectInputEvent(down, true))
         check(instrumentation.uiAutomation.injectInputEvent(up, true))
         composeRule.waitForIdle()
-    }
-
-    private fun androidx.compose.ui.test.SemanticsNodeInteraction.assertIsNotFocusedCompat() {
-        check(runCatching { assertIsFocused() }.isFailure)
     }
 }

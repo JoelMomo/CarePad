@@ -57,12 +57,9 @@ internal fun rememberCozyPressState(): CozyPressState {
 }
 
 @Composable
-internal fun rememberCozyClick(
-    onClick: () -> Unit
-): () -> Unit {
+internal fun rememberCozyFeedback(): () -> Unit {
     val context = LocalContext.current
     val view = LocalView.current
-    val currentOnClick by rememberUpdatedState(onClick)
 
     return remember(context, view) {
         {
@@ -70,6 +67,20 @@ internal fun rememberCozyClick(
                 context = context,
                 view = view
             )
+        }
+    }
+}
+
+@Composable
+internal fun rememberCozyClick(
+    onClick: () -> Unit
+): () -> Unit {
+    val performFeedback = rememberCozyFeedback()
+    val currentOnClick by rememberUpdatedState(onClick)
+
+    return remember(performFeedback) {
+        {
+            performFeedback()
             currentOnClick()
         }
     }
