@@ -7,7 +7,6 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.view.KeyEvent as AndroidKeyEvent
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,11 +34,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -890,7 +889,7 @@ private fun SingleChoiceDialog(
                     onApply(candidate)
                 },
                 enabled = changed,
-                onClick = { onApply(candidate) },
+                onClick = rememberCozyClick { onApply(candidate) },
             ) {
                 Text(stringResource(R.string.carepad_module_settings_apply))
             }
@@ -898,7 +897,7 @@ private fun SingleChoiceDialog(
         dismissButton = {
             TextButton(
                 modifier = Modifier.controllerActivation(enabled = true, onActivate = onDismiss),
-                onClick = onDismiss,
+                onClick = rememberCozyClick(onDismiss),
             ) {
                 Text(stringResource(R.string.carepad_cancel))
             }
@@ -906,28 +905,23 @@ private fun SingleChoiceDialog(
     )
 }
 
+@Composable
+private fun Modifier.clickable(
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+): Modifier = cozyClickable(
+    enabled = enabled,
+    onClick = onClick,
+)
+
+@Composable
 private fun Modifier.controllerActivation(
     enabled: Boolean,
     onActivate: () -> Unit,
-): Modifier = onPreviewKeyEvent { event ->
-    val native = event.nativeKeyEvent
-    if (
-        enabled &&
-        event.type == KeyEventType.KeyDown &&
-        native.repeatCount == 0 &&
-        native.keyCode in setOf(
-            AndroidKeyEvent.KEYCODE_BUTTON_A,
-            AndroidKeyEvent.KEYCODE_DPAD_CENTER,
-            AndroidKeyEvent.KEYCODE_ENTER,
-            AndroidKeyEvent.KEYCODE_NUMPAD_ENTER,
-        )
-    ) {
-        onActivate()
-        true
-    } else {
-        false
-    }
-}
+): Modifier = cozyControllerActivation(
+    enabled = enabled,
+    onActivate = onActivate,
+)
 
 private fun Modifier.controllerBack(onBack: () -> Unit): Modifier =
     onPreviewKeyEvent { event ->
