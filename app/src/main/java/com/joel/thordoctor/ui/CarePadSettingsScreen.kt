@@ -1,6 +1,5 @@
 package com.joel.thordoctor.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -151,7 +150,7 @@ private fun CarePadThemeChoice(
             .focusProperties { canFocus = true }
             .focusRequester(focusRequester)
             .onFocusChanged { state -> onFocusChanged(state.isFocused) }
-            .clickable(onClick = onClick),
+            .cozyClickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = if (selected) {
             MaterialTheme.colorScheme.primaryContainer
