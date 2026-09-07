@@ -64,7 +64,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build debug APKs
-        run: ./gradlew :app:assembleDebug :module-lab:assembleDebug :performance-module:assembleDebug :performance-emulator-fixture:assembleDebug :controls-input-lab:assembleDebug --stacktrace
+        run: ./gradlew :app:assembleDebug :module-lab:assembleDebug :performance-module:assembleDebug :controls-module:assembleDebug :performance-emulator-fixture:assembleDebug :controls-input-lab:assembleDebug --stacktrace
 
       - name: Build CarePad focus androidTest APK
         run: ./gradlew :app:assembleDebugAndroidTest --stacktrace
@@ -160,6 +160,14 @@ jobs:
         with:
           name: CarePad-performance-module-debug
           path: modules/performance/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload Controls module APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-controls-module-debug
+          path: modules/controls/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 3
 
@@ -375,6 +383,12 @@ jobs:
           name: CarePad-performance-module-debug
           path: artifacts/performance-module
 
+      - name: Download Controls module
+        uses: actions/download-artifact@v4
+        with:
+          name: CarePad-controls-module-debug
+          path: artifacts/controls-module
+
       - name: Download Performance emulator fixture
         uses: actions/download-artifact@v4
         with:
@@ -429,6 +443,13 @@ jobs:
             "$(find artifacts/module-defective-update -name '*.apk' -print -quit)" \
             "$(find artifacts/performance-module -name '*.apk' -print -quit)" \
             "$(find artifacts/performance-emulator-fixture -name '*.apk' -print -quit)"
+
+      - name: Run Controls product module smoke test
+        run: |
+          chmod +x scripts/ci/android-emulator-controls-module-smoke.sh
+          scripts/ci/android-emulator-controls-module-smoke.sh \
+            "$(find artifacts/host -name '*.apk' -print -quit)" \
+            "$(find artifacts/controls-module -name '*.apk' -print -quit)"
 
       - name: Run AndroidModuleRecovery lab smoke test
         run: |
