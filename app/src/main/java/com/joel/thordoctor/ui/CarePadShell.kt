@@ -391,7 +391,11 @@ fun CarePadShellScreen(
 
                     native.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_B -> {
                         markControllerActivity()
-                        handleBack()
+                        val handled = handleBack()
+                        if (handled) {
+                            performFeedback()
+                        }
+                        handled
                     }
 
                     native.keyCode == glyphs.detailsKeyCode -> {
@@ -401,6 +405,7 @@ fun CarePadShellScreen(
                             visiblePackages,
                         )
                         if (allowed) {
+                            performFeedback()
                             toggleFocusedDetails()
                         }
                         allowed
