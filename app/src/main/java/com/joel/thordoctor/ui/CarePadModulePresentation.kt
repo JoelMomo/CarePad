@@ -26,6 +26,13 @@ internal object CarePadModulePresentations {
             order = 1,
         )
 
+        CarePadModuleIds.CONTROLS -> CarePadModulePresentation(
+            moduleId = moduleId,
+            nameRes = R.string.carepad_module_controls,
+            descriptionRes = R.string.carepad_module_controls_description,
+            order = 2,
+        )
+
         else -> null
     }
 

@@ -11,6 +11,8 @@
     <string name="carepad_module_performance_description">Consulta el rendimiento durante tus sesiones de emulación.</string>
     <string name="carepad_module_games_bios">Juegos y BIOS</string>
     <string name="carepad_module_games_bios_description">Consulta tu biblioteca de juegos y comprueba problemas conocidos en sus archivos.</string>
+    <string name="carepad_module_controls">Controles</string>
+    <string name="carepad_module_controls_description">Comprueba qué mandos detecta Android y qué entradas recibe el módulo.</string>
 
     <string name="carepad_installed_version">Versión instalada</string>
     <string name="carepad_uninstall_module">Desinstalar módulo</string>
