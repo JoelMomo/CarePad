@@ -119,6 +119,7 @@ internal fun Modifier.cozyCombinedClickable(
         {
             performFeedback()
             currentOnLongClick?.invoke()
+            Unit
         }
     }
 
