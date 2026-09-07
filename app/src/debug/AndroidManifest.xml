@@ -7,14 +7,7 @@
         <activity
             android:name=".modules.host.ModuleLabHarnessActivity"
             android:exported="true"
-            android:label="CarePad Lab Harness">
-
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-
-        </activity>
+            android:label="CarePad Lab Harness" />
 
         <activity
             android:name=".modules.host.recovery.RecoveryLabHarnessActivity"
