@@ -12,7 +12,6 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -141,6 +140,7 @@ fun CarePadShellScreen(
     ) -> Unit,
 ) {
     val context = LocalContext.current
+    val performFeedback = rememberCozyFeedback()
     var savedDestinationName by rememberSaveable {
         mutableStateOf(CarePadDestination.HOME.name)
     }
@@ -323,7 +323,7 @@ fun CarePadShellScreen(
             text = { Text(stringResource(R.string.carepad_uninstall_message)) },
             confirmButton = {
                 TextButton(
-                    onClick = {
+                    onClick = rememberCozyClick {
                         pendingUninstall = null
                         expandedPackage = null
                         ModuleManager.requestUninstall(context, item.module)
@@ -333,7 +333,9 @@ fun CarePadShellScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingUninstall = null }) {
+                TextButton(
+                    onClick = rememberCozyClick { pendingUninstall = null }
+                ) {
                     Text(stringResource(R.string.carepad_cancel))
                 }
             },
@@ -425,6 +427,7 @@ fun CarePadShellScreen(
                                 if (item == null) {
                                     false
                                 } else {
+                                    performFeedback()
                                     expandedPackage = null
                                     ModuleManager.open(context, item.module)
                                     true
@@ -438,12 +441,14 @@ fun CarePadShellScreen(
                                 if (item == null) {
                                     false
                                 } else {
+                                    performFeedback()
                                     pendingUninstall = item
                                     true
                                 }
                             }
 
                             is CarePadFocusKey.Theme -> {
+                                performFeedback()
                                 onThemeModeChange(target.mode)
                                 true
                             }
@@ -801,7 +806,7 @@ private fun CarePadModuleDetails(
                 }
             }
             OutlinedButton(
-                onClick = onUninstall,
+                onClick = rememberCozyClick(onUninstall),
                 modifier = Modifier
                     .focusProperties { canFocus = true }
                     .focusRequester(uninstallFocusRequester)
@@ -884,6 +889,17 @@ private fun CarePadControlHints(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
+
+@Composable
+private fun Modifier.combinedClickable(
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+): Modifier = cozyCombinedClickable(
+    enabled = enabled,
+    onClick = onClick,
+    onLongClick = onLongClick,
+)
 
 private fun moduleIcon(moduleId: String): ImageVector = when (
     CarePadModulePresentations.forModuleId(moduleId)?.order
