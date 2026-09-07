@@ -1,0 +1,247 @@
+name: C1.2B QA0 same-signer triple
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/c1-2b-qa0-same-signer.yml
+      - .github/qa/l6-qa-debug.keystore.b64
+      - .github/qa/C1.2B-QA0-README.md
+
+permissions:
+  contents: read
+
+env:
+  PREPARER_SHA: fea6a1cf2274ed5d2b92d829aa5fbed7b39aa0b4
+  CANDIDATE_SHA: edb0289c4f4785d0aa5b896e0ecd956b42f6a83f
+  EXPECTED_HOST_PACKAGE: com.joel.thordoctor
+  EXPECTED_MODULE_PACKAGE: dev.carepad.module.gamesbios
+  EXPECTED_CERT_SHA256: 8513b30c18d3bb7574830a830461c862fe26c124dd1b1c694f7f58af271662e6
+
+jobs:
+  build-same-signer-triple:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout QA infrastructure
+        uses: actions/checkout@v4
+
+      - name: Checkout exact legacy preparer
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PREPARER_SHA }}
+          path: preparer
+          persist-credentials: false
+
+      - name: Checkout exact PR44 candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          path: candidate
+          persist-credentials: false
+
+      - name: Verify exact source SHAs
+        run: |
+          set -euo pipefail
+          test "$(git -C preparer rev-parse HEAD)" = "$PREPARER_SHA"
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build SDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install reproducible QA signer
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/c1-2b-qa0"
+          base64 --decode .github/qa/l6-qa-debug.keystore.b64 > "$RUNNER_TEMP/c1-2b-qa0/qa-debug.keystore"
+          chmod 600 "$RUNNER_TEMP/c1-2b-qa0/qa-debug.keystore"
+
+          CERT_SHA256="$(keytool -list -v \
+            -keystore "$RUNNER_TEMP/c1-2b-qa0/qa-debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            | awk '/SHA256:/{gsub(":", "", $2); print tolower($2); exit}')"
+
+          echo "qa_signer_sha256=$CERT_SHA256"
+          test "$CERT_SHA256" = "$EXPECTED_CERT_SHA256"
+
+      - name: Build exact preparer, candidate host and Games BIOS module
+        run: |
+          set -euo pipefail
+          chmod +x preparer/gradlew candidate/gradlew
+          ./preparer/gradlew -p preparer :app:assembleDebug --stacktrace
+          ./candidate/gradlew -p candidate :app:assembleDebug :games-bios-module:assembleDebug --stacktrace
+
+      - name: Re-sign all three APKs with the same QA signer
+        run: |
+          set -euo pipefail
+
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          QA_KEYSTORE="$RUNNER_TEMP/c1-2b-qa0/qa-debug.keystore"
+          PREPARER_RAW="$GITHUB_WORKSPACE/preparer/app/build/outputs/apk/debug/app-debug.apk"
+          CANDIDATE_HOST_RAW="$GITHUB_WORKSPACE/candidate/app/build/outputs/apk/debug/app-debug.apk"
+          MODULE_RAW="$(find "$GITHUB_WORKSPACE/candidate/modules/games-bios/app/build/outputs/apk/debug" -name '*.apk' -print -quit)"
+          PREPARER_APK="$RUNNER_TEMP/c1-2b-qa0/CarePad-C1.2B-QA0-preparer-${PREPARER_SHA}.apk"
+          CANDIDATE_HOST_APK="$RUNNER_TEMP/c1-2b-qa0/CarePad-C1.2B-QA0-candidate-host-${CANDIDATE_SHA}.apk"
+          MODULE_APK="$RUNNER_TEMP/c1-2b-qa0/CarePad-C1.2B-QA0-games-bios-${CANDIDATE_SHA}.apk"
+
+          test -x "$APKSIGNER"
+          test -f "$QA_KEYSTORE"
+          test -f "$PREPARER_RAW"
+          test -f "$CANDIDATE_HOST_RAW"
+          test -n "$MODULE_RAW"
+          test -f "$MODULE_RAW"
+
+          "$APKSIGNER" sign \
+            --ks "$QA_KEYSTORE" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out "$PREPARER_APK" \
+            "$PREPARER_RAW"
+
+          "$APKSIGNER" sign \
+            --ks "$QA_KEYSTORE" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out "$CANDIDATE_HOST_APK" \
+            "$CANDIDATE_HOST_RAW"
+
+          "$APKSIGNER" sign \
+            --ks "$QA_KEYSTORE" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out "$MODULE_APK" \
+            "$MODULE_RAW"
+
+      - name: Verify packages, signer, versions and APK digests
+        run: |
+          set -euo pipefail
+
+          QA_DIR="$RUNNER_TEMP/c1-2b-qa0"
+          PREPARER_APK="$QA_DIR/CarePad-C1.2B-QA0-preparer-${PREPARER_SHA}.apk"
+          CANDIDATE_HOST_APK="$QA_DIR/CarePad-C1.2B-QA0-candidate-host-${CANDIDATE_SHA}.apk"
+          MODULE_APK="$QA_DIR/CarePad-C1.2B-QA0-games-bios-${CANDIDATE_SHA}.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -print -quit)"
+
+          test -x "$APKSIGNER"
+          test -x "$APKANALYZER"
+          test -f "$PREPARER_APK"
+          test -f "$CANDIDATE_HOST_APK"
+          test -f "$MODULE_APK"
+
+          cert_digest() {
+            local apk="$1"
+            local report="$2"
+            "$APKSIGNER" verify --print-certs "$apk" | tee "$report" >/dev/null
+            awk -F': ' 'tolower($0) ~ /certificate sha-256 digest/ {print tolower($NF); exit}' "$report"
+          }
+
+          PREPARER_CERT="$(cert_digest "$PREPARER_APK" "$QA_DIR/preparer-certs.txt")"
+          CANDIDATE_HOST_CERT="$(cert_digest "$CANDIDATE_HOST_APK" "$QA_DIR/candidate-host-certs.txt")"
+          MODULE_CERT="$(cert_digest "$MODULE_APK" "$QA_DIR/module-certs.txt")"
+
+          test -n "$PREPARER_CERT"
+          test -n "$CANDIDATE_HOST_CERT"
+          test -n "$MODULE_CERT"
+          test "$PREPARER_CERT" = "$EXPECTED_CERT_SHA256"
+          test "$CANDIDATE_HOST_CERT" = "$EXPECTED_CERT_SHA256"
+          test "$MODULE_CERT" = "$EXPECTED_CERT_SHA256"
+          test "$PREPARER_CERT" = "$CANDIDATE_HOST_CERT"
+          test "$CANDIDATE_HOST_CERT" = "$MODULE_CERT"
+
+          PREPARER_PACKAGE="$("$APKANALYZER" manifest application-id "$PREPARER_APK")"
+          CANDIDATE_HOST_PACKAGE="$("$APKANALYZER" manifest application-id "$CANDIDATE_HOST_APK")"
+          MODULE_PACKAGE="$("$APKANALYZER" manifest application-id "$MODULE_APK")"
+
+          test "$PREPARER_PACKAGE" = "$EXPECTED_HOST_PACKAGE"
+          test "$CANDIDATE_HOST_PACKAGE" = "$EXPECTED_HOST_PACKAGE"
+          test "$MODULE_PACKAGE" = "$EXPECTED_MODULE_PACKAGE"
+          test "$PREPARER_PACKAGE" = "$CANDIDATE_HOST_PACKAGE"
+
+          PREPARER_VERSION="$("$APKANALYZER" manifest version-code "$PREPARER_APK")"
+          CANDIDATE_HOST_VERSION="$("$APKANALYZER" manifest version-code "$CANDIDATE_HOST_APK")"
+          MODULE_VERSION="$("$APKANALYZER" manifest version-code "$MODULE_APK")"
+
+          test "$CANDIDATE_HOST_VERSION" -ge "$PREPARER_VERSION"
+
+          PREPARER_APK_SHA256="$(sha256sum "$PREPARER_APK" | awk '{print $1}')"
+          CANDIDATE_HOST_APK_SHA256="$(sha256sum "$CANDIDATE_HOST_APK" | awk '{print $1}')"
+          MODULE_APK_SHA256="$(sha256sum "$MODULE_APK" | awk '{print $1}')"
+
+          cat > "$QA_DIR/qa0-report.txt" <<EOF
+          preparer_source_sha=$PREPARER_SHA
+          candidate_source_sha=$CANDIDATE_SHA
+          preparer_package=$PREPARER_PACKAGE
+          candidate_host_package=$CANDIDATE_HOST_PACKAGE
+          module_package=$MODULE_PACKAGE
+          preparer_version_code=$PREPARER_VERSION
+          candidate_host_version_code=$CANDIDATE_HOST_VERSION
+          module_version_code=$MODULE_VERSION
+          preparer_certificate_sha256=$PREPARER_CERT
+          candidate_host_certificate_sha256=$CANDIDATE_HOST_CERT
+          module_certificate_sha256=$MODULE_CERT
+          preparer_apk_sha256=$PREPARER_APK_SHA256
+          candidate_host_apk_sha256=$CANDIDATE_HOST_APK_SHA256
+          module_apk_sha256=$MODULE_APK_SHA256
+          adb_install_r_host_prerequisites_met=true
+          module_discovery_same_signer_prerequisites_met=true
+          host_update_reason=same_package_same_certificate_candidate_version_not_lower
+          module_discovery_reason=same_QA_certificate_as_candidate_host
+          signer_scope=QA_LAB_ONLY_NOT_FOR_RELEASE
+          signing_method=explicit_apksigner_resign_after_exact_source_build
+          EOF
+
+          cat "$QA_DIR/qa0-report.txt"
+
+      - name: Upload legacy preparer QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-C1.2B-QA0-legacy-preparer-same-signer
+          path: ${{ runner.temp }}/c1-2b-qa0/CarePad-C1.2B-QA0-preparer-*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload candidate host QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-C1.2B-QA0-candidate-host-same-signer
+          path: ${{ runner.temp }}/c1-2b-qa0/CarePad-C1.2B-QA0-candidate-host-*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Games BIOS module QA APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-C1.2B-QA0-games-bios-module-same-signer
+          path: ${{ runner.temp }}/c1-2b-qa0/CarePad-C1.2B-QA0-games-bios-*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload QA verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-C1.2B-QA0-verification-report
+          path: |
+            ${{ runner.temp }}/c1-2b-qa0/qa0-report.txt
+            ${{ runner.temp }}/c1-2b-qa0/preparer-certs.txt
+            ${{ runner.temp }}/c1-2b-qa0/candidate-host-certs.txt
+            ${{ runner.temp }}/c1-2b-qa0/module-certs.txt
+          if-no-files-found: error
+          retention-days: 7
