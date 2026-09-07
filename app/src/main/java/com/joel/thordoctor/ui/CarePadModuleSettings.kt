@@ -923,20 +923,23 @@ private fun Modifier.controllerActivation(
     onActivate = onActivate,
 )
 
-private fun Modifier.controllerBack(onBack: () -> Unit): Modifier =
-    onPreviewKeyEvent { event ->
+@Composable
+private fun Modifier.controllerBack(onBack: () -> Unit): Modifier {
+    val onBackWithFeedback = rememberCozyClick(onBack)
+    return onPreviewKeyEvent { event ->
         val native = event.nativeKeyEvent
         if (
             event.type == KeyEventType.KeyDown &&
             native.repeatCount == 0 &&
             native.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_B
         ) {
-            onBack()
+            onBackWithFeedback()
             true
         } else {
             false
         }
     }
+}
 
 private fun moduleDisplayName(
     context: Context,
