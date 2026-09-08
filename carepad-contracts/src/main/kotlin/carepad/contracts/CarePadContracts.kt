@@ -31,12 +31,14 @@ object CarePadModuleActions {
 /**
  * Minimal host-navigation contract used by independent module APKs.
  *
- * The host package is supplied when CarePad opens a module so the module can
- * return to the exact host instance that launched it, including QA/lab hosts.
+ * The host package and visible UI locale are supplied when CarePad opens a module so the module
+ * can return to the exact host instance and keep the same user-facing language, including QA/lab
+ * hosts whose visible locale may intentionally differ from the device locale.
  */
 object CarePadHostNavigation {
     const val ACTION_OPEN_DESTINATION = "dev.carepad.action.OPEN_HOST_DESTINATION"
     const val EXTRA_HOST_PACKAGE = "dev.carepad.extra.HOST_PACKAGE"
+    const val EXTRA_HOST_LOCALE_TAG = "dev.carepad.extra.HOST_LOCALE_TAG"
     const val EXTRA_DESTINATION = "dev.carepad.extra.HOST_DESTINATION"
 
     const val HOME = "home"
