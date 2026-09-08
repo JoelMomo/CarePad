@@ -97,6 +97,10 @@
         </activity>
 
         <receiver
+            android:name=".modules.host.catalog.CatalogModuleInstallStatusReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".modules.host.recovery.ModuleRecoveryStatusReceiver"
             android:exported="false" />
 
