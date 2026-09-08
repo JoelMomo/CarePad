@@ -2,16 +2,22 @@
     <string name="app_name">Controles</string>
     <string name="controls_intro">Comprueba qué entradas recibe Android de tu mando.</string>
 
+    <string name="nav_home">Inicio</string>
+    <string name="nav_add_modules">Añadir módulos</string>
+    <string name="nav_settings">Ajustes</string>
+    <string name="host_navigation_unavailable">Vuelve a CarePad para cambiar de sección.</string>
+
     <string name="controller_section">Mando seleccionado</string>
     <string name="controller_connected">Conectado</string>
     <string name="unnamed_controller">Mando sin nombre</string>
     <string name="no_devices_friendly">No vemos ningún mando por aquí. Conecta uno y aparecerá en cuanto Android lo detecte.</string>
     <string name="choose_controller_help">¿Cuál quieres probar? Pulsa un botón en el mando y te ayudamos a encontrarlo.</string>
-    <string name="change_controller_help">Puedes cambiar de mando antes de iniciar una prueba.</string>
+    <string name="change_controller_help">Elige qué mando quieres observar o probar.</string>
     <string name="activity_help">La actividad sirve solo para identificar el mando; no cambia la selección ni mueve el foco.</string>
     <string name="controller_activity_option">%1$s\n• Actividad detectada</string>
     <string name="controller_disconnected">Uy, parece que este mando se ha desconectado. Vuelve a conectarlo y empezamos una prueba nueva.</string>
     <string name="controller_changed">El mando ha cambiado mientras lo estábamos observando. Empieza una prueba nueva para no mezclar resultados.</string>
+    <string name="controller_session_invalidated">La prueba anterior ya no es válida. Empieza una nueva para no mezclar evidencias.</string>
 
     <string name="guided_test">Prueba guiada</string>
     <string name="guided_test_description">Comprueba botones, cruceta y sticks paso a paso con una guía sencilla.</string>
@@ -26,23 +32,38 @@
     <string name="detected_breadcrumb">Controles → Entradas detectadas</string>
     <string name="detected_inputs_scope_note">Esta pantalla es solo informativa. No cambia la asignación de botones.</string>
     <string name="back">Atrás</string>
-    <string name="next">Siguiente</string>
-    <string name="view_summary">Ver resumen</string>
+    <string name="continue_label">Continuar</string>
     <string name="back_to_controls">Volver a Controles</string>
-    <string name="step_counter">Paso %1$d de %2$d</string>
+
+    <string name="prepare_test">Antes de empezar</string>
+    <string name="prepare_test_instruction">Deja el mando quieto un momento y sujétalo con normalidad. Empezaremos con una prueba nueva.</string>
+    <string name="prepare_test_note">Los movimientos usados para navegar hasta aquí no cuentan como evidencia de la prueba.</string>
+    <string name="start_test">Empezar prueba</string>
 
     <string name="buttons_and_dpad">Botones y cruceta</string>
     <string name="left_stick">Stick izquierdo</string>
     <string name="right_stick">Stick derecho</string>
-    <string name="buttons_instruction">Pulsa varios botones y prueba las cuatro direcciones de la cruceta. La posición resaltada es la referencia principal.</string>
-    <string name="left_stick_instruction">Mueve el stick izquierdo por su recorrido y vuelve al centro.</string>
-    <string name="right_stick_instruction">Mueve el stick derecho por su recorrido y vuelve al centro.</string>
-    <string name="try_highlighted_controls">Prueba los controles resaltados cuando quieras.</string>
-    <string name="move_highlighted_stick">Mueve el stick resaltado para que podamos observar su entrada.</string>
-    <string name="digital_inputs_seen">Entradas recibidas: %1$d controles distintos observados.</string>
-    <string name="stick_input_seen">Entrada recibida · X %1$s · Y %2$s</string>
-    <string name="mapping_inconclusive">No hemos podido reconocer bien esta entrada. No pasa nada: esto no significa que haya nada roto.</string>
-    <string name="waiting_for_input">Esperando una entrada del mando…</string>
+    <string name="control_counter">Control %1$d de %2$d</string>
+    <string name="digital_target_instruction">Pulsa %1$s cuando esté escuchando. Solo ese control contará para este paso.</string>
+    <string name="try_this_control">Probar este control</string>
+    <string name="next_control">Siguiente control</string>
+    <string name="tried_not_detected">Lo he intentado y no se detecta</string>
+    <string name="ready_for_explicit_attempt">Cuando estés listo, inicia el intento. No marcaremos nada como ausente solo por esperar.</string>
+    <string name="listening_for_attempt">Escuchando este intento… Usa ahora el control resaltado.</string>
+    <string name="attempt_not_seen_yet">Aún no hemos visto ese control. Si ya lo has intentado, puedes indicarlo.</string>
+    <string name="input_seen_checking_target">Entrada recibida. Comprobando si corresponde al control resaltado…</string>
+    <string name="control_observed">Detectado durante tu intento.</string>
+    <string name="control_not_detected_after_attempt">No detectado después de un intento explícito.</string>
+
+    <string name="left_rest_instruction">Deja el stick izquierdo quieto y aproximadamente centrado antes de probar su recorrido.</string>
+    <string name="right_rest_instruction">Deja el stick derecho quieto y aproximadamente centrado antes de probar su recorrido.</string>
+    <string name="rest_is_observation_not_diagnosis">Este paso solo prepara la observación; no diagnostica drift ni exige un centro perfecto.</string>
+    <string name="stick_is_still">El stick está quieto</string>
+    <string name="left_move_instruction">Mueve el stick izquierdo por distintas direcciones y vuelve al centro.</string>
+    <string name="right_move_instruction">Mueve el stick derecho por distintas direcciones y vuelve al centro.</string>
+    <string name="try_stick_movement">Probar recorrido</string>
+    <string name="stick_observed">Movimiento recibido durante tu intento.</string>
+    <string name="mapping_inconclusive">No hemos podido interpretar este stick con suficiente seguridad. Se mostrará como No concluyente, no como avería.</string>
 
     <string name="test_finished">Prueba terminada</string>
     <string name="summary_nothing_unusual">¡Prueba terminada! No hemos visto nada raro en lo que hemos podido comprobar.</string>
@@ -52,7 +73,7 @@
     <string name="inconclusive">No concluyente</string>
     <string name="controls_scope_note">El resultado describe únicamente lo que Android ha entregado durante esta prueba; no certifica por sí solo el estado físico completo del mando.</string>
     <string name="leave_test_title">¿Salir de la prueba?</string>
-    <string name="leave_test_message">La prueba quedará sin completar. Puedes empezar una nueva cuando quieras.</string>
+    <string name="leave_test_message">La prueba quedará sin completar. Conservamos solo la evidencia de esta sesión mientras sigas dentro de la prueba.</string>
     <string name="keep_testing">Seguir con la prueba</string>
     <string name="leave_test">Salir</string>
 
@@ -62,13 +83,14 @@
     <string name="input_active">Activa</string>
     <string name="input_idle">En reposo</string>
     <string name="input_value">Valor %1$s</string>
+    <string name="input_active_value">Activa · valor %1$s</string>
     <string name="no_signal_yet">Aún sin señal</string>
     <string name="no_inputs_to_show">Android no expone entradas compatibles para mostrar en este mando.</string>
 
-    <string name="button_a">Botón A</string>
-    <string name="button_b">Botón B</string>
-    <string name="button_x">Botón X</string>
-    <string name="button_y">Botón Y</string>
+    <string name="button_a">botón inferior</string>
+    <string name="button_b">botón derecho</string>
+    <string name="button_x">botón izquierdo</string>
+    <string name="button_y">botón superior</string>
     <string name="button_l1">L1</string>
     <string name="button_r1">R1</string>
     <string name="left_stick_press">Pulsación del stick izquierdo</string>
@@ -76,16 +98,16 @@
     <string name="start_button">Start</string>
     <string name="select_button">Select</string>
     <string name="center_button">Botón central</string>
-    <string name="dpad_up">Cruceta arriba</string>
-    <string name="dpad_down">Cruceta abajo</string>
-    <string name="dpad_left">Cruceta izquierda</string>
-    <string name="dpad_right">Cruceta derecha</string>
+    <string name="dpad_up">cruceta arriba</string>
+    <string name="dpad_down">cruceta abajo</string>
+    <string name="dpad_left">cruceta izquierda</string>
+    <string name="dpad_right">cruceta derecha</string>
     <string name="left_stick_x">Stick izquierdo · horizontal</string>
     <string name="left_stick_y">Stick izquierdo · vertical</string>
     <string name="right_stick_x">Stick derecho · horizontal</string>
     <string name="right_stick_y">Stick derecho · vertical</string>
-    <string name="dpad_horizontal">Cruceta · horizontal</string>
-    <string name="dpad_vertical">Cruceta · vertical</string>
+    <string name="dpad_horizontal">Cruceta · horizontal (HAT)</string>
+    <string name="dpad_vertical">Cruceta · vertical (HAT)</string>
 
     <string name="family_playstation">Referencia PlayStation</string>
     <string name="family_xbox">Referencia Xbox</string>
