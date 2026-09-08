@@ -11,6 +11,7 @@ import android.os.Build
 import carepad.contracts.CarePadHostNavigation
 import carepad.contracts.CarePadModuleActions
 import carepad.contracts.CarePadModuleCapabilities
+import com.joel.thordoctor.R
 
 /** Host-side entry point for module discovery, launch and Android-owned lifecycle prompts. */
 object ModuleManager {
@@ -22,6 +23,10 @@ object ModuleManager {
         val intent = Intent(CarePadModuleActions.OPEN_MODULE)
             .setComponent(module.entryActivity)
             .putExtra(CarePadHostNavigation.EXTRA_HOST_PACKAGE, context.packageName)
+            .putExtra(
+                CarePadHostNavigation.EXTRA_HOST_LOCALE_TAG,
+                context.getString(R.string.carepad_host_ui_locale_tag),
+            )
             .apply { if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
         context.startActivity(intent)
     }
