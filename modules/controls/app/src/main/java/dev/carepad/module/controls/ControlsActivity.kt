@@ -65,6 +65,17 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
         val active: Boolean,
     )
 
+    private data class Geometry(
+        val dpadX: Float,
+        val dpadY: Float,
+        val faceX: Float,
+        val faceY: Float,
+        val leftStickX: Float,
+        val leftStickY: Float,
+        val rightStickX: Float,
+        val rightStickY: Float,
+    )
+
     private lateinit var inputManager: InputManager
     private lateinit var deviceCatalog: AndroidDeviceCatalog
     private val handler = Handler(Looper.getMainLooper())
@@ -802,7 +813,7 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
     private fun controllerButtonLabel(device: DeviceInfo): String = friendlyDeviceName(device)
 
     private fun requestHostDestination(destination: String) {
-        val action = {
+        val action: () -> Unit = {
             val hostPackage = launchHostPackage
             if (hostPackage.isNullOrBlank()) {
                 if (destination == CarePadHostNavigation.HOME) finish() else Toast.makeText(this, R.string.host_navigation_unavailable, Toast.LENGTH_SHORT).show()
@@ -1115,8 +1126,6 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
             canvas.drawText(familyLabel(family), w / 2f, h * .96f, labelPaint)
             if (highlightedControl != null) postInvalidateDelayed(60L)
         }
-
-        private data class Geometry(val dpadX: Float, val dpadY: Float, val faceX: Float, val faceY: Float, val leftStickX: Float, val leftStickY: Float, val rightStickX: Float, val rightStickY: Float)
 
         private fun familyGeometry(w: Float, h: Float): Geometry = when (family) {
             ControllerFamily.PLAYSTATION -> Geometry(w*.27f,h*.43f,w*.73f,h*.43f,w*.42f,h*.65f,w*.58f,h*.65f)
