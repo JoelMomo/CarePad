@@ -103,8 +103,8 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
     private var launchHostPackage: String? = null
     private var inputMethod = InputMethod.CONTROLLER
     private var helpHintView: TextView? = null
-    private var navigationRailView: View? = null
-    private var navigationRailHomeButton: View? = null
+    private var navigationContainerView: View? = null
+    private var navigationHomeButton: View? = null
     private var contentFocusTarget: View? = null
     private var session: ControlsSession? = null
     private var guidedStage = GuidedStage.PREPARE
@@ -906,13 +906,14 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
                 addView(contentColumn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
             }
         } else {
-            navigationRailView = null
-            navigationRailHomeButton = null
+            val navigation = bottomNavigation()
+            navigationContainerView = navigation
+            navigationHomeButton = firstFocusableDescendant(navigation)
             LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setBackgroundColor(pageColor())
                 addView(contentColumn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-                addView(bottomNavigation(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                addView(navigation, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             }
         }
         setContentView(shell)
@@ -925,7 +926,7 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
             setPadding(dp(8), dp(12), dp(8), dp(12))
             setBackgroundColor(surfaceColor())
         }
-        navigationRailView = rail
+        navigationContainerView = rail
         val bindings = mutableListOf<RailButtonBinding>()
         var widthAnimator: ValueAnimator? = null
 
@@ -998,7 +999,7 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
             }
             val binding = RailButtonBinding(button, label, iconRes, selected)
             bindings += binding
-            if (destination == CarePadHostNavigation.HOME) navigationRailHomeButton = button
+            if (destination == CarePadHostNavigation.HOME) navigationHomeButton = button
             val cell = FrameLayout(this).apply {
                 addView(
                     button,
@@ -1096,10 +1097,10 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
             source and InputDevice.SOURCE_DPAD == InputDevice.SOURCE_DPAD
 
     private fun toggleNavigationFocus() {
-        val rail = navigationRailView
+        val rail = navigationContainerView
         val focused = window.decorView.findFocus()
         val focusIsInRail = rail != null && focused != null && isDescendantOf(focused, rail)
-        val target = if (focusIsInRail) contentFocusTarget else navigationRailHomeButton
+        val target = if (focusIsInRail) contentFocusTarget else navigationHomeButton
         target?.requestFocus()
     }
 
