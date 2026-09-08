@@ -24,5 +24,6 @@ android {
 }
 
 dependencies {
+    implementation(project(":carepad-contracts"))
     implementation(project(":controls-runtime"))
 }

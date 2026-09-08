@@ -75,6 +75,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import carepad.contracts.CarePadHostNavigation
 import com.joel.thordoctor.AppPreferences
 import com.joel.thordoctor.AppThemeMode
 import com.joel.thordoctor.ControlGlyphProfile
@@ -132,6 +133,8 @@ private data class ControllerGlyphs(
 @Composable
 fun CarePadShellScreen(
     onThemeModeChange: (AppThemeMode) -> Unit,
+    requestedDestination: String? = null,
+    onDestinationRequestConsumed: () -> Unit = {},
     settingsContent: @Composable (
         onBack: () -> Unit,
         onThemeFocusChanged: (AppThemeMode, Boolean) -> Unit,
@@ -268,6 +271,18 @@ fun CarePadShellScreen(
     fun goTo(next: CarePadDestination) {
         expandedPackage = null
         dispatchFocus(CarePadFocusEvent.DestinationSelected(next))
+    }
+
+    LaunchedEffect(requestedDestination) {
+        if (requestedDestination == null) return@LaunchedEffect
+        val next = when (requestedDestination) {
+            CarePadHostNavigation.HOME -> CarePadDestination.HOME
+            CarePadHostNavigation.ADD_MODULES -> CarePadDestination.ADD_MODULES
+            CarePadHostNavigation.SETTINGS -> CarePadDestination.SETTINGS
+            else -> null
+        }
+        next?.let(::goTo)
+        onDestinationRequestConsumed()
     }
 
     fun handleBack(): Boolean {
