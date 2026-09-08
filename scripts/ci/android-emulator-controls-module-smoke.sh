@@ -39,6 +39,10 @@ controls_product_surface_visible() {
         ! grep -Eq 'text="(Refresh controllers|Actualizar mandos)"' "$UI_DUMP_LOCAL"
 }
 
+restore_rotation() {
+    adb shell settings put system accelerometer_rotation 1 >/dev/null 2>&1 || true
+}
+
 adb install -r "$HOST_APK" >/dev/null
 adb install -r "$CONTROLS_APK" >/dev/null
 
@@ -61,6 +65,13 @@ if ! grep -Fq "Accepted: controls" "$UI_DUMP_LOCAL" ||
     exit 1
 fi
 
+# The UX gate under test is the horizontal CarePad rail. Force landscape so the
+# module crosses the canonical >=600dp && width>=height breakpoint and renders it.
+adb shell settings put system accelerometer_rotation 0 >/dev/null
+adb shell settings put system user_rotation 1 >/dev/null
+trap restore_rotation EXIT
+sleep 1
+
 adb shell am start -a "$OPEN_ACTION" -p "$CONTROLS_PACKAGE" >/dev/null
 
 for _ in $(seq 1 20); do
@@ -70,13 +81,13 @@ for _ in $(seq 1 20); do
         dump_ui &&
         grep -Fq "package=\"$CONTROLS_PACKAGE\"" "$UI_DUMP_LOCAL" &&
         controls_product_surface_visible; then
-        echo "Controls product module discovery/open + UI surface smoke passed"
+        echo "Controls product module discovery/open + landscape rail UI smoke passed"
         exit 0
     fi
     sleep 0.5
 done
 
-echo "Controls product module did not expose the expected product UI" >&2
+echo "Controls product module did not expose the expected landscape rail UI" >&2
 echo "Resumed activity: $(current_resumed_activity)" >&2
 cat "$UI_DUMP_LOCAL" >&2 || true
 exit 1
