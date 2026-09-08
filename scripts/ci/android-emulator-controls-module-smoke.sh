@@ -32,13 +32,17 @@ dump_ui() {
     return 1
 }
 
-controls_product_surface_visible() {
+controls_shell_visible() {
     grep -Fq 'text="Prueba guiada"' "$UI_DUMP_LOCAL" &&
-        grep -Fq 'text="Entradas detectadas"' "$UI_DUMP_LOCAL" &&
         grep -Eq '(text|content-desc)="Inicio"' "$UI_DUMP_LOCAL" &&
         grep -Eq '(text|content-desc)="Añadir módulos"' "$UI_DUMP_LOCAL" &&
         grep -Eq '(text|content-desc)="Ajustes"' "$UI_DUMP_LOCAL" &&
         grep -Fq 'text="A Seleccionar · B Atrás · L1 Navegación"' "$UI_DUMP_LOCAL" &&
+        ! grep -Eq 'text="(Guided test|Detected inputs|Home|Add modules|Settings|Refresh controllers|Actualizar mandos)"' "$UI_DUMP_LOCAL"
+}
+
+detected_inputs_visible() {
+    grep -Fq 'text="Entradas detectadas"' "$UI_DUMP_LOCAL" &&
         ! grep -Eq 'text="(Guided test|Detected inputs|Home|Add modules|Settings|Refresh controllers|Actualizar mandos)"' "$UI_DUMP_LOCAL"
 }
 
@@ -81,20 +85,40 @@ adb shell am start \
     --es "$HOST_PACKAGE_EXTRA" "$HOST_PACKAGE" \
     --es "$HOST_LOCALE_EXTRA" es >/dev/null
 
+shell_visible=false
 for _ in $(seq 1 20); do
     resumed="$(current_resumed_activity)"
     if grep -Fq "$CONTROLS_PACKAGE" <<<"$resumed" &&
         grep -Fq "ControlsActivity" <<<"$resumed" &&
         dump_ui &&
         grep -Fq "package=\"$CONTROLS_PACKAGE\"" "$UI_DUMP_LOCAL" &&
-        controls_product_surface_visible; then
-        echo "Controls product module Spanish host-locale + landscape rail + canonical hints smoke passed"
-        exit 0
+        controls_shell_visible; then
+        shell_visible=true
+        break
     fi
     sleep 0.5
 done
 
-echo "Controls product module did not expose the expected Spanish landscape rail + hints UI" >&2
+if [[ "$shell_visible" != true ]]; then
+    echo "Controls product module did not expose the expected Spanish landscape rail + hints UI" >&2
+    echo "Resumed activity: $(current_resumed_activity)" >&2
+    cat "$UI_DUMP_LOCAL" >&2 || true
+    exit 1
+fi
+
+# The 640x320 CI viewport places the second action card below the initial
+# ScrollView fold. Scroll the actual content and verify that the secondary
+# surface is present instead of requiring both cards to be visible at once.
+for _ in $(seq 1 6); do
+    adb shell input touchscreen swipe 560 240 560 90 300 >/dev/null
+    sleep 0.35
+    if dump_ui && detected_inputs_visible; then
+        echo "Controls product module Spanish host-locale + landscape rail + canonical hints + secondary action smoke passed"
+        exit 0
+    fi
+done
+
+echo "Controls product module did not expose Entradas detectadas after scrolling the landscape content" >&2
 echo "Resumed activity: $(current_resumed_activity)" >&2
 cat "$UI_DUMP_LOCAL" >&2 || true
 exit 1
