@@ -133,8 +133,8 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        applyHostLocaleOverride()
         super.onCreate(savedInstanceState)
+        applyHostLocaleOverride()
         inputManager = getSystemService(InputManager::class.java)
         deviceCatalog = AndroidDeviceCatalog(inputManager)
         launchHostPackage = intent.getStringExtra(CarePadHostNavigation.EXTRA_HOST_PACKAGE)
@@ -1065,17 +1065,19 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun applyHostLocaleOverride() {
         val tag = intent.getStringExtra(CarePadHostNavigation.EXTRA_HOST_LOCALE_TAG)
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
             ?: return
         val locale = Locale.forLanguageTag(tag)
-        val override = Configuration().apply {
+        val override = Configuration(resources.configuration).apply {
             setLocale(locale)
             setLayoutDirection(locale)
         }
-        applyOverrideConfiguration(override)
+        Locale.setDefault(locale)
+        resources.updateConfiguration(override, resources.displayMetrics)
     }
 
     private fun setInputMethod(method: InputMethod) {
