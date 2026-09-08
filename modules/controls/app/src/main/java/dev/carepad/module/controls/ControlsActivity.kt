@@ -1,5 +1,6 @@
 package dev.carepad.module.controls
 
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
@@ -21,7 +22,9 @@ import android.view.MotionEvent
 import android.view.SoundEffectConstants
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.Button as UiButton
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -74,6 +77,13 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
         val leftStickY: Float,
         val rightStickX: Float,
         val rightStickY: Float,
+    )
+
+    private data class RailButtonBinding(
+        val button: UiButton,
+        val label: String,
+        val iconRes: Int,
+        val selected: Boolean,
     )
 
     private lateinit var inputManager: InputManager
@@ -844,7 +854,8 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
             LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setBackgroundColor(pageColor())
-                addView(navigationRail(), LinearLayout.LayoutParams(dp(176), ViewGroup.LayoutParams.MATCH_PARENT))
+                val rail = navigationRail()
+                addView(rail, LinearLayout.LayoutParams(dp(RAIL_COMPACT_WIDTH_DP), ViewGroup.LayoutParams.MATCH_PARENT))
                 addView(scroll, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
             }
         } else {
@@ -858,14 +869,128 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
         setContentView(shell)
     }
 
-    private fun navigationRail(): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        gravity = Gravity.TOP
-        setPadding(dp(8), dp(18), dp(8), dp(12))
-        setBackgroundColor(surfaceColor())
-        addView(navButton(getString(R.string.nav_home), CarePadHostNavigation.HOME, true))
-        addView(navButton(getString(R.string.nav_add_modules), CarePadHostNavigation.ADD_MODULES, false))
-        addView(navButton(getString(R.string.nav_settings), CarePadHostNavigation.SETTINGS, false))
+    private fun navigationRail(): LinearLayout {
+        val rail = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(12), dp(8), dp(12))
+            setBackgroundColor(surfaceColor())
+        }
+        val bindings = mutableListOf<RailButtonBinding>()
+        var widthAnimator: ValueAnimator? = null
+
+        fun applyVisualState(expanded: Boolean, animate: Boolean) {
+            bindings.forEach { binding ->
+                binding.button.text = if (expanded) binding.label else ""
+                binding.button.contentDescription = binding.label
+                binding.button.setCompoundDrawablesWithIntrinsicBounds(
+                    null,
+                    getDrawable(binding.iconRes)?.mutate()?.apply {
+                        setTint(if (binding.selected) Color.WHITE else textPrimaryColor())
+                    },
+                    null,
+                    null,
+                )
+            }
+
+            val targetWidth = dp(if (expanded) RAIL_EXPANDED_WIDTH_DP else RAIL_COMPACT_WIDTH_DP)
+            val params = rail.layoutParams ?: return
+            val currentWidth = params.width
+            if (!animate || currentWidth == targetWidth || currentWidth <= 0) {
+                widthAnimator?.cancel()
+                params.width = targetWidth
+                rail.layoutParams = params
+                return
+            }
+
+            widthAnimator?.cancel()
+            widthAnimator = ValueAnimator.ofInt(currentWidth, targetWidth).apply {
+                duration = RAIL_TRANSITION_MS
+                interpolator = DecelerateInterpolator()
+                addUpdateListener { animation ->
+                    val layout = rail.layoutParams ?: return@addUpdateListener
+                    layout.width = animation.animatedValue as Int
+                    rail.layoutParams = layout
+                }
+                start()
+            }
+        }
+
+        val destinations = listOf(
+            Triple(getString(R.string.nav_home), CarePadHostNavigation.HOME, R.drawable.ic_carepad_nav_home),
+            Triple(getString(R.string.nav_add_modules), CarePadHostNavigation.ADD_MODULES, R.drawable.ic_carepad_nav_add_circle),
+            Triple(getString(R.string.nav_settings), CarePadHostNavigation.SETTINGS, R.drawable.ic_carepad_nav_settings),
+        )
+
+        destinations.forEach { (label, destination, iconRes) ->
+            val selected = destination == CarePadHostNavigation.HOME
+            val button = UiButton(this).apply {
+                text = ""
+                contentDescription = label
+                isAllCaps = false
+                isFocusable = true
+                minHeight = dp(64)
+                textSize = 14f
+                gravity = Gravity.CENTER
+                compoundDrawablePadding = dp(4)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                setTextColor(if (selected) Color.WHITE else textPrimaryColor())
+                updateRailButtonBackground(this, selected, false)
+                setCompoundDrawablesWithIntrinsicBounds(
+                    null,
+                    getDrawable(iconRes)?.mutate()?.apply {
+                        setTint(if (selected) Color.WHITE else textPrimaryColor())
+                    },
+                    null,
+                    null,
+                )
+                setOnClickListener { view ->
+                    performFeedback(view)
+                    requestHostDestination(destination)
+                }
+            }
+            val binding = RailButtonBinding(button, label, iconRes, selected)
+            bindings += binding
+            val cell = FrameLayout(this).apply {
+                addView(
+                    button,
+                    FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER),
+                )
+            }
+            rail.addView(cell, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        }
+
+        bindings.forEach { binding ->
+            binding.button.setOnFocusChangeListener { view, focused ->
+                updateRailButtonBackground(view as UiButton, binding.selected, focused)
+                rail.post { applyVisualState(rail.hasFocus(), true) }
+            }
+        }
+        rail.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) {
+                rail.post { applyVisualState(rail.hasFocus(), false) }
+            }
+
+            override fun onViewDetachedFromWindow(view: View) {
+                widthAnimator?.cancel()
+            }
+        })
+        return rail
+    }
+
+    private fun updateRailButtonBackground(button: UiButton, selected: Boolean, focused: Boolean) {
+        button.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(16).toFloat()
+            setColor(
+                when {
+                    selected -> primaryColor()
+                    focused -> secondaryButtonColor()
+                    else -> Color.TRANSPARENT
+                },
+            )
+            if (focused) setStroke(dp(3), focusOutlineColor())
+        }
     }
 
     private fun bottomNavigation(): View = LinearLayout(this).apply {
@@ -1200,5 +1325,8 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
         const val ATTEMPT_WINDOW_MS = 1800L
         const val LIVE_ACTIVITY_WINDOW_MS = 520L
         const val MAX_GUIDED_TRAJECTORY_POINTS = 96
+        const val RAIL_COMPACT_WIDTH_DP = 80
+        const val RAIL_EXPANDED_WIDTH_DP = 176
+        const val RAIL_TRANSITION_MS = 180L
     }
 }
