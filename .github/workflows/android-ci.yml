@@ -64,7 +64,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build debug APKs
-        run: ./gradlew :app:assembleDebug :module-lab:assembleDebug :performance-module:assembleDebug :controls-module:assembleDebug :performance-emulator-fixture:assembleDebug :controls-input-lab:assembleDebug --stacktrace
+        run: ./gradlew :app:assembleDebug :module-lab:assembleDebug :performance-module:assembleDebug :games-bios-module:assembleDebug :controls-module:assembleDebug :performance-emulator-fixture:assembleDebug :controls-input-lab:assembleDebug --stacktrace
 
       - name: Build CarePad focus androidTest APK
         run: ./gradlew :app:assembleDebugAndroidTest --stacktrace
@@ -160,6 +160,14 @@ jobs:
         with:
           name: CarePad-performance-module-debug
           path: modules/performance/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload Games and BIOS module APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-games-bios-module-debug
+          path: modules/games-bios/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 3
 
@@ -383,6 +391,12 @@ jobs:
           name: CarePad-performance-module-debug
           path: artifacts/performance-module
 
+      - name: Download Games and BIOS module
+        uses: actions/download-artifact@v4
+        with:
+          name: CarePad-games-bios-module-debug
+          path: artifacts/games-bios-module
+
       - name: Download Controls module
         uses: actions/download-artifact@v4
         with:
@@ -443,6 +457,13 @@ jobs:
             "$(find artifacts/module-defective-update -name '*.apk' -print -quit)" \
             "$(find artifacts/performance-module -name '*.apk' -print -quit)" \
             "$(find artifacts/performance-emulator-fixture -name '*.apk' -print -quit)"
+
+      - name: Run Games and BIOS product module smoke test
+        run: |
+          chmod +x scripts/ci/android-emulator-games-bios-module-smoke.sh
+          scripts/ci/android-emulator-games-bios-module-smoke.sh \
+            "$(find artifacts/host -name '*.apk' -print -quit)" \
+            "$(find artifacts/games-bios-module -name '*.apk' -print -quit)"
 
       - name: Run Controls product module smoke test
         run: |

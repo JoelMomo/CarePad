@@ -1,0 +1,22 @@
+<resources>
+    <string name="app_name">Juegos y BIOS</string>
+    <string name="games_intro">Autoriza la carpeta donde guardas tus juegos para que el módulo pueda analizarla en modo de solo lectura. Tus archivos permanecen donde están: CarePad no los mueve ni los copia.</string>
+    <string name="select_folder">Seleccionar carpeta</string>
+    <string name="change_folder">Cambiar carpeta</string>
+    <string name="scan_library">Nuevo escaneo</string>
+    <string name="folder_not_configured">No hay una carpeta autorizada para este módulo. Selecciona tu carpeta de juegos para continuar.</string>
+    <string name="folder_needs_reauthorization">El módulo ya no puede leer la carpeta autorizada. Vuelve a seleccionarla para conceder acceso de nuevo. Tus archivos no se moverán ni se copiarán.</string>
+    <string name="folder_ready">Carpeta autorizada: %1$s. Pulsa Nuevo escaneo para regenerar la biblioteca de este módulo.</string>
+    <string name="folder_authorized">Acceso autorizado a %1$s. Pulsa Nuevo escaneo para analizar la biblioteca.</string>
+    <string name="folder_authorization_failed">No se ha podido autorizar esa carpeta. Selecciona una carpeta que Android permita leer.</string>
+    <string name="scan_in_progress">Analizando la biblioteca…</string>
+    <string name="scan_failed">No se ha podido completar el escaneo. La carpeta y los archivos no se han modificado.</string>
+    <string name="scan_summary">Biblioteca: %1$d juegos detectados.</string>
+    <string name="scan_unresolved">Sin plataforma resuelta con suficiente confianza: %1$d.</string>
+    <string name="scan_cue_issues">Relaciones CUE→BIN claramente rotas: %1$d.</string>
+    <string name="scan_cue_incomplete">No hay evidencia completa para comprobar todas las relaciones CUE→BIN; no se marcan errores por esa ausencia.</string>
+    <string name="game_line">%1$s · %2$s</string>
+    <string name="platform_unresolved">Sin resolver</string>
+    <string name="cue_issue_line">CUE %1$s referencia un BIN inexistente: %2$s</string>
+    <string name="no_games">No se han encontrado juegos compatibles en la carpeta autorizada.</string>
+</resources>
