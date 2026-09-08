@@ -28,6 +28,25 @@ object CarePadModuleActions {
     const val BIND_MODULE = "dev.carepad.action.BIND_MODULE"
 }
 
+/**
+ * Minimal host-navigation contract used by independent module APKs.
+ *
+ * The host package is supplied when CarePad opens a module so the module can
+ * return to the exact host instance that launched it, including QA/lab hosts.
+ */
+object CarePadHostNavigation {
+    const val ACTION_OPEN_DESTINATION = "dev.carepad.action.OPEN_HOST_DESTINATION"
+    const val EXTRA_HOST_PACKAGE = "dev.carepad.extra.HOST_PACKAGE"
+    const val EXTRA_DESTINATION = "dev.carepad.extra.HOST_DESTINATION"
+
+    const val HOME = "home"
+    const val ADD_MODULES = "add_modules"
+    const val SETTINGS = "settings"
+
+    fun isKnownDestination(value: String?): Boolean =
+        value == HOME || value == ADD_MODULES || value == SETTINGS
+}
+
 /** Known module capability tokens exchanged via manifest metadata. */
 object CarePadModuleCapabilities {
     const val SETTINGS_INLINE = "settings_inline"
