@@ -1,0 +1,253 @@
+name: C1.3 development QA catalog fixture
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  fixture:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout C1.3 source
+        uses: actions/checkout@v4
+
+      - name: Checkout approved QA signer source
+        uses: actions/checkout@v4
+        with:
+          ref: b49403438649d04d0c258f83145017b6fb7e774c
+          path: qa-signer-source
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 16 SDK
+        run: sdkmanager "platforms;android-36"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Build product module APKs
+        run: >-
+          ./gradlew
+          :performance-module:assembleDebug
+          :games-bios-module:assembleDebug
+          :controls-module:assembleDebug
+          --stacktrace
+
+      - name: Prepare approved QA lab signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d qa-signer-source/.github/qa/l6-qa-debug.keystore.b64 > "$RUNNER_TEMP/carepad-development-qa.jks"
+          keytool -list -v \
+            -keystore "$RUNNER_TEMP/carepad-development-qa.jks" \
+            -storepass android \
+            -alias androiddebugkey > "$RUNNER_TEMP/qa-signer.txt"
+          SIGNER="$(awk -F': ' '/SHA256:/{print tolower($2); exit}' "$RUNNER_TEMP/qa-signer.txt" | tr -d ':')"
+          EXPECTED="8513b30c18d3bb7574830a830461c862fe26c124dd1b1c694f7f58af271662e6"
+          test "$SIGNER" = "$EXPECTED"
+          echo "QA_SIGNER_SHA256=$SIGNER" >> "$GITHUB_ENV"
+
+      - name: Re-sign modules and assemble fixture assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          APKANALYZER="$(command -v apkanalyzer || true)"
+          if [ -z "$APKANALYZER" ]; then
+            APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -print -quit)"
+          fi
+          test -x "$APKSIGNER"
+          test -x "$APKANALYZER"
+
+          FIXTURE_DIR="app/src/debug/assets/carepad-development-qa"
+          MODULE_DIR="$FIXTURE_DIR/modules"
+          mkdir -p "$MODULE_DIR" "$RUNNER_TEMP/c1-3-manifests"
+
+          sign_module() {
+            local raw_apk="$1"
+            local output_apk="$2"
+            "$APKSIGNER" sign \
+              --ks "$RUNNER_TEMP/carepad-development-qa.jks" \
+              --ks-key-alias androiddebugkey \
+              --ks-pass pass:android \
+              --key-pass pass:android \
+              --out "$output_apk" \
+              "$raw_apk"
+            "$APKSIGNER" verify --print-certs "$output_apk" > "$output_apk.certs.txt"
+            local signer
+            signer="$(awk -F': ' '/Signer #1 certificate SHA-256 digest/{print tolower($2); exit}' "$output_apk.certs.txt")"
+            test "$signer" = "$QA_SIGNER_SHA256"
+          }
+
+          PERFORMANCE_RAW="$(find modules/performance/app/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          GAMES_RAW="$(find modules/games-bios/app/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          CONTROLS_RAW="$(find modules/controls/app/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          test -n "$PERFORMANCE_RAW"
+          test -n "$GAMES_RAW"
+          test -n "$CONTROLS_RAW"
+
+          sign_module "$PERFORMANCE_RAW" "$MODULE_DIR/performance.apk"
+          sign_module "$GAMES_RAW" "$MODULE_DIR/games-bios.apk"
+          sign_module "$CONTROLS_RAW" "$MODULE_DIR/controls.apk"
+
+          "$APKANALYZER" manifest print "$MODULE_DIR/performance.apk" > "$RUNNER_TEMP/c1-3-manifests/performance.xml"
+          "$APKANALYZER" manifest print "$MODULE_DIR/games-bios.apk" > "$RUNNER_TEMP/c1-3-manifests/games-bios.xml"
+          "$APKANALYZER" manifest print "$MODULE_DIR/controls.apk" > "$RUNNER_TEMP/c1-3-manifests/controls.xml"
+
+          python3 - \
+            "$FIXTURE_DIR/module-catalog.json" \
+            "$MODULE_DIR/performance.apk" "$RUNNER_TEMP/c1-3-manifests/performance.xml" \
+            "$MODULE_DIR/games-bios.apk" "$RUNNER_TEMP/c1-3-manifests/games-bios.xml" \
+            "$MODULE_DIR/controls.apk" "$RUNNER_TEMP/c1-3-manifests/controls.xml" \
+            "$QA_SIGNER_SHA256" "$GITHUB_SHA" <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+          import xml.etree.ElementTree as ET
+
+          output = pathlib.Path(sys.argv[1])
+          signer = sys.argv[8]
+          commit_sha = sys.argv[9]
+          ANDROID = "{http://schemas.android.com/apk/res/android}"
+          specs = [
+              ("performance", "dev.carepad.module.performance", "performance.apk", pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3])),
+              ("games_bios", "dev.carepad.module.gamesbios", "games-bios.apk", pathlib.Path(sys.argv[4]), pathlib.Path(sys.argv[5])),
+              ("controls", "dev.carepad.module.controls", "controls.apk", pathlib.Path(sys.argv[6]), pathlib.Path(sys.argv[7])),
+          ]
+
+          modules = []
+          for module_id, expected_package, asset_name, apk, manifest_path in specs:
+              root = ET.parse(manifest_path).getroot()
+              package_name = root.attrib.get("package")
+              version_code = int(root.attrib[ANDROID + "versionCode"])
+              version_name = root.attrib[ANDROID + "versionName"]
+              if package_name != expected_package:
+                  raise AssertionError((module_id, package_name, expected_package))
+
+              application = root.find("application")
+              if application is None:
+                  raise AssertionError(f"application missing for {module_id}")
+              metadata = None
+              for activity in application.findall("activity"):
+                  values = {
+                      node.attrib.get(ANDROID + "name"): node.attrib.get(ANDROID + "value")
+                      for node in activity.findall("meta-data")
+                  }
+                  if values.get("dev.carepad.meta.MODULE_ID") == module_id:
+                      metadata = values
+                      break
+              if metadata is None:
+                  raise AssertionError(f"module metadata missing for {module_id}")
+              protocol_min = int(metadata["dev.carepad.meta.PROTOCOL_MIN"])
+              protocol_max = int(metadata["dev.carepad.meta.PROTOCOL_MAX"])
+              if (protocol_min, protocol_max) != (1, 1):
+                  raise AssertionError((module_id, protocol_min, protocol_max))
+
+              apk_bytes = apk.read_bytes()
+              apk_sha = hashlib.sha256(apk_bytes).hexdigest()
+              artifact_id = f"{module_id}@{version_code}#sha256:{apk_sha}"
+              artifact = {
+                  "artifactId": artifact_id,
+                  "moduleId": module_id,
+                  "packageName": package_name,
+                  "versionCode": version_code,
+                  "versionName": version_name,
+                  "protocolMin": protocol_min,
+                  "protocolMax": protocol_max,
+                  "apkSha256": apk_sha,
+                  "signingCertificateSha256": signer,
+                  "sizeBytes": len(apk_bytes),
+                  "sources": [f"asset://carepad-development-qa/modules/{asset_name}"],
+                  "releaseTag": "",
+                  "commitSha": commit_sha,
+                  "maturity": "development",
+                  "channels": ["development/QA"],
+                  "distributionStatus": "active",
+                  "recoveryStatus": "candidate",
+                  "recoveryQualifiedAt": None,
+                  "recoverySafety": "regenerable",
+                  "availability": "available",
+              }
+              modules.append({
+                  "moduleId": module_id,
+                  "packageName": package_name,
+                  "latestByChannel": {"development/QA": artifact_id},
+                  "lastKnownRecoverableByChannel": {},
+                  "artifacts": [artifact],
+              })
+
+          catalog = {
+              "schemaVersion": 1,
+              "channel": "development/QA",
+              "modules": modules,
+          }
+          output.write_text(json.dumps(catalog, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(output.read_text(encoding="utf-8"))
+          PY
+
+      - name: Build host with embedded development QA fixture
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Re-sign and verify fixture host
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          RAW_HOST="$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          test -n "$RAW_HOST"
+          mkdir -p "$RUNNER_TEMP/c1-3-fixture"
+          HOST="$RUNNER_TEMP/c1-3-fixture/CarePad-development-QA-catalog-fixture.apk"
+          "$APKSIGNER" sign \
+            --ks "$RUNNER_TEMP/carepad-development-qa.jks" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out "$HOST" \
+            "$RAW_HOST"
+          "$APKSIGNER" verify --print-certs "$HOST" > "$RUNNER_TEMP/c1-3-fixture/host-certs.txt"
+          HOST_SIGNER="$(awk -F': ' '/Signer #1 certificate SHA-256 digest/{print tolower($2); exit}' "$RUNNER_TEMP/c1-3-fixture/host-certs.txt")"
+          test "$HOST_SIGNER" = "$QA_SIGNER_SHA256"
+
+          unzip -l "$HOST" | grep -F 'assets/carepad-development-qa/module-catalog.json'
+          unzip -l "$HOST" | grep -F 'assets/carepad-development-qa/modules/performance.apk'
+          unzip -l "$HOST" | grep -F 'assets/carepad-development-qa/modules/games-bios.apk'
+          unzip -l "$HOST" | grep -F 'assets/carepad-development-qa/modules/controls.apk'
+
+          cp app/src/debug/assets/carepad-development-qa/module-catalog.json \
+            "$RUNNER_TEMP/c1-3-fixture/module-catalog.json"
+          cp app/src/debug/assets/carepad-development-qa/modules/*.apk \
+            "$RUNNER_TEMP/c1-3-fixture/"
+
+          {
+            echo "channel=development/QA"
+            echo "sourceCommit=$GITHUB_SHA"
+            echo "qaSignerSource=b49403438649d04d0c258f83145017b6fb7e774c"
+            echo "signingCertificateSha256=$QA_SIGNER_SHA256"
+            echo "hostSha256=$(sha256sum "$HOST" | awk '{print $1}')"
+            echo "performanceSha256=$(sha256sum "$RUNNER_TEMP/c1-3-fixture/performance.apk" | awk '{print $1}')"
+            echo "gamesBiosSha256=$(sha256sum "$RUNNER_TEMP/c1-3-fixture/games-bios.apk" | awk '{print $1}')"
+            echo "controlsSha256=$(sha256sum "$RUNNER_TEMP/c1-3-fixture/controls.apk" | awk '{print $1}')"
+          } > "$RUNNER_TEMP/c1-3-fixture/verification.txt"
+          cat "$RUNNER_TEMP/c1-3-fixture/verification.txt"
+
+      - name: Upload development QA catalog fixture
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-development-QA-catalog-fixture
+          path: ${{ runner.temp }}/c1-3-fixture/
+          if-no-files-found: error
+          retention-days: 3
