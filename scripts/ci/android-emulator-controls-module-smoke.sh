@@ -8,6 +8,8 @@ HOST_PACKAGE="com.joel.thordoctor.carepadlabhost"
 CONTROLS_PACKAGE="dev.carepad.module.controls"
 HARNESS_COMPONENT="${HOST_PACKAGE}/com.joel.thordoctor.modules.host.ModuleLabHarnessActivity"
 OPEN_ACTION="dev.carepad.action.OPEN_MODULE"
+HOST_PACKAGE_EXTRA="dev.carepad.extra.HOST_PACKAGE"
+HOST_LOCALE_EXTRA="dev.carepad.extra.HOST_LOCALE_TAG"
 UI_DUMP_DEVICE="/sdcard/carepad-controls-window.xml"
 UI_DUMP_LOCAL="${RUNNER_TEMP:-/tmp}/carepad-controls-window.xml"
 
@@ -31,12 +33,13 @@ dump_ui() {
 }
 
 controls_product_surface_visible() {
-    grep -Eq 'text="(Guided test|Prueba guiada)"' "$UI_DUMP_LOCAL" &&
-        grep -Eq 'text="(Detected inputs|Entradas detectadas)"' "$UI_DUMP_LOCAL" &&
-        grep -Eq '(text|content-desc)="(Home|Inicio)"' "$UI_DUMP_LOCAL" &&
-        grep -Eq '(text|content-desc)="(Add modules|Añadir módulos)"' "$UI_DUMP_LOCAL" &&
-        grep -Eq '(text|content-desc)="(Settings|Ajustes)"' "$UI_DUMP_LOCAL" &&
-        ! grep -Eq 'text="(Refresh controllers|Actualizar mandos)"' "$UI_DUMP_LOCAL"
+    grep -Fq 'text="Prueba guiada"' "$UI_DUMP_LOCAL" &&
+        grep -Fq 'text="Entradas detectadas"' "$UI_DUMP_LOCAL" &&
+        grep -Eq '(text|content-desc)="Inicio"' "$UI_DUMP_LOCAL" &&
+        grep -Eq '(text|content-desc)="Añadir módulos"' "$UI_DUMP_LOCAL" &&
+        grep -Eq '(text|content-desc)="Ajustes"' "$UI_DUMP_LOCAL" &&
+        grep -Fq 'text="A Seleccionar · B Atrás · L1 Navegación"' "$UI_DUMP_LOCAL" &&
+        ! grep -Eq 'text="(Guided test|Detected inputs|Home|Add modules|Settings|Refresh controllers|Actualizar mandos)"' "$UI_DUMP_LOCAL"
 }
 
 restore_rotation() {
@@ -65,14 +68,18 @@ if ! grep -Fq "Accepted: controls" "$UI_DUMP_LOCAL" ||
     exit 1
 fi
 
-# The UX gate under test is the horizontal CarePad rail. Force landscape so the
-# module crosses the canonical >=600dp && width>=height breakpoint and renders it.
+# Exercise the exact physical-QA surface: horizontal rail plus the host-visible
+# Spanish locale contract. The host package extra preserves global navigation.
 adb shell settings put system accelerometer_rotation 0 >/dev/null
 adb shell settings put system user_rotation 1 >/dev/null
 trap restore_rotation EXIT
 sleep 1
 
-adb shell am start -a "$OPEN_ACTION" -p "$CONTROLS_PACKAGE" >/dev/null
+adb shell am start \
+    -a "$OPEN_ACTION" \
+    -p "$CONTROLS_PACKAGE" \
+    --es "$HOST_PACKAGE_EXTRA" "$HOST_PACKAGE" \
+    --es "$HOST_LOCALE_EXTRA" es >/dev/null
 
 for _ in $(seq 1 20); do
     resumed="$(current_resumed_activity)"
@@ -81,13 +88,13 @@ for _ in $(seq 1 20); do
         dump_ui &&
         grep -Fq "package=\"$CONTROLS_PACKAGE\"" "$UI_DUMP_LOCAL" &&
         controls_product_surface_visible; then
-        echo "Controls product module discovery/open + landscape rail UI smoke passed"
+        echo "Controls product module Spanish host-locale + landscape rail + canonical hints smoke passed"
         exit 0
     fi
     sleep 0.5
 done
 
-echo "Controls product module did not expose the expected landscape rail UI" >&2
+echo "Controls product module did not expose the expected Spanish landscape rail + hints UI" >&2
 echo "Resumed activity: $(current_resumed_activity)" >&2
 cat "$UI_DUMP_LOCAL" >&2 || true
 exit 1
