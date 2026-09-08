@@ -6,6 +6,14 @@
     <string name="carepad_your_modules">Tus módulos</string>
     <string name="carepad_no_installed_modules">No hay módulos instalados compatibles.</string>
     <string name="carepad_add_modules_not_connected">No hay un catálogo de módulos conectado en esta build.</string>
+    <string name="carepad_add_modules_invalid_catalog">El catálogo disponible no se puede verificar. CarePad no instalará ningún módulo desde él.</string>
+    <string name="carepad_add_modules_all_installed">Ya tienes instalados todos los módulos disponibles.</string>
+    <string name="carepad_add_modules_intro">Elige qué módulos quieres añadir a CarePad.</string>
+    <string name="carepad_add_modules_version">Versión %1$s</string>
+    <string name="carepad_add_modules_install">Instalar</string>
+    <string name="carepad_add_modules_preparing">Preparando instalación…</string>
+    <string name="carepad_add_modules_confirm_android">Confirma la instalación en Android.</string>
+    <string name="carepad_add_modules_install_failed">No se pudo iniciar o completar la instalación. Puedes volver a intentarlo.</string>
 
     <string name="carepad_module_performance">Rendimiento</string>
     <string name="carepad_module_performance_description">Consulta el rendimiento durante tus sesiones de emulación.</string>
