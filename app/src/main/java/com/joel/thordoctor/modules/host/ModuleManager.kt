@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import carepad.contracts.CarePadHostNavigation
 import carepad.contracts.CarePadModuleActions
 import carepad.contracts.CarePadModuleCapabilities
 
@@ -20,6 +21,7 @@ object ModuleManager {
     fun open(context: Context, module: DiscoveredCarePadModule) {
         val intent = Intent(CarePadModuleActions.OPEN_MODULE)
             .setComponent(module.entryActivity)
+            .putExtra(CarePadHostNavigation.EXTRA_HOST_PACKAGE, context.packageName)
             .apply { if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
         context.startActivity(intent)
     }
