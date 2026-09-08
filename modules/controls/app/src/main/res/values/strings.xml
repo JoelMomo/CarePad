@@ -6,6 +6,8 @@
     <string name="nav_add_modules">Añadir módulos</string>
     <string name="nav_settings">Ajustes</string>
     <string name="host_navigation_unavailable">Vuelve a CarePad para cambiar de sección.</string>
+    <string name="control_hint_touch">Toca para seleccionar</string>
+    <string name="control_hint_controller">A Seleccionar · B Atrás · L1 Navegación</string>
 
     <string name="controller_section">Mando seleccionado</string>
     <string name="controller_connected">Conectado</string>
