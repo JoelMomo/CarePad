@@ -33,9 +33,9 @@ dump_ui() {
 controls_product_surface_visible() {
     grep -Eq 'text="(Guided test|Prueba guiada)"' "$UI_DUMP_LOCAL" &&
         grep -Eq 'text="(Detected inputs|Entradas detectadas)"' "$UI_DUMP_LOCAL" &&
-        grep -Eq 'text="(Home|Inicio)"' "$UI_DUMP_LOCAL" &&
-        grep -Eq 'text="(Add modules|Añadir módulos)"' "$UI_DUMP_LOCAL" &&
-        grep -Eq 'text="(Settings|Ajustes)"' "$UI_DUMP_LOCAL" &&
+        grep -Eq '(text|content-desc)="(Home|Inicio)"' "$UI_DUMP_LOCAL" &&
+        grep -Eq '(text|content-desc)="(Add modules|Añadir módulos)"' "$UI_DUMP_LOCAL" &&
+        grep -Eq '(text|content-desc)="(Settings|Ajustes)"' "$UI_DUMP_LOCAL" &&
         ! grep -Eq 'text="(Refresh controllers|Actualizar mandos)"' "$UI_DUMP_LOCAL"
 }
 
