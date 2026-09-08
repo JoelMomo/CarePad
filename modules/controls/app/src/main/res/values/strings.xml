@@ -1,18 +1,94 @@
 <resources>
     <string name="app_name">Controles</string>
-    <string name="controls_intro">Comprueba qué mando reconoce Android y qué entradas recibe CarePad.</string>
-    <string name="refresh_devices">Actualizar mandos</string>
-    <string name="no_devices">No se ha detectado ningún mando físico compatible.</string>
-    <string name="select_device">Probar %1$s</string>
-    <string name="no_device_selected">Selecciona un mando para empezar la prueba.</string>
-    <string name="selected_device">Mando: %1$s</string>
-    <string name="session_state">Estado: %1$s</string>
-    <string name="mapping_state">Sticks: %1$s / %2$s · D-pad: %3$s</string>
-    <string name="session_issues">Incidencias observadas: %1$s</string>
-    <string name="received_events">Entradas recibidas: %1$d botones · %2$d movimientos</string>
-    <string name="left_stick">Stick izquierdo · X %1$s · Y %2$s</string>
-    <string name="right_stick">Stick derecho · X %1$s · Y %2$s</string>
-    <string name="none">ninguna</string>
-    <string name="no_samples">sin muestras</string>
-    <string name="controls_scope_note">La prueba muestra únicamente las entradas que Android entrega a este módulo; no concluye por sí sola que exista drift o un fallo físico.</string>
+    <string name="controls_intro">Comprueba qué entradas recibe Android de tu mando.</string>
+
+    <string name="controller_section">Mando seleccionado</string>
+    <string name="controller_connected">Conectado</string>
+    <string name="unnamed_controller">Mando sin nombre</string>
+    <string name="no_devices_friendly">No vemos ningún mando por aquí. Conecta uno y aparecerá en cuanto Android lo detecte.</string>
+    <string name="choose_controller_help">¿Cuál quieres probar? Pulsa un botón en el mando y te ayudamos a encontrarlo.</string>
+    <string name="change_controller_help">Puedes cambiar de mando antes de iniciar una prueba.</string>
+    <string name="activity_help">La actividad sirve solo para identificar el mando; no cambia la selección ni mueve el foco.</string>
+    <string name="controller_activity_option">%1$s\n• Actividad detectada</string>
+    <string name="controller_disconnected">Uy, parece que este mando se ha desconectado. Vuelve a conectarlo y empezamos una prueba nueva.</string>
+    <string name="controller_changed">El mando ha cambiado mientras lo estábamos observando. Empieza una prueba nueva para no mezclar resultados.</string>
+
+    <string name="guided_test">Prueba guiada</string>
+    <string name="guided_test_description">Comprueba botones, cruceta y sticks paso a paso con una guía sencilla.</string>
+    <string name="connect_controller_to_start">Conecta un mando para empezar.</string>
+    <string name="choose_controller_to_start">Elige un mando para empezar.</string>
+    <string name="detected_inputs">Entradas detectadas</string>
+    <string name="detected_inputs_description">Mira exactamente qué entradas está recibiendo Android en tiempo real.</string>
+    <string name="connect_controller_to_view_inputs">Conecta un mando para ver sus entradas.</string>
+    <string name="choose_controller_to_view_inputs">Elige un mando para ver sus entradas.</string>
+
+    <string name="guided_breadcrumb">Controles → Prueba guiada</string>
+    <string name="detected_breadcrumb">Controles → Entradas detectadas</string>
+    <string name="detected_inputs_scope_note">Esta pantalla es solo informativa. No cambia la asignación de botones.</string>
+    <string name="back">Atrás</string>
+    <string name="next">Siguiente</string>
+    <string name="view_summary">Ver resumen</string>
+    <string name="back_to_controls">Volver a Controles</string>
+    <string name="step_counter">Paso %1$d de %2$d</string>
+
+    <string name="buttons_and_dpad">Botones y cruceta</string>
+    <string name="left_stick">Stick izquierdo</string>
+    <string name="right_stick">Stick derecho</string>
+    <string name="buttons_instruction">Pulsa varios botones y prueba las cuatro direcciones de la cruceta. La posición resaltada es la referencia principal.</string>
+    <string name="left_stick_instruction">Mueve el stick izquierdo por su recorrido y vuelve al centro.</string>
+    <string name="right_stick_instruction">Mueve el stick derecho por su recorrido y vuelve al centro.</string>
+    <string name="try_highlighted_controls">Prueba los controles resaltados cuando quieras.</string>
+    <string name="move_highlighted_stick">Mueve el stick resaltado para que podamos observar su entrada.</string>
+    <string name="digital_inputs_seen">Entradas recibidas: %1$d controles distintos observados.</string>
+    <string name="stick_input_seen">Entrada recibida · X %1$s · Y %2$s</string>
+    <string name="mapping_inconclusive">No hemos podido reconocer bien esta entrada. No pasa nada: esto no significa que haya nada roto.</string>
+    <string name="waiting_for_input">Esperando una entrada del mando…</string>
+
+    <string name="test_finished">Prueba terminada</string>
+    <string name="summary_nothing_unusual">¡Prueba terminada! No hemos visto nada raro en lo que hemos podido comprobar.</string>
+    <string name="summary_review_items">La prueba ha terminado, pero hay algunas cosas que merece la pena revisar.</string>
+    <string name="observed">Detectado</string>
+    <string name="not_detected">No detectado</string>
+    <string name="inconclusive">No concluyente</string>
+    <string name="controls_scope_note">El resultado describe únicamente lo que Android ha entregado durante esta prueba; no certifica por sí solo el estado físico completo del mando.</string>
+    <string name="leave_test_title">¿Salir de la prueba?</string>
+    <string name="leave_test_message">La prueba quedará sin completar. Puedes empezar una nueva cuando quieras.</string>
+    <string name="keep_testing">Seguir con la prueba</string>
+    <string name="leave_test">Salir</string>
+
+    <string name="input_column">Entrada</string>
+    <string name="android_label_column">Etiqueta Android</string>
+    <string name="state_column">Estado</string>
+    <string name="input_active">Activa</string>
+    <string name="input_idle">En reposo</string>
+    <string name="input_value">Valor %1$s</string>
+    <string name="no_signal_yet">Aún sin señal</string>
+    <string name="no_inputs_to_show">Android no expone entradas compatibles para mostrar en este mando.</string>
+
+    <string name="button_a">Botón A</string>
+    <string name="button_b">Botón B</string>
+    <string name="button_x">Botón X</string>
+    <string name="button_y">Botón Y</string>
+    <string name="button_l1">L1</string>
+    <string name="button_r1">R1</string>
+    <string name="left_stick_press">Pulsación del stick izquierdo</string>
+    <string name="right_stick_press">Pulsación del stick derecho</string>
+    <string name="start_button">Start</string>
+    <string name="select_button">Select</string>
+    <string name="center_button">Botón central</string>
+    <string name="dpad_up">Cruceta arriba</string>
+    <string name="dpad_down">Cruceta abajo</string>
+    <string name="dpad_left">Cruceta izquierda</string>
+    <string name="dpad_right">Cruceta derecha</string>
+    <string name="left_stick_x">Stick izquierdo · horizontal</string>
+    <string name="left_stick_y">Stick izquierdo · vertical</string>
+    <string name="right_stick_x">Stick derecho · horizontal</string>
+    <string name="right_stick_y">Stick derecho · vertical</string>
+    <string name="dpad_horizontal">Cruceta · horizontal</string>
+    <string name="dpad_vertical">Cruceta · vertical</string>
+
+    <string name="family_playstation">Referencia PlayStation</string>
+    <string name="family_xbox">Referencia Xbox</string>
+    <string name="family_nintendo">Referencia Nintendo / Switch</string>
+    <string name="family_generic">Referencia de mando genérico</string>
 </resources>
