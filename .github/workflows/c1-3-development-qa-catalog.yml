@@ -9,10 +9,14 @@ on:
 jobs:
   fixture:
     runs-on: ubuntu-latest
+    env:
+      SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Checkout C1.3 source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_COMMIT }}
 
       - name: Checkout approved QA signer source
         uses: actions/checkout@v4
@@ -112,7 +116,7 @@ jobs:
             "$MODULE_DIR/performance.apk" "$RUNNER_TEMP/c1-3-manifests/performance.xml" \
             "$MODULE_DIR/games-bios.apk" "$RUNNER_TEMP/c1-3-manifests/games-bios.xml" \
             "$MODULE_DIR/controls.apk" "$RUNNER_TEMP/c1-3-manifests/controls.xml" \
-            "$QA_SIGNER_SHA256" "$GITHUB_SHA" <<'PY'
+            "$QA_SIGNER_SHA256" "$SOURCE_COMMIT" <<'PY'
           import hashlib
           import json
           import pathlib
@@ -234,7 +238,7 @@ jobs:
 
           {
             echo "channel=development/QA"
-            echo "sourceCommit=$GITHUB_SHA"
+            echo "sourceCommit=$SOURCE_COMMIT"
             echo "qaSignerSource=b49403438649d04d0c258f83145017b6fb7e774c"
             echo "signingCertificateSha256=$QA_SIGNER_SHA256"
             echo "hostSha256=$(sha256sum "$HOST" | awk '{print $1}')"
