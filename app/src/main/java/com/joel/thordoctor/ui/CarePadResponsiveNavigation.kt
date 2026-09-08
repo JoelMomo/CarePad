@@ -98,18 +98,22 @@ internal fun CarePadResponsiveNavigationScaffold(
                     onTouchFeedback = performFeedback,
                     onSelected = onSelected,
                 )
-                content(
-                    Modifier
+                CarePadResponsiveContent(
+                    selected = selected,
+                    modifier = Modifier
                         .weight(1f)
-                        .fillMaxHeight()
+                        .fillMaxHeight(),
+                    content = content,
                 )
             }
 
             CarePadNavigationLayout.BOTTOM_BAR -> Column(modifier = Modifier.fillMaxSize()) {
-                content(
-                    Modifier
+                CarePadResponsiveContent(
+                    selected = selected,
+                    modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth()
+                        .fillMaxWidth(),
+                    content = content,
                 )
                 CarePadNavigationBar(
                     selected = selected,
@@ -120,6 +124,25 @@ internal fun CarePadResponsiveNavigationScaffold(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun CarePadResponsiveContent(
+    selected: CarePadDestination,
+    modifier: Modifier,
+    content: @Composable (Modifier) -> Unit,
+) {
+    if (selected != CarePadDestination.ADD_MODULES) {
+        content(modifier)
+        return
+    }
+
+    // Keep the shell content mounted so its existing focus fallback remains a valid L1
+    // target. The catalog surface is opaque and becomes the visible/focusable content.
+    Box(modifier = modifier) {
+        content(Modifier.fillMaxSize())
+        CarePadAddModulesCatalogContent(Modifier.fillMaxSize())
     }
 }
 
