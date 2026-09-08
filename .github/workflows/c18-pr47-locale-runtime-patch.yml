@@ -1,0 +1,34 @@
+name: C18 PR47 locale runtime patch
+
+on:
+  push:
+    branches:
+      - feature/ui23-controls-product-surface
+    paths:
+      - .github/workflows/c18-pr47-locale-runtime-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/ui23-controls-product-surface
+          fetch-depth: 0
+
+      - name: Apply scoped locale runtime patch
+        run: python scripts/dev/c18_pr47_locale_runtime_patch.py
+
+      - name: Commit scoped source change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add modules/controls/app/src/main/java/dev/carepad/module/controls/ControlsActivity.kt
+          git diff --cached --check
+          git diff --cached --quiet && exit 1
+          git commit -m "Fix Controls host locale application timing"
+          git push origin HEAD:feature/ui23-controls-product-surface
