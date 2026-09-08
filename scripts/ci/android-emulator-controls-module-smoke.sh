@@ -30,6 +30,12 @@ dump_ui() {
     return 1
 }
 
+controls_product_surface_visible() {
+    grep -Eq 'text="(Guided test|Prueba guiada)"' "$UI_DUMP_LOCAL" &&
+        grep -Eq 'text="(Detected inputs|Entradas detectadas)"' "$UI_DUMP_LOCAL" &&
+        ! grep -Eq 'text="(Refresh controllers|Actualizar mandos)"' "$UI_DUMP_LOCAL"
+}
+
 adb install -r "$HOST_APK" >/dev/null
 adb install -r "$CONTROLS_APK" >/dev/null
 
@@ -59,14 +65,15 @@ for _ in $(seq 1 20); do
     if grep -Fq "$CONTROLS_PACKAGE" <<<"$resumed" &&
         grep -Fq "ControlsActivity" <<<"$resumed" &&
         dump_ui &&
-        grep -Fq "package=\"$CONTROLS_PACKAGE\"" "$UI_DUMP_LOCAL"; then
-        echo "Controls product module discovery/open smoke passed"
+        grep -Fq "package=\"$CONTROLS_PACKAGE\"" "$UI_DUMP_LOCAL" &&
+        controls_product_surface_visible; then
+        echo "Controls product module discovery/open + UI surface smoke passed"
         exit 0
     fi
     sleep 0.5
 done
 
-echo "Controls product module did not open through OPEN_MODULE" >&2
+echo "Controls product module did not expose the expected product UI" >&2
 echo "Resumed activity: $(current_resumed_activity)" >&2
 cat "$UI_DUMP_LOCAL" >&2 || true
 exit 1
