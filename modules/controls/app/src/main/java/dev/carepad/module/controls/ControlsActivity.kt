@@ -447,7 +447,11 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
         }
         val outcome = stickOutcomes[control]
         val trajectory = if (left) activeSession.leftMetrics().trajectory else activeSession.rightMetrics().trajectory
-        val last = trajectory.lastOrNull()
+        val observedPath = trajectory.mapNotNull { sample ->
+            val x = sample.normalizedX
+            val y = sample.normalizedY
+            if (x == null || y == null) null else x to y
+        }.takeLast(MAX_GUIDED_TRAJECTORY_POINTS)
         val card = sectionCard(getString(if (left) R.string.left_stick else R.string.right_stick))
         addBodyText(card, getString(if (left) R.string.left_move_instruction else R.string.right_move_instruction))
         addBlock(card, ControllerDiagramView().apply {
@@ -455,8 +459,7 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
             stage = guidedStage
             highlightedControl = control
             showMovementGuide = true
-            observedX = last?.normalizedX
-            observedY = last?.normalizedY
+            this.observedPath = observedPath
             contentDescription = getString(if (left) R.string.left_move_instruction else R.string.right_move_instruction)
         }, top = 16)
         guidedObservationText = liveTextView(stickOutcomeMessage(outcome, resolution))
@@ -516,6 +519,7 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
         markNotDetectedButton?.isEnabled = false
         handler.postDelayed({
             if (screen == Screen.GUIDED && attemptArmed && generation == attemptGeneration) {
+                attemptArmed = false
                 attemptCanFail = true
                 markNotDetectedButton?.isEnabled = true
                 guidedObservationText.text = getString(R.string.attempt_not_seen_yet)
@@ -566,7 +570,7 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
     }
 
     private fun markCurrentNotDetected() {
-        if (!attemptArmed || !attemptCanFail) return
+        if (!attemptCanFail) return
         when (guidedStage) {
             GuidedStage.DIGITAL -> digitalOutcomes[digitalTargets[digitalTargetIndex].button] = Outcome.NOT_DETECTED
             GuidedStage.LEFT_MOVE -> stickOutcomes[DiagramControl.LEFT_STICK] = Outcome.NOT_DETECTED
@@ -1090,8 +1094,7 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
         var highlightedControl: DiagramControl? = null
         var showCenterGuide: Boolean = false
         var showMovementGuide: Boolean = false
-        var observedX: Float? = null
-        var observedY: Float? = null
+        var observedPath: List<Pair<Float, Float>> = emptyList()
 
         private val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         private val controlPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -1160,10 +1163,18 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
                 canvas.drawLine(x-dp(7), y, x+dp(7), y, guidePaint)
                 canvas.drawLine(x, y-dp(7), x, y+dp(7), guidePaint)
             }
-            if (highlightedControl == control && showMovementGuide && observedX != null && observedY != null) {
-                val ox = x + observedX!!.coerceIn(-1f,1f) * (radius + dp(10))
-                val oy = y + observedY!!.coerceIn(-1f,1f) * (radius + dp(10))
-                canvas.drawCircle(ox, oy, dp(5).toFloat(), highlightPaint)
+            if (highlightedControl == control && showMovementGuide && observedPath.isNotEmpty()) {
+                var previous: Pair<Float, Float>? = null
+                observedPath.forEach { point ->
+                    val current =
+                        x + point.first.coerceIn(-1f, 1f) * (radius + dp(10)) to
+                            y + point.second.coerceIn(-1f, 1f) * (radius + dp(10))
+                    previous?.let { last ->
+                        canvas.drawLine(last.first, last.second, current.first, current.second, guidePaint)
+                    }
+                    previous = current
+                }
+                previous?.let { last -> canvas.drawCircle(last.first, last.second, dp(5).toFloat(), highlightPaint) }
             }
         }
 
@@ -1188,5 +1199,6 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
         const val ATTEMPT_ARM_DELAY_MS = 250L
         const val ATTEMPT_WINDOW_MS = 1800L
         const val LIVE_ACTIVITY_WINDOW_MS = 520L
+        const val MAX_GUIDED_TRAJECTORY_POINTS = 96
     }
 }
