@@ -7,7 +7,6 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
-import carepad.contracts.CarePadModuleActions
 import carepad.contracts.CarePadModuleMetadataKeys
 import com.joel.thordoctor.modules.catalog.distribution.ModuleDistributionArtifact
 import java.io.File
@@ -63,11 +62,17 @@ internal object CatalogModuleInstaller {
                     .putExtra(EXTRA_MODULE_ID, target.moduleId)
                     .putExtra(EXTRA_PACKAGE_NAME, target.packageName)
                     .putExtra(EXTRA_ARTIFACT_ID, target.artifactId)
+                val callbackFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        PendingIntent.FLAG_MUTABLE
+                    } else {
+                        0
+                    }
                 val callback = PendingIntent.getBroadcast(
                     context,
                     sessionId,
                     callbackIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+                    callbackFlags,
                 )
                 session.commit(callback.intentSender)
             }
@@ -121,9 +126,6 @@ internal object CatalogModuleInstaller {
             }
 
             val moduleActivity = archive.activities.orEmpty().firstOrNull { activity ->
-                activity.metaData?.getString(CarePadModuleMetadataKeys.MODULE_ID) == target.moduleId &&
-                    activityHasModuleAction(activity.name, archive.packageName, context, apk)
-            } ?: archive.activities.orEmpty().firstOrNull { activity ->
                 activity.metaData?.getString(CarePadModuleMetadataKeys.MODULE_ID) == target.moduleId
             } ?: error("El APK no declara el moduleId esperado.")
 
@@ -160,9 +162,15 @@ internal object CatalogModuleInstaller {
     }
 
     private fun archivePackageInfo(packageManager: PackageManager, apk: File): PackageInfo? {
+        val signingFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            @Suppress("DEPRECATION")
+            PackageManager.GET_SIGNATURES
+        }
         val flags = PackageManager.GET_ACTIVITIES or
             PackageManager.GET_META_DATA or
-            PackageManager.GET_SIGNING_CERTIFICATES
+            signingFlag
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             packageManager.getPackageArchiveInfo(
                 apk.absolutePath,
@@ -186,8 +194,14 @@ internal object CatalogModuleInstaller {
                 ),
             )
         } else {
+            val signingFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageManager.GET_SIGNING_CERTIFICATES
+            } else {
+                @Suppress("DEPRECATION")
+                PackageManager.GET_SIGNATURES
+            }
             @Suppress("DEPRECATION")
-            packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+            packageManager.getPackageInfo(packageName, signingFlag)
         }
     } catch (_: PackageManager.NameNotFoundException) {
         null
@@ -229,19 +243,5 @@ internal object CatalogModuleInstaller {
             if (read > 0) digest.update(buffer, 0, read)
         }
         digest.digest().joinToString("") { byte -> "%02x".format(byte) }
-    }
-
-    private fun activityHasModuleAction(
-        activityName: String,
-        packageName: String,
-        context: Context,
-        apk: File,
-    ): Boolean {
-        // Archive intent filters are not exposed through PackageInfo. The module action is
-        // revalidated after installation by AndroidModuleDiscovery; metadata, package,
-        // protocol, bytes and signer are verified here before PackageInstaller is invoked.
-        return activityName.isNotBlank() && packageName.isNotBlank() &&
-            context.packageName.isNotBlank() && apk.isFile &&
-            CarePadModuleActions.MODULE.isNotBlank()
     }
 }
