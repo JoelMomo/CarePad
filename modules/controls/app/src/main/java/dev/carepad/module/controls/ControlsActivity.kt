@@ -9,6 +9,9 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.ColorFilter
+import android.graphics.PixelFormat
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.hardware.input.InputManager
 import android.os.Bundle
@@ -17,6 +20,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SoundEffectConstants
@@ -48,6 +52,7 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
     private enum class Screen { MAIN, GUIDED, DETECTED }
     private enum class GuidedStage { PREPARE, DIGITAL, LEFT_REST, LEFT_MOVE, RIGHT_REST, RIGHT_MOVE, SUMMARY }
     private enum class Outcome { OBSERVED, NOT_DETECTED, INCONCLUSIVE }
+    private enum class InputMethod { TOUCH, CONTROLLER }
     private enum class ControllerFamily { PLAYSTATION, XBOX, NINTENDO, GENERIC }
     private enum class DiagramControl {
         FACE_BOTTOM, FACE_RIGHT, FACE_LEFT, FACE_TOP,
@@ -96,6 +101,11 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
     private var screen = Screen.MAIN
     private var selectedDeviceId: Int? = null
     private var launchHostPackage: String? = null
+    private var inputMethod = InputMethod.CONTROLLER
+    private var helpHintView: TextView? = null
+    private var navigationRailView: View? = null
+    private var navigationRailHomeButton: View? = null
+    private var contentFocusTarget: View? = null
     private var session: ControlsSession? = null
     private var guidedStage = GuidedStage.PREPARE
     private var digitalTargetIndex = 0
@@ -123,6 +133,7 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        applyHostLocaleOverride()
         super.onCreate(savedInstanceState)
         inputManager = getSystemService(InputManager::class.java)
         deviceCatalog = AndroidDeviceCatalog(inputManager)
@@ -149,8 +160,16 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
         super.onStop()
     }
 
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            setInputMethod(InputMethod.TOUCH)
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            if (isControllerSource(event.source)) setInputMethod(InputMethod.CONTROLLER)
             noteControllerActivity(event.deviceId)
         }
 
@@ -173,6 +192,17 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
         }
 
         if (
+            !attemptArmed &&
+            event.action == KeyEvent.ACTION_DOWN &&
+            event.repeatCount == 0 &&
+            event.keyCode == KeyEvent.KEYCODE_BUTTON_L1
+        ) {
+            performFeedback(window.decorView)
+            toggleNavigationFocus()
+            return true
+        }
+
+        if (
             screen != Screen.MAIN &&
             !attemptArmed &&
             event.action == KeyEvent.ACTION_DOWN &&
@@ -188,6 +218,7 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (isControllerSource(event.source)) setInputMethod(InputMethod.CONTROLLER)
         val activeSession = session
         if (screen == Screen.GUIDED && attemptArmed && activeSession != null && event.deviceId == activeSession.device.deviceId) {
             val frames = AndroidEventMapper.motion(event, AndroidEventMapper.axes(activeSession.mapping))
@@ -850,19 +881,37 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
             setBackgroundColor(pageColor())
             addView(root, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
+        val contentColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(pageColor())
+            addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(View(this@ControlsActivity).apply { setBackgroundColor(outlineColor()) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)))
+            helpHintView = TextView(this@ControlsActivity).apply {
+                textSize = 12f
+                setTextColor(textSecondaryColor())
+                setPadding(dp(18), dp(10), dp(18), dp(10))
+                isFocusable = false
+            }
+            addView(helpHintView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        updateHelpHint()
+        contentFocusTarget = firstFocusableDescendant(root)
+
         val shell = if (isWide()) {
             LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setBackgroundColor(pageColor())
                 val rail = navigationRail()
                 addView(rail, LinearLayout.LayoutParams(dp(RAIL_COMPACT_WIDTH_DP), ViewGroup.LayoutParams.MATCH_PARENT))
-                addView(scroll, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+                addView(contentColumn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
             }
         } else {
+            navigationRailView = null
+            navigationRailHomeButton = null
             LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setBackgroundColor(pageColor())
-                addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+                addView(contentColumn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
                 addView(bottomNavigation(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             }
         }
@@ -876,6 +925,7 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
             setPadding(dp(8), dp(12), dp(8), dp(12))
             setBackgroundColor(surfaceColor())
         }
+        navigationRailView = rail
         val bindings = mutableListOf<RailButtonBinding>()
         var widthAnimator: ValueAnimator? = null
 
@@ -883,11 +933,10 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
             bindings.forEach { binding ->
                 binding.button.text = if (expanded) binding.label else ""
                 binding.button.contentDescription = binding.label
+                binding.button.setTextColor(textPrimaryColor())
                 binding.button.setCompoundDrawablesWithIntrinsicBounds(
                     null,
-                    getDrawable(binding.iconRes)?.mutate()?.apply {
-                        setTint(if (binding.selected) Color.WHITE else textPrimaryColor())
-                    },
+                    RailIconDrawable(binding.iconRes, binding.selected),
                     null,
                     null,
                 )
@@ -934,13 +983,11 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
                 gravity = Gravity.CENTER
                 compoundDrawablePadding = dp(4)
                 setPadding(dp(8), dp(8), dp(8), dp(8))
-                setTextColor(if (selected) Color.WHITE else textPrimaryColor())
+                setTextColor(textPrimaryColor())
                 updateRailButtonBackground(this, selected, false)
                 setCompoundDrawablesWithIntrinsicBounds(
                     null,
-                    getDrawable(iconRes)?.mutate()?.apply {
-                        setTint(if (selected) Color.WHITE else textPrimaryColor())
-                    },
+                    RailIconDrawable(iconRes, selected),
                     null,
                     null,
                 )
@@ -951,6 +998,7 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
             }
             val binding = RailButtonBinding(button, label, iconRes, selected)
             bindings += binding
+            if (destination == CarePadHostNavigation.HOME) navigationRailHomeButton = button
             val cell = FrameLayout(this).apply {
                 addView(
                     button,
@@ -982,14 +1030,12 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
         button.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(16).toFloat()
-            setColor(
-                when {
-                    selected -> primaryColor()
-                    focused -> secondaryButtonColor()
-                    else -> Color.TRANSPARENT
-                },
-            )
-            if (focused) setStroke(dp(3), focusOutlineColor())
+            setColor(if (focused) surfaceVariantColor() else Color.TRANSPARENT)
+            if (focused) setStroke(dp(2), focusOutlineColor())
+        }
+        button.setTextColor(textPrimaryColor())
+        button.compoundDrawables[1]?.let { drawable ->
+            if (drawable is RailIconDrawable) drawable.invalidateSelf()
         }
     }
 
@@ -1016,6 +1062,105 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
             performFeedback(view)
             requestHostDestination(destination)
         }
+    }
+
+    private fun applyHostLocaleOverride() {
+        val tag = intent.getStringExtra(CarePadHostNavigation.EXTRA_HOST_LOCALE_TAG)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: return
+        val locale = Locale.forLanguageTag(tag)
+        val override = Configuration().apply {
+            setLocale(locale)
+            setLayoutDirection(locale)
+        }
+        applyOverrideConfiguration(override)
+    }
+
+    private fun setInputMethod(method: InputMethod) {
+        if (inputMethod == method) return
+        inputMethod = method
+        updateHelpHint()
+    }
+
+    private fun updateHelpHint() {
+        helpHintView?.text = getString(
+            if (inputMethod == InputMethod.TOUCH) R.string.control_hint_touch
+            else R.string.control_hint_controller,
+        )
+    }
+
+    private fun isControllerSource(source: Int): Boolean =
+        source and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD ||
+            source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK ||
+            source and InputDevice.SOURCE_DPAD == InputDevice.SOURCE_DPAD
+
+    private fun toggleNavigationFocus() {
+        val rail = navigationRailView
+        val focused = window.decorView.findFocus()
+        val focusIsInRail = rail != null && focused != null && isDescendantOf(focused, rail)
+        val target = if (focusIsInRail) contentFocusTarget else navigationRailHomeButton
+        target?.requestFocus()
+    }
+
+    private fun isDescendantOf(view: View, ancestor: View): Boolean {
+        var current: Any? = view
+        while (current is View) {
+            if (current === ancestor) return true
+            current = current.parent
+        }
+        return false
+    }
+
+    private fun firstFocusableDescendant(view: View): View? {
+        if (view.isFocusable && view.isEnabled && view.visibility == View.VISIBLE) return view
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                firstFocusableDescendant(view.getChildAt(index))?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private inner class RailIconDrawable(
+        iconRes: Int,
+        private val selected: Boolean,
+    ) : Drawable() {
+        private val icon = requireNotNull(getDrawable(iconRes)).mutate()
+        private val indicatorPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        override fun getIntrinsicWidth(): Int = dp(if (selected) 56 else 24)
+        override fun getIntrinsicHeight(): Int = dp(if (selected) 32 else 24)
+
+        override fun draw(canvas: Canvas) {
+            if (selected) {
+                indicatorPaint.color = secondaryContainerColor()
+                canvas.drawRoundRect(
+                    RectF(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat()),
+                    dp(16).toFloat(),
+                    dp(16).toFloat(),
+                    indicatorPaint,
+                )
+            }
+            icon.setTint(if (selected) onSecondaryContainerColor() else textSecondaryColor())
+            val size = dp(24)
+            val left = bounds.centerX() - size / 2
+            val top = bounds.centerY() - size / 2
+            icon.setBounds(left, top, left + size, top + size)
+            icon.draw(canvas)
+        }
+
+        override fun setAlpha(alpha: Int) {
+            icon.alpha = alpha
+            indicatorPaint.alpha = alpha
+        }
+
+        override fun setColorFilter(colorFilter: ColorFilter?) {
+            icon.colorFilter = colorFilter
+        }
+
+        @Suppress("DEPRECATION")
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
     }
 
     private fun isButtonActive(activeSession: ControlsSession, button: ControlButton): Boolean = when (button) {
@@ -1201,16 +1346,19 @@ class ControlsActivity : Activity(), InputManager.InputDeviceListener {
     }
 
     private fun isDark(): Boolean = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-    private fun pageColor(): Int = if (isDark()) Color.rgb(18, 18, 24) else Color.rgb(247, 246, 251)
-    private fun surfaceColor(): Int = if (isDark()) Color.rgb(34, 33, 43) else Color.WHITE
-    private fun surfaceVariantColor(): Int = if (isDark()) Color.rgb(47, 45, 59) else Color.rgb(239, 236, 247)
-    private fun activeSurfaceColor(): Int = if (isDark()) Color.rgb(54, 63, 82) else Color.rgb(231, 238, 255)
-    private fun primaryColor(): Int = if (isDark()) Color.rgb(122, 98, 210) else Color.rgb(93, 70, 177)
-    private fun secondaryButtonColor(): Int = if (isDark()) Color.rgb(69, 66, 86) else Color.rgb(230, 226, 241)
-    private fun disabledSurfaceColor(): Int = if (isDark()) Color.rgb(54, 53, 61) else Color.rgb(222, 220, 226)
-    private fun focusOutlineColor(): Int = if (isDark()) Color.WHITE else Color.rgb(42, 30, 82)
-    private fun textPrimaryColor(): Int = if (isDark()) Color.rgb(245, 243, 250) else Color.rgb(35, 31, 45)
-    private fun textSecondaryColor(): Int = if (isDark()) Color.rgb(194, 190, 204) else Color.rgb(96, 89, 108)
+    private fun pageColor(): Int = if (isDark()) Color.rgb(23, 20, 23) else Color.rgb(246, 241, 234)
+    private fun surfaceColor(): Int = if (isDark()) Color.rgb(33, 29, 33) else Color.rgb(255, 251, 246)
+    private fun surfaceVariantColor(): Int = if (isDark()) Color.rgb(44, 39, 45) else Color.rgb(240, 231, 223)
+    private fun activeSurfaceColor(): Int = if (isDark()) Color.rgb(67, 55, 92) else Color.rgb(237, 228, 255)
+    private fun primaryColor(): Int = if (isDark()) Color.rgb(199, 184, 242) else Color.rgb(120, 103, 168)
+    private fun secondaryContainerColor(): Int = if (isDark()) Color.rgb(48, 67, 56) else Color.rgb(221, 235, 221)
+    private fun onSecondaryContainerColor(): Int = if (isDark()) Color.rgb(217, 239, 220) else Color.rgb(36, 56, 42)
+    private fun secondaryButtonColor(): Int = surfaceVariantColor()
+    private fun disabledSurfaceColor(): Int = surfaceVariantColor()
+    private fun focusOutlineColor(): Int = primaryColor()
+    private fun outlineColor(): Int = if (isDark()) Color.rgb(98, 88, 97) else Color.rgb(182, 170, 160)
+    private fun textPrimaryColor(): Int = if (isDark()) Color.rgb(244, 237, 240) else Color.rgb(48, 42, 46)
+    private fun textSecondaryColor(): Int = if (isDark()) Color.rgb(201, 190, 196) else Color.rgb(110, 100, 105)
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private inner class ControllerDiagramView : View(this@ControlsActivity) {
