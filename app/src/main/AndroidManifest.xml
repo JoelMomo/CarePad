@@ -25,47 +25,20 @@
             <action android:name="dev.carepad.action.OPEN_MODULE_SETTINGS" />
         </intent>
 
-        <package
-            android:name="com.retroarch.aarch64" />
-
-        <package
-            android:name="com.fastemulator.gba" />
-
-        <package
-            android:name="com.fastemulator.gbafree" />
-
-        <package
-            android:name="com.github.stenzek.duckstation" />
-
-        <package
-            android:name="xyz.aethersx2.android" />
-
-        <package
-            android:name="org.ppsspp.ppsspp" />
-
-        <package
-            android:name="me.magnum.melondualds" />
-
-        <package
-            android:name="org.dolphinemu.dolphinemu" />
-
-        <package
-            android:name="org.azahar_emu.azahar" />
-
-        <package
-            android:name="io.github.azaharplus.android" />
-
-        <package
-            android:name="org.vita3k.emulator" />
-
-        <package
-            android:name="dev.eden.eden_emulator" />
-
-        <package
-            android:name="info.cemu.cemu" />
-
-        <package
-            android:name="net.rpcsx" />
+        <package android:name="com.retroarch.aarch64" />
+        <package android:name="com.fastemulator.gba" />
+        <package android:name="com.fastemulator.gbafree" />
+        <package android:name="com.github.stenzek.duckstation" />
+        <package android:name="xyz.aethersx2.android" />
+        <package android:name="org.ppsspp.ppsspp" />
+        <package android:name="me.magnum.melondualds" />
+        <package android:name="org.dolphinemu.dolphinemu" />
+        <package android:name="org.azahar_emu.azahar" />
+        <package android:name="io.github.azaharplus.android" />
+        <package android:name="org.vita3k.emulator" />
+        <package android:name="dev.eden.eden_emulator" />
+        <package android:name="info.cemu.cemu" />
+        <package android:name="net.rpcsx" />
 
     </queries>
 
@@ -85,13 +58,13 @@
             android:theme="@style/Theme.ThorDoctor">
 
             <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
 
-                <action
-                    android:name="android.intent.action.MAIN" />
-
-                <category
-                    android:name="android.intent.category.LAUNCHER" />
-
+            <intent-filter>
+                <action android:name="dev.carepad.action.OPEN_HOST_DESTINATION" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
         </activity>
