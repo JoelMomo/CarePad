@@ -3,7 +3,6 @@ package com.joel.thordoctor.modules.catalog.distribution
 import android.content.Context
 import carepad.contracts.CarePadProtocol
 import carepad.contracts.ModuleProtocolRange
-import java.io.FileNotFoundException
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -17,14 +16,19 @@ internal sealed interface DevelopmentQaCatalogState {
 }
 
 internal object DevelopmentQaModuleCatalog {
-    private const val ASSET_PATH = "carepad-development-qa/module-catalog.json"
+    private const val ASSET_DIRECTORY = "carepad-development-qa"
+    private const val CATALOG_FILE = "module-catalog.json"
+    private const val ASSET_PATH = "$ASSET_DIRECTORY/$CATALOG_FILE"
 
     fun load(context: Context): DevelopmentQaCatalogState {
-        val json = try {
+        val catalogPresent = runCatching {
+            CATALOG_FILE in context.assets.list(ASSET_DIRECTORY).orEmpty()
+        }.getOrElse { return DevelopmentQaCatalogState.NotConnected }
+        if (!catalogPresent) return DevelopmentQaCatalogState.NotConnected
+
+        val json = runCatching {
             context.assets.open(ASSET_PATH).bufferedReader().use { it.readText() }
-        } catch (_: FileNotFoundException) {
-            return DevelopmentQaCatalogState.NotConnected
-        } catch (error: Exception) {
+        }.getOrElse { error ->
             return DevelopmentQaCatalogState.Invalid(error.message ?: error::class.java.simpleName)
         }
 
@@ -99,7 +103,11 @@ internal object DevelopmentQaModuleCatalog {
                 json.getString("signingCertificateSha256").lowercase(),
             sizeBytes = json.getLong("sizeBytes"),
             sources = json.getJSONArray("sources").stringList(),
-            releaseTag = json.optString("releaseTag").takeIf { it.isNotBlank() },
+            releaseTag = if (json.isNull("releaseTag")) {
+                null
+            } else {
+                json.optString("releaseTag").takeIf { it.isNotBlank() }
+            },
             commitSha = json.getString("commitSha"),
             maturity = json.getString("maturity"),
             channels = json.getJSONArray("channels").stringList().toSet(),
