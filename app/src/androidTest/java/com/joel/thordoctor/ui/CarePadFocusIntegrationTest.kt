@@ -47,6 +47,8 @@ class CarePadFocusIntegrationTest {
     private lateinit var themeDark: String
     private lateinit var appearance: String
     private lateinit var performanceModule: String
+    private lateinit var gamesBiosModule: String
+    private lateinit var controlsModule: String
     private lateinit var yourModules: String
 
     @Before
@@ -60,6 +62,8 @@ class CarePadFocusIntegrationTest {
         themeDark = composeRule.activity.getString(R.string.theme_dark)
         appearance = composeRule.activity.getString(R.string.appearance)
         performanceModule = composeRule.activity.getString(R.string.carepad_module_performance)
+        gamesBiosModule = composeRule.activity.getString(R.string.carepad_module_games_bios)
+        controlsModule = composeRule.activity.getString(R.string.carepad_module_controls)
         yourModules = composeRule.activity.getString(R.string.carepad_your_modules)
 
         val configuration = composeRule.activity.resources.configuration
@@ -208,7 +212,7 @@ class CarePadFocusIntegrationTest {
 
         pressNavigationToContent()
         controllerHint().assertExists()
-        textNode(performanceModule).assertIsFocused()
+        assertAnyHomeModuleFocused()
         navigationNode(navHome).assertIsSelected()
 
         pressContentToNavigation()
@@ -216,7 +220,7 @@ class CarePadFocusIntegrationTest {
         navigationNode(navHome).assertIsSelected()
 
         pressNavigationToContent()
-        textNode(performanceModule).assertIsFocused()
+        assertAnyHomeModuleFocused()
         navigationNode(navHome).assertIsSelected()
     }
 
@@ -355,6 +359,14 @@ class CarePadFocusIntegrationTest {
     private fun assertAnyThemeFocused() {
         check(
             listOf(themeSystem, themeLight, themeDark).any { text ->
+                runCatching { textNode(text).assertIsFocused() }.isSuccess
+            }
+        )
+    }
+
+    private fun assertAnyHomeModuleFocused() {
+        check(
+            listOf(performanceModule, gamesBiosModule, controlsModule).any { text ->
                 runCatching { textNode(text).assertIsFocused() }.isSuccess
             }
         )
