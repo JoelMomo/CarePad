@@ -77,6 +77,7 @@ class CarePadFocusIntegrationTest {
             MaterialTheme {
                 CarePadShellScreen(
                     onThemeModeChange = { mode -> themeMode.value = mode },
+                    onRawInputHandlersChanged = { _, _ -> },
                     settingsContent = {
                             _,
                             onThemeFocusChanged,
