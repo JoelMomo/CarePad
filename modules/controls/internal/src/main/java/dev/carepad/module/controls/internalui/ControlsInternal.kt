@@ -37,7 +37,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -59,7 +58,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -81,7 +79,6 @@ import java.util.Locale
 internal enum class Screen { MAIN, GUIDED, DETECTED }
 internal enum class GuidedStage { PREPARE, DIGITAL, LEFT_REST, LEFT_MOVE, RIGHT_REST, RIGHT_MOVE, SUMMARY }
 internal enum class Outcome { OBSERVED, NOT_DETECTED, INCONCLUSIVE }
-internal enum class InputMethod { TOUCH, CONTROLLER }
 private enum class ControllerFamily { PLAYSTATION, XBOX, NINTENDO, GENERIC }
 private enum class DiagramControl {
     FACE_BOTTOM, FACE_RIGHT, FACE_LEFT, FACE_TOP,
@@ -138,8 +135,6 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
         private set
     internal var showLeaveDialog by mutableStateOf(false)
         private set
-    internal var inputMethod by mutableStateOf(InputMethod.CONTROLLER)
-        private set
     internal var activityDeviceId by mutableStateOf<Int?>(null)
         private set
     internal var revision by mutableIntStateOf(0)
@@ -169,13 +164,8 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
         runCatching { inputManager.unregisterInputDeviceListener(this) }
     }
 
-    fun noteTouch() {
-        inputMethod = InputMethod.TOUCH
-    }
-
     fun onKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && isControllerSource(event.source)) {
-            inputMethod = InputMethod.CONTROLLER
             noteControllerActivity(event.deviceId)
         }
 
@@ -195,22 +185,10 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
                 if (activeSession.acceptKey(sample).changed) scheduleDetectedRefresh()
             }
         }
-
-        if (
-            screen != Screen.MAIN &&
-            !attemptArmed &&
-            event.action == KeyEvent.ACTION_DOWN &&
-            event.repeatCount == 0 &&
-            event.keyCode == KeyEvent.KEYCODE_BUTTON_B
-        ) {
-            handleBack()
-            return true
-        }
         return false
     }
 
     fun onGenericMotionEvent(event: MotionEvent): Boolean {
-        if (isControllerSource(event.source)) inputMethod = InputMethod.CONTROLLER
         val activeSession = session
         if (
             screen == Screen.GUIDED &&
@@ -606,14 +584,7 @@ fun ControlsInternalScreen(
         )
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .pointerInteropFilter { event ->
-                if (event.actionMasked == MotionEvent.ACTION_DOWN) controller.noteTouch()
-                false
-            },
-    ) {
+    Column(modifier = modifier.fillMaxSize()) {
         BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
@@ -626,18 +597,6 @@ fun ControlsInternalScreen(
                 Screen.DETECTED -> DetectedInputs(controller, wide, feedback)
             }
         }
-        HorizontalDivider()
-        Text(
-            text = stringResource(
-                if (controller.inputMethod == InputMethod.TOUCH) R.string.control_hint_touch
-                else R.string.control_hint_controller
-            ),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 10.dp),
-        )
     }
 }
 
