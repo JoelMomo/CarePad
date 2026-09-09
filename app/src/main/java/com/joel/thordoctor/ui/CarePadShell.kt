@@ -84,6 +84,7 @@ import com.joel.thordoctor.modules.host.DiscoveredCarePadModule
 import com.joel.thordoctor.modules.host.ModuleManager
 import dev.carepad.module.controls.internalui.ControlsInternalController
 import dev.carepad.module.controls.internalui.ControlsInternalScreen
+import kotlin.math.abs
 
 internal enum class CarePadDestination {
     HOME,
@@ -118,6 +119,16 @@ private val CarePadRailCompactWidth = 80.dp
 private val CarePadRailExpandedWidth = 176.dp
 private const val CarePadRailTransitionMillis = 180
 private const val InternalControlsKey = "carepad-internal:controls"
+private val ControllerMotionAxes = intArrayOf(
+    MotionEvent.AXIS_X,
+    MotionEvent.AXIS_Y,
+    MotionEvent.AXIS_Z,
+    MotionEvent.AXIS_RZ,
+    MotionEvent.AXIS_RX,
+    MotionEvent.AXIS_RY,
+    MotionEvent.AXIS_HAT_X,
+    MotionEvent.AXIS_HAT_Y,
+)
 
 private data class VisibleModule(
     val key: String,
@@ -296,7 +307,7 @@ fun CarePadShellScreen(
                     consumed
                 },
                 { event ->
-                    if (isControllerSource(event.source)) {
+                    if (isSignificantControllerMotion(event)) {
                         dispatchFocus(CarePadFocusEvent.ControllerActivity)
                     }
                     controlsController.onGenericMotionEvent(event)
@@ -1064,6 +1075,42 @@ private fun controllerDirection(keyCode: Int): FocusDirection? = when (keyCode) 
     AndroidKeyEvent.KEYCODE_DPAD_LEFT -> FocusDirection.Left
     AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> FocusDirection.Right
     else -> null
+}
+
+private fun isSignificantControllerMotion(event: MotionEvent): Boolean {
+    if (event.actionMasked != MotionEvent.ACTION_MOVE || !isControllerSource(event.source)) {
+        return false
+    }
+    val device = event.device ?: return false
+    return ControllerMotionAxes.any { axis ->
+        val ranges = device.motionRanges.filter { range ->
+            range.axis == axis &&
+                (range.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+        }
+        val range = ranges.singleOrNull() ?: return@any false
+        if (
+            !range.min.isFinite() ||
+            !range.max.isFinite() ||
+            range.min >= range.max
+        ) {
+            return@any false
+        }
+
+        fun significant(value: Float): Boolean {
+            if (!value.isFinite()) return false
+            if (axis == MotionEvent.AXIS_HAT_X || axis == MotionEvent.AXIS_HAT_Y) {
+                return value != 0f
+            }
+            val tolerance = maxOf(range.flat, range.fuzz)
+            if (tolerance <= 0f) return false
+            val center = (range.min + range.max) / 2f
+            return abs(value - center) > tolerance
+        }
+
+        (0 until event.historySize).any { historyIndex ->
+            significant(event.getHistoricalAxisValue(axis, historyIndex))
+        } || significant(event.getAxisValue(axis))
+    }
 }
 
 private fun isControllerSource(source: Int): Boolean =
