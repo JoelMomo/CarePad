@@ -18,21 +18,18 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -52,8 +49,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -63,6 +60,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -80,10 +78,10 @@ import dev.carepad.module.controls.runtime.Resolution
 import dev.carepad.module.controls.runtime.SessionState
 import java.util.Locale
 
-private enum class Screen { MAIN, GUIDED, DETECTED }
-private enum class GuidedStage { PREPARE, DIGITAL, LEFT_REST, LEFT_MOVE, RIGHT_REST, RIGHT_MOVE, SUMMARY }
-private enum class Outcome { OBSERVED, NOT_DETECTED, INCONCLUSIVE }
-private enum class InputMethod { TOUCH, CONTROLLER }
+internal enum class Screen { MAIN, GUIDED, DETECTED }
+internal enum class GuidedStage { PREPARE, DIGITAL, LEFT_REST, LEFT_MOVE, RIGHT_REST, RIGHT_MOVE, SUMMARY }
+internal enum class Outcome { OBSERVED, NOT_DETECTED, INCONCLUSIVE }
+internal enum class InputMethod { TOUCH, CONTROLLER }
 private enum class ControllerFamily { PLAYSTATION, XBOX, NINTENDO, GENERIC }
 private enum class DiagramControl {
     FACE_BOTTOM, FACE_RIGHT, FACE_LEFT, FACE_TOP,
@@ -122,6 +120,7 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
     private var attemptBaselineTrajectoryCount = 0
     private var attemptGeneration = 0L
     private var activityGeneration = 0L
+    private var detectedRefreshGeneration = 0L
 
     internal var screen by mutableStateOf(Screen.MAIN)
         private set
@@ -354,7 +353,7 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
     internal fun startAttempt() {
         val activeSession = session ?: return
         if (activeSession.state == SessionState.INVALIDATED) return
-        cancelAttempt(keepUiState = true)
+        cancelAttempt()
         attemptArmed = true
         attemptCanFail = false
         attemptReadyAt = SystemClock.uptimeMillis() + ATTEMPT_ARM_DELAY_MS
@@ -378,7 +377,7 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
             GuidedStage.RIGHT_MOVE -> stickOutcomes[DiagramControl.RIGHT_STICK] = Outcome.NOT_DETECTED
             else -> return
         }
-        cancelAttempt(keepUiState = true)
+        cancelAttempt()
         revision++
     }
 
@@ -499,7 +498,7 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
             GuidedStage.RIGHT_MOVE -> stickOutcomes[DiagramControl.RIGHT_STICK] = Outcome.OBSERVED
             else -> return
         }
-        cancelAttempt(keepUiState = true)
+        cancelAttempt()
         revision++
     }
 
@@ -509,13 +508,12 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
         else -> 0
     }
 
-    private fun cancelAttempt(keepUiState: Boolean = false) {
+    private fun cancelAttempt() {
         attemptArmed = false
         attemptCanFail = false
         attemptReadyAt = 0L
         attemptBaselineTrajectoryCount = 0
         attemptGeneration++
-        if (!keepUiState) handler.removeCallbacksAndMessages(null)
     }
 
     private fun handleGuidedBack() {
@@ -558,9 +556,9 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
 
     private fun scheduleDetectedRefresh() {
         revision++
-        val generation = ++attemptGeneration
+        val generation = ++detectedRefreshGeneration
         handler.postDelayed({
-            if (screen == Screen.DETECTED && generation == attemptGeneration) revision++
+            if (screen == Screen.DETECTED && generation == detectedRefreshGeneration) revision++
         }, LIVE_ACTIVITY_WINDOW_MS + 40L)
     }
 
@@ -994,38 +992,57 @@ private fun DetectedInputs(
 private data class DetectedRow(val friendly: String, val androidLabel: String, val state: String, val active: Boolean)
 
 @Composable
-private fun detectedRows(session: ControlsSession): List<DetectedRow> = buildList {
-    session.device.keys.sortedBy { it.ordinal }.forEach { button ->
-        val active = when (button) {
-            ControlButton.DPAD_UP -> Direction.UP in session.dpadPath.lastOrNull()?.directions.orEmpty()
-            ControlButton.DPAD_DOWN -> Direction.DOWN in session.dpadPath.lastOrNull()?.directions.orEmpty()
-            ControlButton.DPAD_LEFT -> Direction.LEFT in session.dpadPath.lastOrNull()?.directions.orEmpty()
-            ControlButton.DPAD_RIGHT -> Direction.RIGHT in session.dpadPath.lastOrNull()?.directions.orEmpty()
-            else -> session.buttonMetrics(button).pressed
-        }
-        add(DetectedRow(buttonFriendlyName(button), buttonAndroidLabel(button), stringResource(if (active) R.string.input_active else R.string.input_idle), active))
-    }
-    val latest = session.rawMotion.lastOrNull()
-    fun addAxis(@StringRes friendlyRes: Int, axis: Int) {
-        val value = latest?.axes?.get(axis)
-        val active = latest != null && SystemClock.uptimeMillis() - latest.timeMs <= 520L
-        val state = if (value == null) {
-            stringResource(R.string.no_signal_yet)
-        } else {
-            stringResource(
-                if (active) R.string.input_active_value else R.string.input_value,
-                String.format(Locale.getDefault(), "%+.2f", value),
+private fun detectedRows(session: ControlsSession): List<DetectedRow> {
+    val resources = LocalContext.current.resources
+    return buildList {
+        session.device.keys.sortedBy { it.ordinal }.forEach { button ->
+            val active = when (button) {
+                ControlButton.DPAD_UP -> Direction.UP in session.dpadPath.lastOrNull()?.directions.orEmpty()
+                ControlButton.DPAD_DOWN -> Direction.DOWN in session.dpadPath.lastOrNull()?.directions.orEmpty()
+                ControlButton.DPAD_LEFT -> Direction.LEFT in session.dpadPath.lastOrNull()?.directions.orEmpty()
+                ControlButton.DPAD_RIGHT -> Direction.RIGHT in session.dpadPath.lastOrNull()?.directions.orEmpty()
+                else -> session.buttonMetrics(button).pressed
+            }
+            add(
+                DetectedRow(
+                    resources.getString(buttonFriendlyNameRes(button)),
+                    buttonAndroidLabel(button),
+                    resources.getString(if (active) R.string.input_active else R.string.input_idle),
+                    active,
+                )
             )
         }
-        add(DetectedRow(stringResource(friendlyRes), axisAndroidLabel(axis), state, active))
+        val latest = session.rawMotion.lastOrNull()
+        fun addAxis(@StringRes friendlyRes: Int, axis: Int) {
+            val value = latest?.axes?.get(axis)
+            val active = latest != null && SystemClock.uptimeMillis() - latest.timeMs <= 520L
+            val state = if (value == null) {
+                resources.getString(R.string.no_signal_yet)
+            } else {
+                resources.getString(
+                    if (active) R.string.input_active_value else R.string.input_value,
+                    String.format(Locale.getDefault(), "%+.2f", value),
+                )
+            }
+            add(DetectedRow(resources.getString(friendlyRes), axisAndroidLabel(axis), state, active))
+        }
+        session.mapping.left.pair?.let {
+            addAxis(R.string.left_stick_x, it.x)
+            addAxis(R.string.left_stick_y, it.y)
+        }
+        session.mapping.right.pair?.let {
+            addAxis(R.string.right_stick_x, it.x)
+            addAxis(R.string.right_stick_y, it.y)
+        }
+        session.mapping.hat?.let {
+            addAxis(R.string.dpad_horizontal, it.x)
+            addAxis(R.string.dpad_vertical, it.y)
+        }
     }
-    session.mapping.left.pair?.let { addAxis(R.string.left_stick_x, it.x); addAxis(R.string.left_stick_y, it.y) }
-    session.mapping.right.pair?.let { addAxis(R.string.right_stick_x, it.x); addAxis(R.string.right_stick_y, it.y) }
-    session.mapping.hat?.let { addAxis(R.string.dpad_horizontal, it.x); addAxis(R.string.dpad_vertical, it.y) }
 }
 
-@Composable
-private fun buttonFriendlyName(button: ControlButton): String = stringResource(when (button) {
+@StringRes
+private fun buttonFriendlyNameRes(button: ControlButton): Int = when (button) {
     ControlButton.A -> R.string.button_a
     ControlButton.B -> R.string.button_b
     ControlButton.X -> R.string.button_x
@@ -1041,7 +1058,7 @@ private fun buttonFriendlyName(button: ControlButton): String = stringResource(w
     ControlButton.DPAD_DOWN -> R.string.dpad_down
     ControlButton.DPAD_LEFT -> R.string.dpad_left
     ControlButton.DPAD_RIGHT -> R.string.dpad_right
-})
+}
 
 private fun buttonAndroidLabel(button: ControlButton): String = when (button) {
     ControlButton.A -> "BUTTON_A"
@@ -1081,7 +1098,7 @@ private fun outcomeLabel(outcome: Outcome): String = stringResource(when (outcom
 })
 
 @Composable
-private fun SectionCard(title: String, content: @Composable Column.() -> Unit) {
+private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(
             Modifier.padding(18.dp),
@@ -1118,7 +1135,7 @@ private fun GuidedButtons(
 
 @Composable
 private fun FocusButton(text: String, enabled: Boolean, feedback: () -> Unit, action: () -> Unit) {
-    var focused by mutableStateOf(false)
+    var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(16.dp)
     Button(
         enabled = enabled,
@@ -1133,7 +1150,7 @@ private fun FocusButton(text: String, enabled: Boolean, feedback: () -> Unit, ac
 
 @Composable
 private fun FocusOutlinedButton(text: String, enabled: Boolean, feedback: () -> Unit, action: () -> Unit) {
-    var focused by mutableStateOf(false)
+    var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(16.dp)
     OutlinedButton(
         enabled = enabled,
@@ -1196,26 +1213,35 @@ private fun ControllerDiagram(
     Canvas(Modifier.fillMaxWidth().height(230.dp)) {
         val w = size.width
         val h = size.height
-        drawRoundRect(body, topLeft = Offset(w * .10f, h * .17f), size = Size(w * .80f, h * .65f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(h * .18f))
+        drawRoundRect(
+            body,
+            topLeft = Offset(w * .10f, h * .17f),
+            size = Size(w * .80f, h * .65f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(h * .18f),
+        )
         val geometry = familyGeometry(family, w, h)
-        fun colorFor(target: DiagramControl): Color = if (highlighted == target) highlight.copy(alpha = pulse) else control
-        val arm = 26.dp.toPx(); val half = 7.dp.toPx()
-        drawRect(colorFor(DiagramControl.DPAD_UP), Offset(geometry.dpadX-half, geometry.dpadY-arm), Size(half*2, arm))
-        drawRect(colorFor(DiagramControl.DPAD_RIGHT), Offset(geometry.dpadX, geometry.dpadY-half), Size(arm, half*2))
-        drawRect(colorFor(DiagramControl.DPAD_DOWN), Offset(geometry.dpadX-half, geometry.dpadY), Size(half*2, arm))
-        drawRect(colorFor(DiagramControl.DPAD_LEFT), Offset(geometry.dpadX-arm, geometry.dpadY-half), Size(arm, half*2))
-        val r = 9.dp.toPx(); val o = 22.dp.toPx()
-        drawCircle(colorFor(DiagramControl.FACE_BOTTOM), r, Offset(geometry.faceX, geometry.faceY+o))
-        drawCircle(colorFor(DiagramControl.FACE_RIGHT), r, Offset(geometry.faceX+o, geometry.faceY))
-        drawCircle(colorFor(DiagramControl.FACE_LEFT), r, Offset(geometry.faceX-o, geometry.faceY))
-        drawCircle(colorFor(DiagramControl.FACE_TOP), r, Offset(geometry.faceX, geometry.faceY-o))
+        fun colorFor(target: DiagramControl): Color =
+            if (highlighted == target) highlight.copy(alpha = pulse) else control
+        val arm = 26.dp.toPx()
+        val half = 7.dp.toPx()
+        drawRect(colorFor(DiagramControl.DPAD_UP), Offset(geometry.dpadX - half, geometry.dpadY - arm), Size(half * 2, arm))
+        drawRect(colorFor(DiagramControl.DPAD_RIGHT), Offset(geometry.dpadX, geometry.dpadY - half), Size(arm, half * 2))
+        drawRect(colorFor(DiagramControl.DPAD_DOWN), Offset(geometry.dpadX - half, geometry.dpadY), Size(half * 2, arm))
+        drawRect(colorFor(DiagramControl.DPAD_LEFT), Offset(geometry.dpadX - arm, geometry.dpadY - half), Size(arm, half * 2))
+        val r = 9.dp.toPx()
+        val o = 22.dp.toPx()
+        drawCircle(colorFor(DiagramControl.FACE_BOTTOM), r, Offset(geometry.faceX, geometry.faceY + o))
+        drawCircle(colorFor(DiagramControl.FACE_RIGHT), r, Offset(geometry.faceX + o, geometry.faceY))
+        drawCircle(colorFor(DiagramControl.FACE_LEFT), r, Offset(geometry.faceX - o, geometry.faceY))
+        drawCircle(colorFor(DiagramControl.FACE_TOP), r, Offset(geometry.faceX, geometry.faceY - o))
+
         fun stick(x: Float, y: Float, target: DiagramControl, path: List<Pair<Float, Float>>) {
             val radius = 23.dp.toPx()
             drawCircle(colorFor(target), radius, Offset(x, y))
             if (highlighted == target && (showCenterGuide || showMovementGuide)) {
                 drawCircle(highlight, radius + 13.dp.toPx(), Offset(x, y), style = Stroke(2.dp.toPx()))
-                drawLine(highlight, Offset(x-7.dp.toPx(), y), Offset(x+7.dp.toPx(), y), 2.dp.toPx())
-                drawLine(highlight, Offset(x, y-7.dp.toPx()), Offset(x, y+7.dp.toPx()), 2.dp.toPx())
+                drawLine(highlight, Offset(x - 7.dp.toPx(), y), Offset(x + 7.dp.toPx(), y), 2.dp.toPx())
+                drawLine(highlight, Offset(x, y - 7.dp.toPx()), Offset(x, y + 7.dp.toPx()), 2.dp.toPx())
             }
             if (highlighted == target && showMovementGuide && path.isNotEmpty()) {
                 var previous: Offset? = null
@@ -1230,8 +1256,19 @@ private fun ControllerDiagram(
                 previous?.let { drawCircle(highlight, 5.dp.toPx(), it) }
             }
         }
-        stick(geometry.leftStickX, geometry.leftStickY, DiagramControl.LEFT_STICK, if (highlighted == DiagramControl.LEFT_STICK) observedPath else emptyList())
-        stick(geometry.rightStickX, geometry.rightStickY, DiagramControl.RIGHT_STICK, if (highlighted == DiagramControl.RIGHT_STICK) observedPath else emptyList())
+
+        stick(
+            geometry.leftStickX,
+            geometry.leftStickY,
+            DiagramControl.LEFT_STICK,
+            if (highlighted == DiagramControl.LEFT_STICK) observedPath else emptyList(),
+        )
+        stick(
+            geometry.rightStickX,
+            geometry.rightStickY,
+            DiagramControl.RIGHT_STICK,
+            if (highlighted == DiagramControl.RIGHT_STICK) observedPath else emptyList(),
+        )
 
         val labels = when (family) {
             ControllerFamily.PLAYSTATION -> listOf("×", "○", "□", "△")
@@ -1245,10 +1282,10 @@ private fun ControllerDiagram(
             textSize = 11.dp.toPx()
         }
         drawContext.canvas.nativeCanvas.apply {
-            drawText(labels[0], geometry.faceX, geometry.faceY+o+4.dp.toPx(), paint)
-            drawText(labels[1], geometry.faceX+o, geometry.faceY+4.dp.toPx(), paint)
-            drawText(labels[2], geometry.faceX-o, geometry.faceY+4.dp.toPx(), paint)
-            drawText(labels[3], geometry.faceX, geometry.faceY-o+4.dp.toPx(), paint)
+            drawText(labels[0], geometry.faceX, geometry.faceY + o + 4.dp.toPx(), paint)
+            drawText(labels[1], geometry.faceX + o, geometry.faceY + 4.dp.toPx(), paint)
+            drawText(labels[2], geometry.faceX - o, geometry.faceY + 4.dp.toPx(), paint)
+            drawText(labels[3], geometry.faceX, geometry.faceY - o + 4.dp.toPx(), paint)
         }
     }
     Text(
@@ -1271,10 +1308,10 @@ private data class Geometry(
 )
 
 private fun familyGeometry(family: ControllerFamily, w: Float, h: Float): Geometry = when (family) {
-    ControllerFamily.PLAYSTATION -> Geometry(w*.27f,h*.43f,w*.73f,h*.43f,w*.42f,h*.65f,w*.58f,h*.65f)
-    ControllerFamily.XBOX -> Geometry(w*.40f,h*.66f,w*.73f,h*.42f,w*.32f,h*.42f,w*.62f,h*.66f)
-    ControllerFamily.NINTENDO -> Geometry(w*.31f,h*.66f,w*.73f,h*.40f,w*.31f,h*.39f,w*.69f,h*.66f)
-    ControllerFamily.GENERIC -> Geometry(w*.28f,h*.43f,w*.72f,h*.43f,w*.40f,h*.66f,w*.60f,h*.66f)
+    ControllerFamily.PLAYSTATION -> Geometry(w * .27f, h * .43f, w * .73f, h * .43f, w * .42f, h * .65f, w * .58f, h * .65f)
+    ControllerFamily.XBOX -> Geometry(w * .40f, h * .66f, w * .73f, h * .42f, w * .32f, h * .42f, w * .62f, h * .66f)
+    ControllerFamily.NINTENDO -> Geometry(w * .31f, h * .66f, w * .73f, h * .40f, w * .31f, h * .39f, w * .69f, h * .66f)
+    ControllerFamily.GENERIC -> Geometry(w * .28f, h * .43f, w * .72f, h * .43f, w * .40f, h * .66f, w * .60f, h * .66f)
 }
 
 private fun familyFor(device: DeviceInfo): ControllerFamily {
@@ -1295,8 +1332,9 @@ private fun familyLabelRes(family: ControllerFamily): Int = when (family) {
     ControllerFamily.GENERIC -> R.string.family_generic
 }
 
+@Composable
 private fun friendlyDeviceName(device: DeviceInfo): String =
-    device.name.ifBlank { "Controller" }
+    device.name.ifBlank { stringResource(R.string.unnamed_controller) }
 
 private fun isControllerSource(source: Int): Boolean =
     source and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD ||
