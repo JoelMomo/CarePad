@@ -23,6 +23,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["docThorMainEnabled"] = true
         manifestPlaceholders["carepadRecoveryLabEnabled"] = false
+        manifestPlaceholders["moduleSettingsPermissionDeclarationNode"] = "remove"
     }
 
     buildTypes {
@@ -32,6 +33,7 @@ android {
                 versionNameSuffix = "-carepad-lab-host"
                 manifestPlaceholders["docThorMainEnabled"] = true
                 manifestPlaceholders["carepadRecoveryLabEnabled"] = true
+                manifestPlaceholders["moduleSettingsPermissionDeclarationNode"] = "merge"
             }
         }
     }
