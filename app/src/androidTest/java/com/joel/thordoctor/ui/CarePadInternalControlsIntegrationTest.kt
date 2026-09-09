@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
@@ -113,5 +114,53 @@ class CarePadInternalControlsIntegrationTest {
 
         composeRule.onNodeWithText(touchHint).assertDoesNotExist()
         composeRule.onNodeWithText("Navegación", substring = true).assertExists()
+    }
+
+    @Test
+    fun neutralGenericMotionAfterTouchKeepsTouchHint() {
+        val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
+        val controls = composeRule.activity.getString(R.string.carepad_module_controls)
+        val touchHint = composeRule.activity.getString(R.string.carepad_hint_touch_navigation)
+        var rawMotionHandler: ((MotionEvent) -> Boolean)? = null
+
+        composeRule.setContent {
+            MaterialTheme {
+                CarePadShellScreen(
+                    onThemeModeChange = { mode -> themeMode.value = mode },
+                    onRawInputHandlersChanged = { _, motionHandler ->
+                        rawMotionHandler = motionHandler
+                    },
+                    settingsContent = { _, _, _, _ -> },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNode(
+            matcher = hasClickAction() and hasAnyDescendant(hasText(controls)),
+            useUnmergedTree = true,
+        ).performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText(touchHint).assertExists()
+        val now = SystemClock.uptimeMillis()
+        val motion = MotionEvent.obtain(
+            now,
+            now,
+            MotionEvent.ACTION_MOVE,
+            0f,
+            0f,
+            0,
+        ).apply {
+            source = InputDevice.SOURCE_JOYSTICK
+        }
+
+        composeRule.runOnUiThread {
+            check(checkNotNull(rawMotionHandler).invoke(motion).not())
+            motion.recycle()
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText(touchHint).assertExists()
     }
 }
