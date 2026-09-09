@@ -478,9 +478,12 @@ fun CarePadShellScreen(
 
                     native.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_B -> {
                         markControllerActivity()
-                        val handled = handleBack()
+                        val handled = controlsOpen ||
+                            expandedPackage != null ||
+                            destination != CarePadDestination.HOME
                         if (handled) {
                             performFeedback()
+                            handleBack()
                         }
                         handled
                     }
