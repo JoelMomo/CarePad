@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.carepad.module.controls.internal"
+    namespace = "dev.carepad.module.controls.internalui"
 
     compileSdk {
         version = release(36)
