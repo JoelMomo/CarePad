@@ -280,7 +280,18 @@ fun CarePadShellScreen(
     DisposableEffect(controlsOpen, controlsController) {
         if (controlsOpen) {
             onRawInputHandlersChanged(
-                controlsController::onKeyEvent,
+                { event ->
+                    val consumed = controlsController.onKeyEvent(event)
+                    if (
+                        consumed &&
+                        event.action == AndroidKeyEvent.ACTION_DOWN &&
+                        event.repeatCount == 0 &&
+                        isControllerSource(event.source)
+                    ) {
+                        dispatchFocus(CarePadFocusEvent.ControllerActivity)
+                    }
+                    consumed
+                },
                 controlsController::onGenericMotionEvent,
             )
         } else {
@@ -672,15 +683,14 @@ fun CarePadShellScreen(
                     }
                 }
 
-                if (!controlsOpen) {
-                    HorizontalDivider()
-                    CarePadControlHints(
-                        destination = destination,
-                        inputMethod = inputMethod,
-                        glyphs = glyphs,
-                        hasModules = visibleModules.isNotEmpty(),
-                    )
-                }
+                HorizontalDivider()
+                CarePadControlHints(
+                    destination = destination,
+                    inputMethod = inputMethod,
+                    glyphs = glyphs,
+                    hasModules = visibleModules.isNotEmpty(),
+                    controlsOpen = controlsOpen,
+                )
             }
         }
     }
@@ -948,17 +958,17 @@ private fun CarePadControlHints(
     inputMethod: CarePadInputMethod,
     glyphs: ControllerGlyphs,
     hasModules: Boolean,
+    controlsOpen: Boolean,
 ) {
+    val showHomeActions = !controlsOpen && destination == CarePadDestination.HOME && hasModules
     val text = when (inputMethod) {
-        CarePadInputMethod.TOUCH -> if (destination == CarePadDestination.HOME && hasModules) {
+        CarePadInputMethod.TOUCH -> if (showHomeActions) {
             stringResource(R.string.carepad_hint_touch_home)
         } else {
             stringResource(R.string.carepad_hint_touch_navigation)
         }
 
-        CarePadInputMethod.CONTROLLER -> if (
-            destination == CarePadDestination.HOME && hasModules
-        ) {
+        CarePadInputMethod.CONTROLLER -> if (showHomeActions) {
             stringResource(
                 R.string.carepad_hint_controller_home,
                 glyphs.primary,
