@@ -15,7 +15,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.joel.thordoctor"
+        applicationId = if (carePadLabHost.get()) "com.joel.thordoctor" else "dev.carepad"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
