@@ -1,5 +1,9 @@
 package com.joel.thordoctor.ui
 
+import android.os.SystemClock
+import android.view.InputDevice
+import android.view.KeyCharacterMap
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +39,7 @@ class CarePadInternalControlsIntegrationTest {
             MaterialTheme {
                 CarePadShellScreen(
                     onThemeModeChange = { mode -> themeMode.value = mode },
+                    onRawInputHandlersChanged = { _, _ -> },
                     settingsContent = { _, _, _, _ -> },
                 )
             }
@@ -58,5 +63,55 @@ class CarePadInternalControlsIntegrationTest {
 
         composeRule.onNodeWithText(yourModules).assertExists()
         composeRule.onNodeWithText(controls).assertExists()
+    }
+
+    @Test
+    fun firstDpadAfterTouchInsideControlsRestoresControllerHint() {
+        val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
+        val controls = composeRule.activity.getString(R.string.carepad_module_controls)
+        val touchHint = composeRule.activity.getString(R.string.carepad_hint_touch_navigation)
+        var rawKeyHandler: ((KeyEvent) -> Boolean)? = null
+
+        composeRule.setContent {
+            MaterialTheme {
+                CarePadShellScreen(
+                    onThemeModeChange = { mode -> themeMode.value = mode },
+                    onRawInputHandlersChanged = { keyHandler, _ ->
+                        rawKeyHandler = keyHandler
+                    },
+                    settingsContent = { _, _, _, _ -> },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNode(
+            matcher = hasClickAction() and hasAnyDescendant(hasText(controls)),
+            useUnmergedTree = true,
+        ).performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText(touchHint).assertExists()
+        val now = SystemClock.uptimeMillis()
+        val down = KeyEvent(
+            now,
+            now,
+            KeyEvent.ACTION_DOWN,
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            0,
+            0,
+            KeyCharacterMap.VIRTUAL_KEYBOARD,
+            0,
+            0,
+            InputDevice.SOURCE_DPAD,
+        )
+
+        composeRule.runOnUiThread {
+            check(checkNotNull(rawKeyHandler).invoke(down).not())
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText(touchHint).assertDoesNotExist()
+        composeRule.onNodeWithText("Navegación", substring = true).assertExists()
     }
 }
