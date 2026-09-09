@@ -30,8 +30,8 @@ done
 
 test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
 
-adb uninstall com.joel.thordoctor.test >/dev/null 2>&1 || true
-adb uninstall com.joel.thordoctor >/dev/null 2>&1 || true
+adb uninstall dev.carepad.test >/dev/null 2>&1 || true
+adb uninstall dev.carepad >/dev/null 2>&1 || true
 adb install -r "$HOST_APK"
 if [[ -n "$MODULE_APK" ]]; then
   adb install -r "$MODULE_APK"
@@ -42,7 +42,7 @@ adb install -r "$TEST_APK"
 RESULT_FILE="${RUNNER_TEMP:-/tmp}/carepad-focus-compose-result.txt"
 adb shell am instrument -w -r \
   -e class com.joel.thordoctor.ui.CarePadFocusIntegrationTest \
-  com.joel.thordoctor.test/androidx.test.runner.AndroidJUnitRunner \
+  dev.carepad.test/androidx.test.runner.AndroidJUnitRunner \
   | tee "$RESULT_FILE"
 
 grep -Eq '^OK \([0-9]+ tests?\)$' "$RESULT_FILE"

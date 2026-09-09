@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <permission
+        android:name="dev.carepad.permission.MODULE_SETTINGS"
+        android:protectionLevel="signature" />
+
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application>
+        <activity
+            android:name=".modules.host.ModuleLabHarnessActivity"
+            android:exported="true"
+            android:label="CarePad Lab Harness" />
+
+        <activity
+            android:name=".modules.host.recovery.RecoveryLabHarnessActivity"
+            android:enabled="${carepadRecoveryLabEnabled}"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <receiver
+            android:name=".modules.host.ModuleInstallStatusReceiver"
+            android:exported="false" />
+    </application>
+
+</manifest>

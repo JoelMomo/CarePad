@@ -15,7 +15,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.joel.thordoctor"
+        applicationId = if (carePadLabHost.get()) "com.joel.thordoctor" else "dev.carepad"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -37,7 +37,10 @@ android {
     }
 
     if (carePadLabHost.get()) {
-        sourceSets.getByName("debug").kotlin.srcDir("src/recoveryLab/java")
+        sourceSets.getByName("debug").apply {
+            kotlin.srcDir("src/recoveryLab/java")
+            manifest.srcFile("src/labHost/AndroidManifest.xml")
+        }
     }
 
     compileOptions {

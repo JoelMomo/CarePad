@@ -6,7 +6,7 @@ LAB_HOST_APK="${2:?lab host APK path required}"
 UPDATE_APK="${3:?recoverable module APK path required}"
 DEFECTIVE_APK="${4:?defective module APK path required}"
 
-NORMAL_HOST_PACKAGE="com.joel.thordoctor"
+NORMAL_HOST_PACKAGE="dev.carepad"
 HOST_PACKAGE="com.joel.thordoctor.carepadlabhost"
 MODULE_PACKAGE="com.joel.thordoctor.modulelab"
 RECOVERY_ACTIVITY="${HOST_PACKAGE}/com.joel.thordoctor.modules.host.recovery.RecoveryLabHarnessActivity"
@@ -657,7 +657,6 @@ CURRENT_STAGE="locate apksigner"
 CURRENT_STAGE_LINE=$((LINENO + 2))
 CURRENT_STAGE_COMMAND='APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"'
 APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-
 CURRENT_STAGE="validate apksigner"
 CURRENT_STAGE_LINE=$((LINENO + 2))
 CURRENT_STAGE_COMMAND='test -n "$APKSIGNER"'

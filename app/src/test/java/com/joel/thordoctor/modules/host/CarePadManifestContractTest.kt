@@ -19,23 +19,33 @@ class CarePadManifestContractTest {
     }
 
     @Test
-    fun moduleSettingsPermissionIsDefinedOnlyByMainManifest() {
+    fun moduleSettingsPermissionDeclarationIsLabOnly() {
         val permission = "dev.carepad.permission.MODULE_SETTINGS"
         val permissionDeclaration = "<permission"
         val mainManifest = readManifest("main")
         val debugManifest = readManifest("debug")
+        val labHostManifest = readModuleManifest("app/src/labHost/AndroidManifest.xml")
+        val appGradle = readModuleFile("app/build.gradle.kts")
         val coreManifest = readModuleManifest("core/android/src/main/AndroidManifest.xml")
         val moduleLabManifest = readModuleManifest("module-lab/src/main/AndroidManifest.xml")
 
-        assertTrue(mainManifest.contains(permission))
+        // Normal CarePad may consume the transitional legacy contract, but must not own it.
         assertTrue(mainManifest.contains("android:name=\"$permission\""))
-        assertTrue(mainManifest.contains("android:protectionLevel=\"signature\""))
-
-        // Debug and Core must not declare the permission
+        assertFalse(mainManifest.contains(permissionDeclaration) && mainManifest.contains(permission))
         assertFalse(debugManifest.contains(permissionDeclaration) && debugManifest.contains(permission))
-        assertFalse(coreManifest.contains(permission))
 
-        // Module Lab must use the permission but not declare it
+        // Only the CI-only parallel lab host owns the signature permission while it has consumers.
+        assertTrue(labHostManifest.contains("<permission"))
+        assertTrue(labHostManifest.contains("android:name=\"$permission\""))
+        assertTrue(labHostManifest.contains("android:protectionLevel=\"signature\""))
+        assertTrue(
+            appGradle.contains(
+                "manifest.srcFile(\"src/labHost/AndroidManifest.xml\")"
+            )
+        )
+
+        // Core and Module Lab consume/check the contract but never become permission owners.
+        assertFalse(coreManifest.contains(permissionDeclaration) && coreManifest.contains(permission))
         assertTrue(moduleLabManifest.contains("<uses-permission android:name=\"$permission\""))
         assertFalse(moduleLabManifest.contains(permissionDeclaration) && moduleLabManifest.contains(permission))
     }
@@ -49,12 +59,14 @@ class CarePadManifestContractTest {
             ?: error("AndroidManifest.xml not found for source set $sourceSet")
     }
 
-    private fun readModuleManifest(relativePath: String): String {
+    private fun readModuleManifest(relativePath: String): String = readModuleFile(relativePath)
+
+    private fun readModuleFile(relativePath: String): String {
         val candidates = listOf(
             File(relativePath),
             File("../$relativePath"),
         )
         return candidates.firstOrNull(File::isFile)?.readText()
-            ?: error("Manifest not found for path $relativePath")
+            ?: error("File not found for path $relativePath")
     }
 }
