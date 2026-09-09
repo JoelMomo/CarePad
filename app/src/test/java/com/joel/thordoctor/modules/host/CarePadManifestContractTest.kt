@@ -19,36 +19,28 @@ class CarePadManifestContractTest {
     }
 
     @Test
-    fun moduleSettingsPermissionDeclarationIsLabGated() {
+    fun moduleSettingsPermissionDeclarationIsLabOnly() {
         val permission = "dev.carepad.permission.MODULE_SETTINGS"
         val permissionDeclaration = "<permission"
         val mainManifest = readManifest("main")
         val debugManifest = readManifest("debug")
+        val labHostManifest = readModuleManifest("app/src/labHost/AndroidManifest.xml")
         val appGradle = readModuleFile("app/build.gradle.kts")
         val coreManifest = readModuleManifest("core/android/src/main/AndroidManifest.xml")
         val moduleLabManifest = readModuleManifest("module-lab/src/main/AndroidManifest.xml")
 
-        // The normal CarePad manifest may consume the legacy contract, but must not own it.
-        assertTrue(mainManifest.contains("<uses-permission"))
+        // Normal CarePad may consume the transitional legacy contract, but must not own it.
         assertTrue(mainManifest.contains("android:name=\"$permission\""))
         assertFalse(mainManifest.contains(permissionDeclaration) && mainManifest.contains(permission))
+        assertFalse(debugManifest.contains(permissionDeclaration) && debugManifest.contains(permission))
 
-        // Debug contains the declaration only as a manifest-merger node controlled by the LAB flag.
-        assertTrue(debugManifest.contains("android:name=\"$permission\""))
-        assertTrue(debugManifest.contains("android:protectionLevel=\"signature\""))
-        assertTrue(
-            debugManifest.contains(
-                "tools:node=\"\${moduleSettingsPermissionDeclarationNode}\""
-            )
-        )
+        // Only the CI-only parallel lab host owns the signature permission while it has consumers.
+        assertTrue(labHostManifest.contains("<permission"))
+        assertTrue(labHostManifest.contains("android:name=\"$permission\""))
+        assertTrue(labHostManifest.contains("android:protectionLevel=\"signature\""))
         assertTrue(
             appGradle.contains(
-                "manifestPlaceholders[\"moduleSettingsPermissionDeclarationNode\"] = \"remove\""
-            )
-        )
-        assertTrue(
-            appGradle.contains(
-                "manifestPlaceholders[\"moduleSettingsPermissionDeclarationNode\"] = \"merge\""
+                "manifest.srcFile(\"src/labHost/AndroidManifest.xml\")"
             )
         )
 

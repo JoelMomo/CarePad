@@ -23,7 +23,6 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["docThorMainEnabled"] = true
         manifestPlaceholders["carepadRecoveryLabEnabled"] = false
-        manifestPlaceholders["moduleSettingsPermissionDeclarationNode"] = "remove"
     }
 
     buildTypes {
@@ -33,13 +32,15 @@ android {
                 versionNameSuffix = "-carepad-lab-host"
                 manifestPlaceholders["docThorMainEnabled"] = true
                 manifestPlaceholders["carepadRecoveryLabEnabled"] = true
-                manifestPlaceholders["moduleSettingsPermissionDeclarationNode"] = "merge"
             }
         }
     }
 
     if (carePadLabHost.get()) {
-        sourceSets.getByName("debug").kotlin.srcDir("src/recoveryLab/java")
+        sourceSets.getByName("debug").apply {
+            kotlin.srcDir("src/recoveryLab/java")
+            manifest.srcFile("src/labHost/AndroidManifest.xml")
+        }
     }
 
     compileOptions {
