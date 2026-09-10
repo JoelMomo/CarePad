@@ -54,8 +54,8 @@ class CarePadInternalControlsIntegrationTest {
         ).performClick()
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText(guidedTest).assertExists()
-        composeRule.onNodeWithText(detectedInputs).assertExists()
+        actionNode(guidedTest).assertExists()
+        actionNode(detectedInputs).assertExists()
         composeRule.onNodeWithText(home).assertExists()
 
         composeRule.runOnUiThread {
@@ -104,7 +104,7 @@ class CarePadInternalControlsIntegrationTest {
 
         composeRule.onNodeWithText(touchHint).assertDoesNotExist()
         composeRule.onNodeWithText("Navegación", substring = true).assertExists()
-        composeRule.onNodeWithText(guidedTest).assertIsFocused()
+        actionNode(guidedTest).assertIsFocused()
     }
 
     @Test
@@ -142,7 +142,7 @@ class CarePadInternalControlsIntegrationTest {
             )
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithText(guidedTest).assertIsFocused()
+        actionNode(guidedTest).assertIsFocused()
 
         composeRule.runOnUiThread {
             composeRule.activity.dispatchKeyEvent(
@@ -158,7 +158,7 @@ class CarePadInternalControlsIntegrationTest {
             )
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithText(guidedTest).assertIsFocused()
+        actionNode(guidedTest).assertIsFocused()
     }
 
     @Test
@@ -208,6 +208,11 @@ class CarePadInternalControlsIntegrationTest {
 
         composeRule.onNodeWithText(touchHint).assertExists()
     }
+
+    private fun actionNode(text: String) = composeRule.onNode(
+        matcher = hasClickAction() and hasText(text),
+        useUnmergedTree = true,
+    )
 
     private fun controllerKeyEvent(keyCode: Int, source: Int): KeyEvent {
         val now = SystemClock.uptimeMillis()
