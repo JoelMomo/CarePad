@@ -296,7 +296,7 @@ fun CarePadShellScreen(
             onRawInputHandlersChanged(
                 { event ->
                     val wasTouch = focusControllerState.modality == CarePadInputMethod.TOUCH
-                    val consumed = controlsController.onKeyEvent(event)
+                    var consumed = controlsController.onKeyEvent(event)
                     if (
                         event.action == AndroidKeyEvent.ACTION_DOWN &&
                         event.repeatCount == 0 &&
@@ -305,6 +305,7 @@ fun CarePadShellScreen(
                         dispatchFocus(CarePadFocusEvent.ControllerActivity)
                         if (!consumed && wasTouch && controllerDirection(event.keyCode) != null) {
                             requestFocusTarget(CarePadFocusKey.ContentFallback(destination))
+                            consumed = true
                         }
                     }
                     consumed
