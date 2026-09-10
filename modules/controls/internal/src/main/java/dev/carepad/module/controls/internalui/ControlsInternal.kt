@@ -66,15 +66,18 @@ import androidx.compose.ui.unit.dp
 import dev.carepad.module.controls.runtime.AndroidDeviceCatalog
 import dev.carepad.module.controls.runtime.AndroidEventMapper
 import dev.carepad.module.controls.runtime.Axes
+import dev.carepad.module.controls.runtime.AxisPair
 import dev.carepad.module.controls.runtime.Button as ControlButton
 import dev.carepad.module.controls.runtime.ControlsSession
 import dev.carepad.module.controls.runtime.DeviceInfo
 import dev.carepad.module.controls.runtime.Direction
 import dev.carepad.module.controls.runtime.KeyAction
 import dev.carepad.module.controls.runtime.KeySample
+import dev.carepad.module.controls.runtime.RangeInfo
 import dev.carepad.module.controls.runtime.Resolution
 import dev.carepad.module.controls.runtime.SessionState
 import java.util.Locale
+import kotlin.math.abs
 
 internal enum class Screen { MAIN, GUIDED, DETECTED }
 internal enum class GuidedStage { PREPARE, DIGITAL, LEFT_REST, LEFT_MOVE, RIGHT_REST, RIGHT_MOVE, SUMMARY }
@@ -103,6 +106,23 @@ private val digitalTargets = listOf(
     DigitalTarget(ControlButton.DPAD_LEFT, R.string.dpad_left, DiagramControl.DPAD_LEFT),
 )
 
+private val dpadButtons = setOf(
+    ControlButton.DPAD_UP,
+    ControlButton.DPAD_DOWN,
+    ControlButton.DPAD_LEFT,
+    ControlButton.DPAD_RIGHT,
+)
+
+private sealed interface GuidedCaptureDrain {
+    data class Digital(
+        val button: ControlButton,
+        val waitsForHatNeutral: Boolean,
+        var keyReleased: Boolean = false,
+    ) : GuidedCaptureDrain
+
+    data class Stick(val left: Boolean) : GuidedCaptureDrain
+}
+
 /** Raw Android input bridge used only while the internal Controls surface is visible. */
 class ControlsInternalController(context: Context) : InputManager.InputDeviceListener {
     private val appContext = context.applicationContext
@@ -118,6 +138,7 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
     private var attemptGeneration = 0L
     private var activityGeneration = 0L
     private var detectedRefreshGeneration = 0L
+    private var guidedCaptureDrain: GuidedCaptureDrain? = null
 
     internal var screen by mutableStateOf(Screen.MAIN)
         private set
@@ -170,15 +191,20 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
         }
 
         val activeSession = session
-        if (screen == Screen.GUIDED && attemptArmed && activeSession != null) {
+        if (screen == Screen.GUIDED && activeSession != null) {
             val sample = AndroidEventMapper.key(event)
-            if (sample != null) {
-                val result = activeSession.acceptKey(sample)
-                if (result.changed) {
-                    revision++
-                    if (event.eventTime >= attemptReadyAt) observeGuidedKey(sample)
+            if (consumeGuidedDrainKey(event, sample, activeSession)) return true
+
+            if (attemptArmed) {
+                if (sample != null) {
+                    val result = activeSession.acceptKey(sample)
+                    if (result.changed) {
+                        revision++
+                        if (event.eventTime >= attemptReadyAt) observeGuidedKey(sample)
+                    }
+                    if (result.consumeInTestMode) return true
                 }
-                if (result.consumeInTestMode) return true
+                if (isSelectedControllerKey(event, activeSession)) return true
             }
         } else if (screen == Screen.DETECTED && activeSession != null) {
             AndroidEventMapper.key(event)?.let { sample ->
@@ -192,23 +218,29 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
         val activeSession = session
         if (
             screen == Screen.GUIDED &&
-            attemptArmed &&
             activeSession != null &&
             event.deviceId == activeSession.device.deviceId
         ) {
-            val frames = AndroidEventMapper.motion(event, AndroidEventMapper.axes(activeSession.mapping))
-            var consumed = false
-            var changed = false
-            frames.forEach { frame ->
-                val result = activeSession.acceptMotion(frame)
-                consumed = consumed || result.consumeInTestMode
-                changed = changed || result.changed
+            if (guidedCaptureDrain != null && isControllerSource(event.source)) {
+                settleGuidedDrainFromMotion(event, activeSession)
+                return true
             }
-            if (changed) {
-                revision++
-                if (event.eventTime >= attemptReadyAt) observeGuidedMotion()
+
+            if (attemptArmed) {
+                val frames = AndroidEventMapper.motion(event, AndroidEventMapper.axes(activeSession.mapping))
+                var consumed = false
+                var changed = false
+                frames.forEach { frame ->
+                    val result = activeSession.acceptMotion(frame)
+                    consumed = consumed || result.consumeInTestMode
+                    changed = changed || result.changed
+                }
+                if (changed) {
+                    revision++
+                    if (event.eventTime >= attemptReadyAt) observeGuidedMotion()
+                }
+                if (consumed || isControllerSource(event.source)) return true
             }
-            if (consumed) return true
         } else if (
             screen == Screen.DETECTED &&
             activeSession != null &&
@@ -304,6 +336,7 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
     }
 
     internal fun continueDigital() {
+        guidedCaptureDrain = null
         if (digitalTargetIndex < digitalTargets.lastIndex) {
             digitalTargetIndex++
         } else {
@@ -324,6 +357,7 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
     }
 
     internal fun continueFromStickMove(left: Boolean) {
+        guidedCaptureDrain = null
         guidedStage = if (left) GuidedStage.RIGHT_REST else GuidedStage.SUMMARY
         revision++
     }
@@ -470,15 +504,100 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
     }
 
     private fun finishAttemptObserved() {
-        when (guidedStage) {
-            GuidedStage.DIGITAL -> digitalOutcomes[digitalTargets[digitalTargetIndex].button] = Outcome.OBSERVED
-            GuidedStage.LEFT_MOVE -> stickOutcomes[DiagramControl.LEFT_STICK] = Outcome.OBSERVED
-            GuidedStage.RIGHT_MOVE -> stickOutcomes[DiagramControl.RIGHT_STICK] = Outcome.OBSERVED
+        val drain = when (guidedStage) {
+            GuidedStage.DIGITAL -> {
+                val button = digitalTargets[digitalTargetIndex].button
+                digitalOutcomes[button] = Outcome.OBSERVED
+                GuidedCaptureDrain.Digital(
+                    button = button,
+                    waitsForHatNeutral = button in dpadButtons && session?.mapping?.hat != null,
+                )
+            }
+            GuidedStage.LEFT_MOVE -> {
+                stickOutcomes[DiagramControl.LEFT_STICK] = Outcome.OBSERVED
+                GuidedCaptureDrain.Stick(left = true)
+            }
+            GuidedStage.RIGHT_MOVE -> {
+                stickOutcomes[DiagramControl.RIGHT_STICK] = Outcome.OBSERVED
+                GuidedCaptureDrain.Stick(left = false)
+            }
             else -> return
         }
-        cancelAttempt()
+        guidedCaptureDrain = drain
+        clearAttemptWindow()
         revision++
     }
+
+    private fun consumeGuidedDrainKey(
+        event: KeyEvent,
+        sample: KeySample?,
+        activeSession: ControlsSession,
+    ): Boolean {
+        val drain = guidedCaptureDrain ?: return false
+        if (!isSelectedControllerKey(event, activeSession)) return false
+
+        return when (drain) {
+            is GuidedCaptureDrain.Digital -> {
+                if (sample?.button == drain.button) {
+                    if (sample.action == KeyAction.UP) {
+                        drain.keyReleased = true
+                        if (!drain.waitsForHatNeutral) guidedCaptureDrain = null
+                    }
+                    true
+                } else if (
+                    drain.waitsForHatNeutral &&
+                    drain.keyReleased &&
+                    sample?.button != null &&
+                    sample.action == KeyAction.DOWN &&
+                    sample.repeatCount == 0
+                ) {
+                    // A distinct mapped press is a new gesture; do not swallow it merely because
+                    // a device advertised HAT axes but failed to emit a final neutral HAT frame.
+                    guidedCaptureDrain = null
+                    false
+                } else {
+                    true
+                }
+            }
+            is GuidedCaptureDrain.Stick -> true
+        }
+    }
+
+    private fun settleGuidedDrainFromMotion(
+        event: MotionEvent,
+        activeSession: ControlsSession,
+    ) {
+        when (val drain = guidedCaptureDrain) {
+            is GuidedCaptureDrain.Digital -> {
+                if (!drain.waitsForHatNeutral) return
+                val hat = activeSession.mapping.hat ?: return
+                if (isPairAtRest(event, hat)) guidedCaptureDrain = null
+            }
+            is GuidedCaptureDrain.Stick -> {
+                val pair = if (drain.left) {
+                    activeSession.mapping.left.pair
+                } else {
+                    activeSession.mapping.right.pair
+                } ?: return
+                if (isPairAtRest(event, pair)) guidedCaptureDrain = null
+            }
+            null -> Unit
+        }
+    }
+
+    private fun isPairAtRest(event: MotionEvent, pair: AxisPair): Boolean =
+        isAxisAtRest(event.getAxisValue(pair.x), pair.xr) &&
+            isAxisAtRest(event.getAxisValue(pair.y), pair.yr)
+
+    private fun isAxisAtRest(value: Float, range: RangeInfo): Boolean {
+        if (!value.isFinite() || !range.valid) return false
+        val center = (range.min + range.max) / 2f
+        val tolerance = maxOf(range.flat, range.fuzz, 0f)
+        return abs(value - center) <= tolerance
+    }
+
+    private fun isSelectedControllerKey(event: KeyEvent, activeSession: ControlsSession): Boolean =
+        event.deviceId == activeSession.device.deviceId && isControllerSource(event.source)
 
     private fun currentTrajectoryCount(activeSession: ControlsSession): Int = when (guidedStage) {
         GuidedStage.LEFT_MOVE -> activeSession.leftMetrics().trajectory.size
@@ -486,12 +605,17 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
         else -> 0
     }
 
-    private fun cancelAttempt() {
+    private fun clearAttemptWindow() {
         attemptArmed = false
         attemptCanFail = false
         attemptReadyAt = 0L
         attemptBaselineTrajectoryCount = 0
         attemptGeneration++
+    }
+
+    private fun cancelAttempt() {
+        clearAttemptWindow()
+        guidedCaptureDrain = null
     }
 
     private fun handleGuidedBack() {
