@@ -8,6 +8,7 @@ import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -67,9 +68,10 @@ class CarePadInternalControlsIntegrationTest {
     }
 
     @Test
-    fun firstDpadAfterTouchInsideControlsRestoresControllerHint() {
+    fun firstDpadAfterTouchInsideControlsRestoresControllerHintAndVisibleFocus() {
         val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
         val controls = composeRule.activity.getString(R.string.carepad_module_controls)
+        val guidedTest = composeRule.activity.getString(ControlsR.string.guided_test)
         val touchHint = composeRule.activity.getString(R.string.carepad_hint_touch_navigation)
         var rawKeyHandler: ((KeyEvent) -> Boolean)? = null
 
@@ -93,19 +95,7 @@ class CarePadInternalControlsIntegrationTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText(touchHint).assertExists()
-        val now = SystemClock.uptimeMillis()
-        val down = KeyEvent(
-            now,
-            now,
-            KeyEvent.ACTION_DOWN,
-            KeyEvent.KEYCODE_DPAD_DOWN,
-            0,
-            0,
-            KeyCharacterMap.VIRTUAL_KEYBOARD,
-            0,
-            0,
-            InputDevice.SOURCE_DPAD,
-        )
+        val down = controllerKeyEvent(KeyEvent.KEYCODE_DPAD_DOWN, InputDevice.SOURCE_DPAD)
 
         composeRule.runOnUiThread {
             check(checkNotNull(rawKeyHandler).invoke(down).not())
@@ -114,6 +104,61 @@ class CarePadInternalControlsIntegrationTest {
 
         composeRule.onNodeWithText(touchHint).assertDoesNotExist()
         composeRule.onNodeWithText("Navegación", substring = true).assertExists()
+        composeRule.onNodeWithText(guidedTest).assertIsFocused()
+    }
+
+    @Test
+    fun railToControlsRestoresVisibleContentFocus() {
+        val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
+        val controls = composeRule.activity.getString(R.string.carepad_module_controls)
+        val guidedTest = composeRule.activity.getString(ControlsR.string.guided_test)
+        val home = composeRule.activity.getString(R.string.carepad_nav_home)
+        var rawKeyHandler: ((KeyEvent) -> Boolean)? = null
+
+        composeRule.setContent {
+            MaterialTheme {
+                CarePadShellScreen(
+                    onThemeModeChange = { mode -> themeMode.value = mode },
+                    onRawInputHandlersChanged = { keyHandler, _ ->
+                        rawKeyHandler = keyHandler
+                    },
+                    settingsContent = { _, _, _, _ -> },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNode(
+            matcher = hasClickAction() and hasAnyDescendant(hasText(controls)),
+            useUnmergedTree = true,
+        ).performClick()
+        composeRule.waitForIdle()
+
+        composeRule.runOnUiThread {
+            check(
+                checkNotNull(rawKeyHandler).invoke(
+                    controllerKeyEvent(KeyEvent.KEYCODE_DPAD_DOWN, InputDevice.SOURCE_DPAD)
+                ).not()
+            )
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(guidedTest).assertIsFocused()
+
+        composeRule.runOnUiThread {
+            composeRule.activity.dispatchKeyEvent(
+                controllerKeyEvent(KeyEvent.KEYCODE_BUTTON_L1, InputDevice.SOURCE_GAMEPAD)
+            )
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(home).assertIsFocused()
+
+        composeRule.runOnUiThread {
+            composeRule.activity.dispatchKeyEvent(
+                controllerKeyEvent(KeyEvent.KEYCODE_BUTTON_L1, InputDevice.SOURCE_GAMEPAD)
+            )
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(guidedTest).assertIsFocused()
     }
 
     @Test
@@ -162,5 +207,21 @@ class CarePadInternalControlsIntegrationTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText(touchHint).assertExists()
+    }
+
+    private fun controllerKeyEvent(keyCode: Int, source: Int): KeyEvent {
+        val now = SystemClock.uptimeMillis()
+        return KeyEvent(
+            now,
+            now,
+            KeyEvent.ACTION_DOWN,
+            keyCode,
+            0,
+            0,
+            KeyCharacterMap.VIRTUAL_KEYBOARD,
+            0,
+            0,
+            source,
+        )
     }
 }
