@@ -68,7 +68,7 @@ class CarePadInternalControlsIntegrationTest {
     }
 
     @Test
-    fun firstDpadAfterTouchInsideControlsRestoresControllerHintAndVisibleFocus() {
+    fun firstDpadAfterTouchInsideControlsIsConsumedAndRestoresVisibleContentFocus() {
         val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
         val controls = composeRule.activity.getString(R.string.carepad_module_controls)
         val guidedTest = composeRule.activity.getString(ControlsR.string.guided_test)
@@ -98,7 +98,7 @@ class CarePadInternalControlsIntegrationTest {
         val down = controllerKeyEvent(KeyEvent.KEYCODE_DPAD_DOWN, InputDevice.SOURCE_DPAD)
 
         composeRule.runOnUiThread {
-            check(checkNotNull(rawKeyHandler).invoke(down).not())
+            check(checkNotNull(rawKeyHandler).invoke(down))
         }
         composeRule.waitForIdle()
 
@@ -138,7 +138,7 @@ class CarePadInternalControlsIntegrationTest {
             check(
                 checkNotNull(rawKeyHandler).invoke(
                     controllerKeyEvent(KeyEvent.KEYCODE_DPAD_DOWN, InputDevice.SOURCE_DPAD)
-                ).not()
+                )
             )
         }
         composeRule.waitForIdle()
