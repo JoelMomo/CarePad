@@ -230,6 +230,7 @@ fun CarePadShellScreen(
         CarePadDestination.entries.associateWith { FocusRequester() }
     }
     val contentFallbackRequester = remember { FocusRequester() }
+    val controlsContentFocusRequester = remember { FocusRequester() }
     val contentTargets = if (controlsOpen) {
         emptyList()
     } else {
@@ -245,8 +246,10 @@ fun CarePadShellScreen(
         is CarePadFocusKey.Module -> moduleFocusRequesters[target.packageName]
         is CarePadFocusKey.Uninstall -> uninstallFocusRequesters[target.packageName]
         is CarePadFocusKey.Theme -> themeFocusRequesters[target.mode]
-        is CarePadFocusKey.ContentFallback -> {
-            if (target.destination == destination) contentFallbackRequester else null
+        is CarePadFocusKey.ContentFallback -> when {
+            target.destination != destination -> null
+            controlsOpen -> controlsContentFocusRequester
+            else -> contentFallbackRequester
         }
     }
 
@@ -301,7 +304,7 @@ fun CarePadShellScreen(
                     ) {
                         dispatchFocus(CarePadFocusEvent.ControllerActivity)
                         if (!consumed && wasTouch && controllerDirection(event.keyCode) != null) {
-                            contentFallbackRequester.requestFocus()
+                            requestFocusTarget(CarePadFocusKey.ContentFallback(destination))
                         }
                     }
                     consumed
@@ -344,7 +347,7 @@ fun CarePadShellScreen(
 
     LaunchedEffect(controlsOpen) {
         if (controlsOpen && focusControllerState.modality == CarePadInputMethod.CONTROLLER) {
-            contentFallbackRequester.requestFocus()
+            requestFocusTarget(CarePadFocusKey.ContentFallback(destination))
         }
     }
 
@@ -616,7 +619,7 @@ fun CarePadShellScreen(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .focusProperties { canFocus = contentTargets.isEmpty() }
+                        .focusProperties { canFocus = contentTargets.isEmpty() && !controlsOpen }
                         .focusRequester(contentFallbackRequester)
                         .onFocusChanged { state ->
                             if (state.isFocused) {
@@ -633,7 +636,9 @@ fun CarePadShellScreen(
                         CarePadDestination.HOME -> if (controlsOpen) {
                             ControlsInternalScreen(
                                 controller = controlsController,
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .focusRequester(controlsContentFocusRequester),
                             )
                         } else {
                             CarePadHome(
