@@ -41,7 +41,7 @@ adb install -r "$TEST_APK"
 
 RESULT_FILE="${RUNNER_TEMP:-/tmp}/carepad-focus-compose-result.txt"
 adb shell am instrument -w -r \
-  -e class com.joel.thordoctor.ui.CarePadFocusIntegrationTest \
+  -e class com.joel.thordoctor.ui.CarePadFocusIntegrationTest,com.joel.thordoctor.ui.CarePadInternalControlsIntegrationTest \
   dev.carepad.test/androidx.test.runner.AndroidJUnitRunner \
   | tee "$RESULT_FILE"
 
