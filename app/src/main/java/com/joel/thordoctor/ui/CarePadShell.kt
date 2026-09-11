@@ -147,6 +147,14 @@ private data class ControllerGlyphs(
     val detailsKeyCode: Int,
 )
 
+private data class ControlsTouchRecoveryDrain(
+    val deviceId: Int,
+    val waitsForHatNeutral: Boolean,
+    val sawDpadKey: Boolean,
+    val keyReleased: Boolean = false,
+    val hatNeutral: Boolean = !waitsForHatNeutral,
+)
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
 fun CarePadShellScreen(
@@ -181,6 +189,9 @@ fun CarePadShellScreen(
     var expandedPackage by remember { mutableStateOf<String?>(null) }
     var pendingUninstall by remember { mutableStateOf<VisibleModule?>(null) }
     var controlsOpen by rememberSaveable { mutableStateOf(false) }
+    var controlsTouchRecoveryDrain by remember {
+        mutableStateOf<ControlsTouchRecoveryDrain?>(null)
+    }
 
     val destination = focusControllerState.selectedDestination
     val inputMethod = focusControllerState.modality
@@ -297,6 +308,41 @@ fun CarePadShellScreen(
                 { event ->
                     val wasTouch = focusControllerState.modality == CarePadInputMethod.TOUCH
                     var consumed = controlsController.onKeyEvent(event)
+                    if (consumed) {
+                        controlsTouchRecoveryDrain = null
+                    } else {
+                        val drain = controlsTouchRecoveryDrain
+                        if (
+                            drain != null &&
+                            event.deviceId == drain.deviceId &&
+                            isControllerSource(event.source) &&
+                            controllerDirection(event.keyCode) != null
+                        ) {
+                            when (event.action) {
+                                AndroidKeyEvent.ACTION_DOWN -> {
+                                    if (drain.keyReleased && event.repeatCount == 0) {
+                                        // A new D-pad press must not be swallowed if a device advertised
+                                        // HAT axes but omitted the final neutral HAT frame.
+                                        controlsTouchRecoveryDrain = null
+                                    } else {
+                                        controlsTouchRecoveryDrain = drain.copy(sawDpadKey = true)
+                                        consumed = true
+                                    }
+                                }
+
+                                AndroidKeyEvent.ACTION_UP -> {
+                                    val next = drain.copy(
+                                        sawDpadKey = true,
+                                        keyReleased = true,
+                                    )
+                                    controlsTouchRecoveryDrain =
+                                        if (!next.waitsForHatNeutral || next.hatNeutral) null else next
+                                    consumed = true
+                                }
+                            }
+                        }
+                    }
+
                     if (
                         event.action == AndroidKeyEvent.ACTION_DOWN &&
                         event.repeatCount == 0 &&
@@ -305,22 +351,71 @@ fun CarePadShellScreen(
                         dispatchFocus(CarePadFocusEvent.ControllerActivity)
                         if (!consumed && wasTouch && controllerDirection(event.keyCode) != null) {
                             requestFocusTarget(CarePadFocusKey.ContentFallback(destination))
+                            val waitsForHatNeutral = controllerKeyHasHatRange(event)
+                            controlsTouchRecoveryDrain = ControlsTouchRecoveryDrain(
+                                deviceId = event.deviceId,
+                                waitsForHatNeutral = waitsForHatNeutral,
+                                sawDpadKey = true,
+                                hatNeutral = !waitsForHatNeutral,
+                            )
                             consumed = true
                         }
                     }
                     consumed
                 },
                 { event ->
-                    if (isSignificantControllerMotion(event)) {
+                    val wasTouch = focusControllerState.modality == CarePadInputMethod.TOUCH
+                    val activeHat = isActiveControllerHatMotion(event)
+                    val significant = activeHat || isSignificantControllerMotion(event)
+                    var consumed = controlsController.onGenericMotionEvent(event)
+                    if (consumed) {
+                        controlsTouchRecoveryDrain = null
+                    }
+                    if (significant) {
                         dispatchFocus(CarePadFocusEvent.ControllerActivity)
                     }
-                    controlsController.onGenericMotionEvent(event)
+
+                    if (!consumed) {
+                        val drain = controlsTouchRecoveryDrain
+                        if (
+                            drain != null &&
+                            drain.waitsForHatNeutral &&
+                            event.deviceId == drain.deviceId &&
+                            event.actionMasked == MotionEvent.ACTION_MOVE &&
+                            isControllerSource(event.source)
+                        ) {
+                            if (isControllerHatNeutral(event)) {
+                                controlsTouchRecoveryDrain = if (
+                                    drain.sawDpadKey && !drain.keyReleased
+                                ) {
+                                    drain.copy(hatNeutral = true)
+                                } else {
+                                    null
+                                }
+                            }
+                            consumed = true
+                        }
+                    }
+
+                    if (!consumed && wasTouch && activeHat) {
+                        requestFocusTarget(CarePadFocusKey.ContentFallback(destination))
+                        controlsTouchRecoveryDrain = ControlsTouchRecoveryDrain(
+                            deviceId = event.deviceId,
+                            waitsForHatNeutral = true,
+                            sawDpadKey = false,
+                            hatNeutral = false,
+                        )
+                        consumed = true
+                    }
+                    consumed
                 },
             )
         } else {
+            controlsTouchRecoveryDrain = null
             onRawInputHandlersChanged(null, null)
         }
         onDispose {
+            controlsTouchRecoveryDrain = null
             onRawInputHandlersChanged(null, null)
         }
     }
@@ -1083,10 +1178,32 @@ private fun controllerDirection(keyCode: Int): FocusDirection? = when (keyCode) 
     else -> null
 }
 
+private fun isActiveControllerHatMotion(event: MotionEvent): Boolean {
+    if (event.actionMasked != MotionEvent.ACTION_MOVE || !isControllerSource(event.source)) {
+        return false
+    }
+    val x = event.getAxisValue(MotionEvent.AXIS_HAT_X)
+    val y = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+    return (x.isFinite() && x != 0f) || (y.isFinite() && y != 0f)
+}
+
+private fun isControllerHatNeutral(event: MotionEvent): Boolean {
+    val x = event.getAxisValue(MotionEvent.AXIS_HAT_X)
+    val y = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+    return x.isFinite() && y.isFinite() && x == 0f && y == 0f
+}
+
+private fun controllerKeyHasHatRange(event: AndroidKeyEvent): Boolean =
+    event.device?.motionRanges?.any { range ->
+        (range.axis == MotionEvent.AXIS_HAT_X || range.axis == MotionEvent.AXIS_HAT_Y) &&
+            (range.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+    } == true
+
 private fun isSignificantControllerMotion(event: MotionEvent): Boolean {
     if (event.actionMasked != MotionEvent.ACTION_MOVE || !isControllerSource(event.source)) {
         return false
     }
+    if (isActiveControllerHatMotion(event)) return true
     val device = event.device ?: return false
     return ControllerMotionAxes.any { axis ->
         val ranges = device.motionRanges.filter { range ->

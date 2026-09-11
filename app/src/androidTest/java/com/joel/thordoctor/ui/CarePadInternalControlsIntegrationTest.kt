@@ -106,6 +106,66 @@ class CarePadInternalControlsIntegrationTest {
     }
 
     @Test
+    fun dpadHatThenKeyAfterTouchIsOneConsumedRecoveryGesture() {
+        val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
+        val controls = composeRule.activity.getString(R.string.carepad_module_controls)
+        val touchHint = composeRule.activity.getString(R.string.carepad_hint_touch_navigation)
+        var rawKeyHandler: ((KeyEvent) -> Boolean)? = null
+        var rawMotionHandler: ((MotionEvent) -> Boolean)? = null
+
+        composeRule.setContent {
+            MaterialTheme {
+                CarePadShellScreen(
+                    onThemeModeChange = { mode -> themeMode.value = mode },
+                    onRawInputHandlersChanged = { keyHandler, motionHandler ->
+                        rawKeyHandler = keyHandler
+                        rawMotionHandler = motionHandler
+                    },
+                    settingsContent = { _, _, _, _ -> },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNode(
+            matcher = hasClickAction() and hasAnyDescendant(hasText(controls)),
+            useUnmergedTree = true,
+        ).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(touchHint).assertExists()
+
+        val hatDown = controllerHatMotion(y = 1f)
+        val keyDown = controllerKeyEvent(KeyEvent.KEYCODE_DPAD_DOWN, InputDevice.SOURCE_DPAD)
+        val keyUp = controllerKeyEvent(
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            InputDevice.SOURCE_DPAD,
+            KeyEvent.ACTION_UP,
+        )
+        val hatNeutral = controllerHatMotion()
+
+        composeRule.runOnUiThread {
+            check(checkNotNull(rawMotionHandler).invoke(hatDown))
+            check(checkNotNull(rawKeyHandler).invoke(keyDown))
+            check(checkNotNull(rawKeyHandler).invoke(keyUp))
+            check(checkNotNull(rawMotionHandler).invoke(hatNeutral))
+            hatDown.recycle()
+            hatNeutral.recycle()
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText(touchHint).assertDoesNotExist()
+        composeRule.onNodeWithText("Navegación", substring = true).assertExists()
+
+        composeRule.runOnUiThread {
+            check(
+                checkNotNull(rawKeyHandler).invoke(
+                    controllerKeyEvent(KeyEvent.KEYCODE_DPAD_RIGHT, InputDevice.SOURCE_DPAD)
+                ).not()
+            )
+        }
+    }
+
+    @Test
     fun l1StillMovesFromControlsToRailWithoutSelectedController() {
         val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
         val controls = composeRule.activity.getString(R.string.carepad_module_controls)
@@ -202,12 +262,16 @@ class CarePadInternalControlsIntegrationTest {
         useUnmergedTree = true,
     )
 
-    private fun controllerKeyEvent(keyCode: Int, source: Int): KeyEvent {
+    private fun controllerKeyEvent(
+        keyCode: Int,
+        source: Int,
+        action: Int = KeyEvent.ACTION_DOWN,
+    ): KeyEvent {
         val now = SystemClock.uptimeMillis()
         return KeyEvent(
             now,
             now,
-            KeyEvent.ACTION_DOWN,
+            action,
             keyCode,
             0,
             0,
@@ -215,6 +279,38 @@ class CarePadInternalControlsIntegrationTest {
             0,
             0,
             source,
+        )
+    }
+
+    private fun controllerHatMotion(x: Float = 0f, y: Float = 0f): MotionEvent {
+        val now = SystemClock.uptimeMillis()
+        val properties = arrayOf(
+            MotionEvent.PointerProperties().apply {
+                id = 0
+                toolType = MotionEvent.TOOL_TYPE_UNKNOWN
+            }
+        )
+        val coordinates = arrayOf(
+            MotionEvent.PointerCoords().apply {
+                setAxisValue(MotionEvent.AXIS_HAT_X, x)
+                setAxisValue(MotionEvent.AXIS_HAT_Y, y)
+            }
+        )
+        return MotionEvent.obtain(
+            now,
+            now,
+            MotionEvent.ACTION_MOVE,
+            1,
+            properties,
+            coordinates,
+            0,
+            0,
+            1f,
+            1f,
+            KeyCharacterMap.VIRTUAL_KEYBOARD,
+            0,
+            InputDevice.SOURCE_JOYSTICK,
+            0,
         )
     }
 }
