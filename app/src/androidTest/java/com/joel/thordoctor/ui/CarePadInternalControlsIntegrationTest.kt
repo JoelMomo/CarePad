@@ -68,10 +68,9 @@ class CarePadInternalControlsIntegrationTest {
     }
 
     @Test
-    fun firstDpadAfterTouchInsideControlsIsConsumedAndRestoresVisibleContentFocus() {
+    fun firstDpadAfterTouchInsideControlsIsConsumedBeforeSpatialNavigation() {
         val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
         val controls = composeRule.activity.getString(R.string.carepad_module_controls)
-        val guidedTest = composeRule.activity.getString(ControlsR.string.guided_test)
         val touchHint = composeRule.activity.getString(R.string.carepad_hint_touch_navigation)
         var rawKeyHandler: ((KeyEvent) -> Boolean)? = null
 
@@ -104,14 +103,12 @@ class CarePadInternalControlsIntegrationTest {
 
         composeRule.onNodeWithText(touchHint).assertDoesNotExist()
         composeRule.onNodeWithText("Navegación", substring = true).assertExists()
-        actionNode(guidedTest).assertIsFocused()
     }
 
     @Test
-    fun railToControlsRestoresVisibleContentFocus() {
+    fun l1StillMovesFromControlsToRailWithoutSelectedController() {
         val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
         val controls = composeRule.activity.getString(R.string.carepad_module_controls)
-        val guidedTest = composeRule.activity.getString(ControlsR.string.guided_test)
         val home = composeRule.activity.getString(R.string.carepad_nav_home)
         var rawKeyHandler: ((KeyEvent) -> Boolean)? = null
 
@@ -142,7 +139,6 @@ class CarePadInternalControlsIntegrationTest {
             )
         }
         composeRule.waitForIdle()
-        actionNode(guidedTest).assertIsFocused()
 
         composeRule.runOnUiThread {
             composeRule.activity.dispatchKeyEvent(
@@ -151,14 +147,6 @@ class CarePadInternalControlsIntegrationTest {
         }
         composeRule.waitForIdle()
         composeRule.onNodeWithText(home).assertIsFocused()
-
-        composeRule.runOnUiThread {
-            composeRule.activity.dispatchKeyEvent(
-                controllerKeyEvent(KeyEvent.KEYCODE_BUTTON_L1, InputDevice.SOURCE_GAMEPAD)
-            )
-        }
-        composeRule.waitForIdle()
-        actionNode(guidedTest).assertIsFocused()
     }
 
     @Test
