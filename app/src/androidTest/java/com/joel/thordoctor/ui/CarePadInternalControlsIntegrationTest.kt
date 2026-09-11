@@ -210,7 +210,7 @@ class CarePadInternalControlsIntegrationTest {
     }
 
     private fun actionNode(text: String) = composeRule.onNode(
-        matcher = hasClickAction() and hasText(text),
+        matcher = hasClickAction() and hasAnyDescendant(hasText(text)),
         useUnmergedTree = true,
     )
 
