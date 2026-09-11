@@ -31,12 +31,17 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             ThorDoctorRoot(
-                onRawInputHandlersChanged = { keyHandler, motionHandler ->
-                    rawKeyHandler = keyHandler
-                    rawMotionHandler = motionHandler
-                }
+                onRawInputHandlersChanged = ::updateRawInputHandlers
             )
         }
+    }
+
+    internal fun updateRawInputHandlers(
+        keyHandler: ((KeyEvent) -> Boolean)?,
+        motionHandler: ((MotionEvent) -> Boolean)?,
+    ) {
+        rawKeyHandler = keyHandler
+        rawMotionHandler = motionHandler
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean =
