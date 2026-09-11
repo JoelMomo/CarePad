@@ -6,7 +6,9 @@ import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.MotionEvent
 import androidx.activity.ComponentActivity
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasAnyDescendant
@@ -110,6 +112,7 @@ class CarePadInternalControlsIntegrationTest {
         val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
         val controls = composeRule.activity.getString(R.string.carepad_module_controls)
         val touchHint = composeRule.activity.getString(R.string.carepad_hint_touch_navigation)
+        val focusTarget = "Controls HAT focus target"
         var rawKeyHandler: ((KeyEvent) -> Boolean)? = null
         var rawMotionHandler: ((MotionEvent) -> Boolean)? = null
 
@@ -122,6 +125,11 @@ class CarePadInternalControlsIntegrationTest {
                         rawMotionHandler = motionHandler
                     },
                     settingsContent = { _, _, _, _ -> },
+                    controlsContent = { _, modifier ->
+                        Button(onClick = {}, modifier = modifier) {
+                            Text(focusTarget)
+                        }
+                    },
                 )
             }
         }
@@ -153,6 +161,7 @@ class CarePadInternalControlsIntegrationTest {
         }
         composeRule.waitForIdle()
 
+        actionNode(focusTarget).assertIsFocused()
         composeRule.onNodeWithText(touchHint).assertDoesNotExist()
         composeRule.onNodeWithText("Navegación", substring = true).assertExists()
 
