@@ -44,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -52,6 +53,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -157,6 +160,8 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
     internal var showLeaveDialog by mutableStateOf(false)
         private set
     internal var activityDeviceId by mutableStateOf<Int?>(null)
+        private set
+    internal var entryFocusGeneration by mutableIntStateOf(0)
         private set
     internal var revision by mutableIntStateOf(0)
         private set
@@ -277,6 +282,14 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
         } else {
             onConfirmed()
         }
+    }
+
+    /** Schedules focus onto the first enabled real action on the Controls main screen. */
+    fun requestMainEntryFocus(): Boolean {
+        if (screen != Screen.MAIN || candidates.isEmpty()) return false
+        entryFocusGeneration++
+        revision++
+        return true
     }
 
     internal fun cancelLeaveDialog() {
@@ -684,6 +697,13 @@ fun ControlsInternalScreen(
         onDispose { controller.stop() }
     }
     controller.revision
+    val entryFocusGeneration = controller.entryFocusGeneration
+    val entryFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(entryFocusGeneration) {
+        if (entryFocusGeneration > 0 && controller.screen == Screen.MAIN) {
+            entryFocusRequester.requestFocus()
+        }
+    }
     val view = LocalView.current
     val feedback = {
         view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -716,7 +736,7 @@ fun ControlsInternalScreen(
         ) {
             val wide = maxWidth >= 600.dp && maxWidth >= maxHeight
             when (controller.screen) {
-                Screen.MAIN -> ControlsMain(controller, wide, feedback)
+                Screen.MAIN -> ControlsMain(controller, wide, feedback, entryFocusRequester)
                 Screen.GUIDED -> GuidedContent(controller, wide, feedback)
                 Screen.DETECTED -> DetectedInputs(controller, wide, feedback)
             }
@@ -729,8 +749,10 @@ private fun ControlsMain(
     controller: ControlsInternalController,
     wide: Boolean,
     feedback: () -> Unit,
+    entryFocusRequester: FocusRequester,
 ) {
     val selected = controller.selectedDevice()
+    val hasControllerChoices = controller.candidates.size > 1
     val scroll = rememberScrollState()
     Column(
         modifier = Modifier
@@ -747,7 +769,12 @@ private fun ControlsMain(
         )
         if (wide) {
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                ControllerCard(controller, Modifier.weight(1f), feedback)
+                ControllerCard(
+                    controller,
+                    Modifier.weight(1f),
+                    feedback,
+                    if (hasControllerChoices) entryFocusRequester else null,
+                )
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     ActionCard(
                         title = stringResource(R.string.guided_test),
@@ -755,6 +782,7 @@ private fun ControlsMain(
                         enabled = selected != null,
                         primary = true,
                         feedback = feedback,
+                        focusRequester = if (!hasControllerChoices && selected != null) entryFocusRequester else null,
                         action = controller::startGuidedTest,
                     )
                     ActionCard(
@@ -768,13 +796,19 @@ private fun ControlsMain(
                 }
             }
         } else {
-            ControllerCard(controller, Modifier.fillMaxWidth(), feedback)
+            ControllerCard(
+                controller,
+                Modifier.fillMaxWidth(),
+                feedback,
+                if (hasControllerChoices) entryFocusRequester else null,
+            )
             ActionCard(
                 title = stringResource(R.string.guided_test),
                 description = actionDescription(controller, selected, R.string.guided_test_description, R.string.connect_controller_to_start, R.string.choose_controller_to_start),
                 enabled = selected != null,
                 primary = true,
                 feedback = feedback,
+                focusRequester = if (!hasControllerChoices && selected != null) entryFocusRequester else null,
                 action = controller::startGuidedTest,
             )
             ActionCard(
@@ -809,6 +843,7 @@ private fun ControllerCard(
     controller: ControlsInternalController,
     modifier: Modifier,
     feedback: () -> Unit,
+    entryFocusRequester: FocusRequester? = null,
 ) {
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -822,13 +857,14 @@ private fun ControllerCard(
                 }
                 else -> {
                     Text(stringResource(if (selected == null) R.string.choose_controller_help else R.string.change_controller_help))
-                    controller.candidates.forEach { device ->
+                    controller.candidates.forEachIndexed { index, device ->
                         FocusOutlinedButton(
                             text = if (controller.activityDeviceId == device.deviceId) {
                                 stringResource(R.string.controller_activity_option, friendlyDeviceName(device))
                             } else friendlyDeviceName(device),
                             enabled = true,
                             feedback = feedback,
+                            focusRequester = if (index == 0) entryFocusRequester else null,
                         ) { controller.selectController(device.deviceId) }
                     }
                     Text(
@@ -849,6 +885,7 @@ private fun ActionCard(
     enabled: Boolean,
     primary: Boolean,
     feedback: () -> Unit,
+    focusRequester: FocusRequester? = null,
     action: () -> Unit,
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -856,9 +893,9 @@ private fun ActionCard(
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (primary) {
-                FocusButton(title, enabled, feedback, action)
+                FocusButton(title, enabled, feedback, focusRequester, action)
             } else {
-                FocusOutlinedButton(title, enabled, feedback, action)
+                FocusOutlinedButton(title, enabled, feedback, focusRequester, action)
             }
         }
     }
@@ -929,17 +966,17 @@ private fun DigitalStep(controller: ControlsInternalController, device: DeviceIn
             }
         )
         if (outcome == null) {
-            FocusButton(stringResource(R.string.try_this_control), !controller.attemptArmed, feedback, controller::startAttempt)
-            FocusOutlinedButton(stringResource(R.string.tried_not_detected), controller.attemptCanFail, feedback, controller::markCurrentNotDetected)
+            FocusButton(stringResource(R.string.try_this_control), !controller.attemptArmed, feedback, action = controller::startAttempt)
+            FocusOutlinedButton(stringResource(R.string.tried_not_detected), controller.attemptCanFail, feedback, action = controller::markCurrentNotDetected)
         } else {
             FocusButton(
                 stringResource(if (controller.digitalTargetIndex == digitalTargets.lastIndex) R.string.continue_label else R.string.next_control),
                 true,
                 feedback,
-                controller::continueDigital,
+                action = controller::continueDigital,
             )
         }
-        FocusOutlinedButton(stringResource(R.string.back), true, feedback) { controller.handleBack() }
+        FocusOutlinedButton(stringResource(R.string.back), true, feedback, action = { controller.handleBack() })
     }
 }
 
@@ -996,12 +1033,12 @@ private fun StickMove(
             }
         )
         if (resolution == Resolution.STANDARD && outcome == null) {
-            FocusButton(stringResource(R.string.try_stick_movement), !controller.attemptArmed, feedback, controller::startAttempt)
-            FocusOutlinedButton(stringResource(R.string.tried_not_detected), controller.attemptCanFail, feedback, controller::markCurrentNotDetected)
+            FocusButton(stringResource(R.string.try_stick_movement), !controller.attemptArmed, feedback, action = controller::startAttempt)
+            FocusOutlinedButton(stringResource(R.string.tried_not_detected), controller.attemptCanFail, feedback, action = controller::markCurrentNotDetected)
         } else {
-            FocusButton(stringResource(R.string.continue_label), true, feedback) { controller.continueFromStickMove(left) }
+            FocusButton(stringResource(R.string.continue_label), true, feedback, action = { controller.continueFromStickMove(left) })
         }
-        FocusOutlinedButton(stringResource(R.string.back), true, feedback) { controller.handleBack() }
+        FocusOutlinedButton(stringResource(R.string.back), true, feedback, action = { controller.handleBack() })
     }
 }
 
@@ -1068,7 +1105,7 @@ private fun DetectedInputs(
                 }
             }
         }
-        FocusOutlinedButton(stringResource(R.string.back), true, feedback, controller::exitSecondarySurface)
+        FocusOutlinedButton(stringResource(R.string.back), true, feedback, action = controller::exitSecondarySurface)
     }
 }
 
@@ -1208,16 +1245,22 @@ private fun GuidedButtons(
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         BoxWithConstraints(Modifier.weight(1f)) {
-            FocusOutlinedButton(backText, true, feedback, back)
+            FocusOutlinedButton(backText, true, feedback, action = back)
         }
         BoxWithConstraints(Modifier.weight(1f)) {
-            FocusButton(primaryText, true, feedback, primary)
+            FocusButton(primaryText, true, feedback, action = primary)
         }
     }
 }
 
 @Composable
-private fun FocusButton(text: String, enabled: Boolean, feedback: () -> Unit, action: () -> Unit) {
+private fun FocusButton(
+    text: String,
+    enabled: Boolean,
+    feedback: () -> Unit,
+    focusRequester: FocusRequester? = null,
+    action: () -> Unit,
+) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(16.dp)
     Button(
@@ -1225,6 +1268,7 @@ private fun FocusButton(text: String, enabled: Boolean, feedback: () -> Unit, ac
         onClick = { feedback(); action() },
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .then(if (focused) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, shape) else Modifier),
         shape = shape,
@@ -1232,7 +1276,13 @@ private fun FocusButton(text: String, enabled: Boolean, feedback: () -> Unit, ac
 }
 
 @Composable
-private fun FocusOutlinedButton(text: String, enabled: Boolean, feedback: () -> Unit, action: () -> Unit) {
+private fun FocusOutlinedButton(
+    text: String,
+    enabled: Boolean,
+    feedback: () -> Unit,
+    focusRequester: FocusRequester? = null,
+    action: () -> Unit,
+) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(16.dp)
     OutlinedButton(
@@ -1240,6 +1290,7 @@ private fun FocusOutlinedButton(text: String, enabled: Boolean, feedback: () -> 
         onClick = { feedback(); action() },
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .then(if (focused) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, shape) else Modifier),
         shape = shape,

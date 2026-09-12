@@ -269,6 +269,14 @@ fun CarePadShellScreen(
     }
 
     fun requestFocusTarget(target: CarePadFocusKey) {
+        if (
+            target is CarePadFocusKey.ContentFallback &&
+            target.destination == destination &&
+            controlsOpen &&
+            controlsController.requestMainEntryFocus()
+        ) {
+            return
+        }
         focusRequesterFor(target)?.requestFocus()
     }
 
