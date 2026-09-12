@@ -62,6 +62,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -127,10 +128,16 @@ private sealed interface GuidedCaptureDrain {
 }
 
 /** Raw Android input bridge used only while the internal Controls surface is visible. */
-class ControlsInternalController(context: Context) : InputManager.InputDeviceListener {
+class ControlsInternalController(
+    context: Context,
+    candidateDevices: (() -> List<DeviceInfo>)? = null,
+    deviceById: ((Int) -> DeviceInfo?)? = null,
+) : InputManager.InputDeviceListener {
     private val appContext = context.applicationContext
     private val inputManager = appContext.getSystemService(InputManager::class.java)
     private val deviceCatalog = AndroidDeviceCatalog(inputManager)
+    private val candidateDevices = candidateDevices ?: deviceCatalog::candidates
+    private val deviceById = deviceById ?: deviceCatalog::byId
     private val handler = Handler(Looper.getMainLooper())
 
     private var started = false
@@ -461,7 +468,7 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
     }
 
     private fun syncSelection() {
-        val updated = deviceCatalog.candidates()
+        val updated = candidateDevices()
         val current = selectedDeviceId
         selectedDeviceId = when {
             current != null && updated.any { it.deviceId == current } -> current
@@ -472,7 +479,7 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
         revision++
     }
 
-    private fun freshSelectedDevice(): DeviceInfo? = selectedDeviceId?.let(deviceCatalog::byId)
+    private fun freshSelectedDevice(): DeviceInfo? = selectedDeviceId?.let(deviceById)
 
     private fun noteControllerActivity(deviceId: Int) {
         if (screen != Screen.MAIN || candidates.none { it.deviceId == deviceId }) return
@@ -697,14 +704,18 @@ fun ControlsInternalScreen(
         onDispose { controller.stop() }
     }
     controller.revision
+    val inputModeManager = LocalInputModeManager.current
+    val view = LocalView.current
     val entryFocusGeneration = controller.entryFocusGeneration
     val entryFocusRequester = remember { FocusRequester() }
     LaunchedEffect(entryFocusGeneration) {
         if (entryFocusGeneration > 0 && controller.screen == Screen.MAIN) {
-            entryFocusRequester.requestFocus()
+            val accepted = entryFocusRequester.requestFocus()
+            ControlsFocusTrace.log("entry-request") {
+                "generation=$entryFocusGeneration requester=${System.identityHashCode(entryFocusRequester)} screen=${controller.screen} accepted=$accepted inputMode=${inputModeManager.inputMode} touch=${view.isInTouchMode} candidates=${controller.candidates.size}"
+            }
         }
     }
-    val view = LocalView.current
     val feedback = {
         view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         view.playSoundEffect(SoundEffectConstants.CLICK)
@@ -1263,13 +1274,21 @@ private fun FocusButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(16.dp)
+    val target = remember { Any() }
+    DisposableEffect(enabled, focusRequester) {
+        ControlsFocusTrace.log("target-mount") { "target=${System.identityHashCode(target)} requester=${focusRequester?.let(System::identityHashCode)} enabled=$enabled" }
+        onDispose { ControlsFocusTrace.log("target-unmount") { "target=${System.identityHashCode(target)}" } }
+    }
     Button(
         enabled = enabled,
         onClick = { feedback(); action() },
         modifier = Modifier
             .fillMaxWidth()
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                ControlsFocusTrace.log("action-focus") { "target=${System.identityHashCode(target)} isFocused=${it.isFocused} hasFocus=${it.hasFocus} indicator=$focused enabled=$enabled" }
+            }
             .then(if (focused) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, shape) else Modifier),
         shape = shape,
     ) { Text(text) }
@@ -1285,13 +1304,21 @@ private fun FocusOutlinedButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(16.dp)
+    val target = remember { Any() }
+    DisposableEffect(enabled, focusRequester) {
+        ControlsFocusTrace.log("target-mount") { "target=${System.identityHashCode(target)} requester=${focusRequester?.let(System::identityHashCode)} enabled=$enabled" }
+        onDispose { ControlsFocusTrace.log("target-unmount") { "target=${System.identityHashCode(target)}" } }
+    }
     OutlinedButton(
         enabled = enabled,
         onClick = { feedback(); action() },
         modifier = Modifier
             .fillMaxWidth()
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                ControlsFocusTrace.log("action-focus") { "target=${System.identityHashCode(target)} isFocused=${it.isFocused} hasFocus=${it.hasFocus} indicator=$focused enabled=$enabled" }
+            }
             .then(if (focused) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, shape) else Modifier),
         shape = shape,
     ) { Text(text) }

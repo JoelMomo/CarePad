@@ -84,6 +84,9 @@ import com.joel.thordoctor.modules.host.DiscoveredCarePadModule
 import com.joel.thordoctor.modules.host.ModuleManager
 import dev.carepad.module.controls.internalui.ControlsInternalController
 import dev.carepad.module.controls.internalui.ControlsInternalScreen
+import dev.carepad.module.controls.internalui.ControlsFocusTrace
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalView
 import kotlin.math.abs
 
 internal enum class CarePadDestination {
@@ -169,14 +172,17 @@ fun CarePadShellScreen(
         onThemeTouched: (AppThemeMode) -> Unit,
         themeFocusRequesters: Map<AppThemeMode, FocusRequester>,
     ) -> Unit,
+    controlsControllerFactory: (Context) -> ControlsInternalController = { ControlsInternalController(it) },
     controlsContent: @Composable (ControlsInternalController, Modifier) -> Unit = { controller, modifier ->
         ControlsInternalScreen(controller = controller, modifier = modifier)
     },
 ) {
     val context = LocalContext.current
+    val inputModeManager = LocalInputModeManager.current
+    val view = LocalView.current
     val performFeedback = rememberCozyFeedback()
     val controlsController = remember(context.applicationContext) {
-        ControlsInternalController(context.applicationContext)
+        controlsControllerFactory(context.applicationContext)
     }
     var savedDestinationName by rememberSaveable {
         mutableStateOf(CarePadDestination.HOME.name)
@@ -292,6 +298,7 @@ fun CarePadShellScreen(
     }
 
     fun requestControlsContentFocus() {
+        ControlsFocusTrace.log("content-request") { "inputMode=${inputModeManager.inputMode} touch=${view.isInTouchMode} carepad=${focusControllerState.modality} observed=$controlsContentFocusObserved drain=$controlsTouchRecoveryDrain" }
         requestFocusTarget(CarePadFocusKey.ContentFallback(destination))
     }
 
@@ -393,6 +400,7 @@ fun CarePadShellScreen(
                             consumed = true
                         }
                     }
+                    ControlsFocusTrace.log("shell-key") { "time=${event.eventTime} device=${event.deviceId} consumed=$consumed inputMode=${inputModeManager.inputMode} touch=${view.isInTouchMode} carepad=${focusControllerState.modality} observed=$controlsContentFocusObserved drain=$controlsTouchRecoveryDrain" }
                     consumed
                 },
                 { event ->
@@ -440,6 +448,7 @@ fun CarePadShellScreen(
                         )
                         consumed = true
                     }
+                    ControlsFocusTrace.log("shell-motion") { "time=${event.eventTime} device=${event.deviceId} consumed=$consumed inputMode=${inputModeManager.inputMode} touch=${view.isInTouchMode} carepad=${focusControllerState.modality} observed=$controlsContentFocusObserved drain=$controlsTouchRecoveryDrain" }
                     consumed
                 },
             )

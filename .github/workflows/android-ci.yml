@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - main
+      - feature/single-apk-t1-controls-internal
 
 jobs:
   unit-tests:
@@ -480,6 +481,17 @@ jobs:
             "$(find artifacts/host -name '*.apk' -print -quit)" \
             "$(find artifacts/module-update -name '*.apk' -print -quit)" \
             "$(find artifacts/module-defective-update -name '*.apk' -print -quit)"
+
+      - name: Upload Controls focus evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-focus-evidence
+          path: |
+            ${{ runner.temp }}/carepad-focus-compose-result.txt
+            ${{ runner.temp }}/carepad-t1-focus-trace.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload emulator log on failure
         if: failure()
