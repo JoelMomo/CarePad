@@ -1,6 +1,8 @@
 package com.joel.thordoctor
 
 import android.os.Bundle
+import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -20,19 +22,48 @@ import com.joel.thordoctor.ui.CarePadShellScreen
 import com.joel.thordoctor.ui.theme.ThorDoctorTheme
 
 class MainActivity : ComponentActivity() {
+    private var rawKeyHandler: ((KeyEvent) -> Boolean)? = null
+    private var rawMotionHandler: ((MotionEvent) -> Boolean)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         setContent {
-            ThorDoctorRoot()
+            ThorDoctorRoot(
+                onRawInputHandlersChanged = ::updateRawInputHandlers
+            )
         }
+    }
+
+    internal fun updateRawInputHandlers(
+        keyHandler: ((KeyEvent) -> Boolean)?,
+        motionHandler: ((MotionEvent) -> Boolean)?,
+    ) {
+        rawKeyHandler = keyHandler
+        rawMotionHandler = motionHandler
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        if (rawKeyHandler?.invoke(event) == true) true else super.dispatchKeyEvent(event)
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean =
+        if (rawMotionHandler?.invoke(event) == true) true else super.dispatchGenericMotionEvent(event)
+
+    override fun onDestroy() {
+        rawKeyHandler = null
+        rawMotionHandler = null
+        super.onDestroy()
     }
 }
 
 @Composable
-private fun ThorDoctorRoot() {
+private fun ThorDoctorRoot(
+    onRawInputHandlersChanged: (
+        ((KeyEvent) -> Boolean)?,
+        ((MotionEvent) -> Boolean)?,
+    ) -> Unit,
+) {
     val context = LocalContext.current
 
     var themeMode by remember {
@@ -56,7 +87,8 @@ private fun ThorDoctorRoot() {
                 onThemeModeChange = { mode ->
                     AppPreferences.setThemeMode(context, mode)
                     themeMode = mode
-                }
+                },
+                onRawInputHandlersChanged = onRawInputHandlersChanged,
             )
         }
     }
@@ -65,10 +97,15 @@ private fun ThorDoctorRoot() {
 @Composable
 private fun ThorDoctorApp(
     themeMode: AppThemeMode,
-    onThemeModeChange: (AppThemeMode) -> Unit
+    onThemeModeChange: (AppThemeMode) -> Unit,
+    onRawInputHandlersChanged: (
+        ((KeyEvent) -> Boolean)?,
+        ((MotionEvent) -> Boolean)?,
+    ) -> Unit,
 ) {
     CarePadShellScreen(
         onThemeModeChange = onThemeModeChange,
+        onRawInputHandlersChanged = onRawInputHandlersChanged,
         settingsContent = {
                 _,
                 onThemeFocusChanged,
