@@ -95,8 +95,11 @@ class CarePadControlsTouchModeTest {
             .assertExists()
         action(composeRule.activity.getString(ControlsR.string.start_test)).assertIsEnabled()
         assertAnyInternalActionFocused(ControlsR.string.back, ControlsR.string.start_test)
-        press(KeyEvent.KEYCODE_DPAD_DOWN)
-        assertAnyInternalActionFocused(ControlsR.string.back, ControlsR.string.start_test)
+        // Preparation places Back and Start beside each other, above the navigation bar.
+        val backFocused = action(composeRule.activity.getString(ControlsR.string.back))
+            .fetchSemanticsNode().config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Focused) { false }
+        press(if (backFocused) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT)
+        assertFocusedAction(if (backFocused) ControlsR.string.start_test else ControlsR.string.back)
     }
 
     @Test
