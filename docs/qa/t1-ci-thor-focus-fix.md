@@ -41,3 +41,37 @@ HECHO: MainActivity entrega KEY/MOTION al handler raw antes de super. El shell p
 HECHO: CarePadControlsRealDispatchTest reemplaza la UI por dos botones, usa performClick semántico y eventos KEY con VIRTUAL_KEYBOARD. El test HAT usa callbacks directos y un botón de fixture. Ninguno afirma View.isInTouchMode + InputModeManager.inputMode=Touch antes del gesto sobre acciones reales de Controles. La ausencia de rail no demuestra foco interno.
 
 HIPÓTESIS A VERIFICAR: HAT llega mientras Android/Compose sigue en touch; la petición al target SystemDefined se rechaza. El KEY duplicado se consume después y nunca corrige la petición perdida. La instrumentación debe distinguir esta condición de target no montado, no habilitado o sustituido. La candidata no podrá declararse solución física sin QA nueva.
+
+## Nuevo oráculo y límites de la reproducción
+
+`CarePadControlsTouchModeTest` conserva MainActivity, dispatch raw, shell, controller, mapper, UI y acciones reales. Solo sustituye el catálogo de dispositivos por un mando con botones y rangos de sticks/HAT. El touch entra por `Instrumentation.sendPointerSync`, con comprobación de `View.isInTouchMode` y lectura actual de `InputModeManager.inputMode`. HAT/KEY llegan por `Activity.dispatch…`; el test no reproduce el driver, InputReader ni el orden que pueda imponer ViewRoot en Thor. La atribución de ese orden al hardware exige la traza de una QA nueva.
+
+El oráculo exige botón habilitado/visible, `isFocused`, píxel del borde de foco y activación A de la acción real. También comprueba segunda pulsación, órdenes HAT→DOWN→UP→neutro, DOWN→HAT→UP→neutro y HAT→DOWN→neutro→UP, sustitución de pantalla, rail→contenido y captura guiada. Los tests anteriores siguen ejecutándose.
+
+La ejecución [Android CI #382](https://github.com/JoelMomo/CarePad/actions/runs/34742700193) en `95820cda9d1bc5d4153ccd61c94dbbc241994c08` pasó los 14 tests previos y falló la precondición del nuevo test: este conservaba una lectura de modalidad en `SideEffect`, sin suscribirse a sus cambios. No se presenta ese fallo como reproducción causal. `5e2deec595cce733b2b0b24865f7b6a9f66866f5` corrige la medición consultando el manager actual; no cambia producción.
+
+## Nueva QA física requerida
+
+## Evidencia causal antes de corregir
+
+HECHO: [Android CI #383](https://github.com/JoelMomo/CarePad/actions/runs/34743188737), HEAD `5e2deec595cce733b2b0b24865f7b6a9f66866f5`, ejecuta 18 tests: los 14 previos pasan y los 4 de touch real fallan por ausencia de foco. Builds y JVM pasan. El job `103686831196` contiene, para el gesto HAT→KEY→UP→neutro, `t=96634 content-request inputMode=Touch touch=true carepad=CONTROLLER observed=false`; `t=96642 entry-request generation=1 requester=159925388 screen=MAIN accepted=false inputMode=Touch touch=true candidates=1`. El target está montado y habilitado antes del evento. Al acabar UP y neutro, el drenaje sigue presente porque exige foco observado.
+
+La divergencia automatizada está situada: los fixtures previos llegan al bridge en `Keyboard/touch=false`; la UI real después de touch llega en `Touch/touch=true`. En Compose 1.10.4 (fuentes de las dependencias resueltas en caché), Clickable usa `Focusability.SystemDefined`, que rechaza foco en Touch. `focusGroup` no es una acción (`Focusability.Never`); cambiarlo por un requester de botón no elimina esa precondición. El Boolean de agenda de `requestMainEntryFocus` tampoco acredita la concesión posterior del foco.
+
+CORRECCIÓN EN CUALIFICACIÓN: solicitar la modalidad de entrada de Android/Compose antes del foco interno; decidir recuperación desde modalidad real y ancla observada; liberar el drenaje por finalización del gesto, sin esperar foco ni convertir nuevas pulsaciones en reintentos; reconocer HAT cuando sigue a KEY; observar el grupo antes de su focus target y actualizar el foco de contenido para el retorno desde rail.
+
+INFERENCIA: este mecanismo explica el síntoma formalmente registrado en QA-43/44/45. HIPÓTESIS PENDIENTE: que el primer dispatch de Thor llegue exactamente en ese estado/orden. No se dispone de Thor conectado y no se declara PASS físico.
+
+## Procedimiento de nueva QA física
+
+Abrir una ficha nueva, exclusiva del HEAD y artefacto cualificados en PR #50. QA-45 permanece Cerrada/FAIL. CO11 decide el gate UX/QA; C19 permanece HOLD. El resultado automatizado no autoriza merge.
+
+1. Registrar HEAD, Android CI y C1.3, ID/ZIP digest del artefacto `CarePad-debug`, SHA256 y tamaño de `app-debug.apk`, firmware/Android de Thor, orientación e idioma. Instalar el APK del run cualificado mediante `adb install -r app-debug.apk`; no borrar datos. No usar un APK lab o el módulo legacy.
+2. Activar la traza solo en debug: `adb shell setprop log.tag.CarePadT1Focus DEBUG`. Limpiar el buffer solo al empezar la sesión con `adb logcat -c`; iniciar `adb logcat -v threadtime -s CarePadT1Focus:D '*:S'` y guardar la salida. Los logs contienen tiempos, dispositivo/origen y estados de foco; no descriptores ni datos de usuario.
+3. Abrir Inicio → Tus módulos → Controles por touch. Tocar fondo/acción; con una sola pulsación D-pad completa comprobar una acción interna con borde visible. Antes de usar A, comprobar visualmente el borde. Pulsar A y acreditar la acción real. Repetir desde MAIN, preparación guiada, paso digital y Entradas detectadas; el destino debe existir en la pantalla vigente.
+4. Repetir touch→primera dirección y luego una segunda pulsación legítima. Comprobar una sola adquisición en el primer gesto HAT/KEY y un movimiento espacial en el segundo, sin drenaje retenido. Registrar el orden observado de HAT activo, DOWN, UP y neutro; no suponer que Thor usa el orden del emulador.
+5. Navegar desde el contenido al rail/barra inferior y volver por dirección espacial y por L1. El rail debe seguir siendo accesible; selección de destino y foco físico no se confunden. Repetir en vertical/horizontal y ES/EN, comprobando acciones visibles al hacer scroll.
+6. En Prueba guiada, armar cada intento y probar A/B/X/Y, D-pad y ambos sticks. Comprobar captura sin navegación simultánea ni salida/diálogo por B capturado. Mantener y liberar el control; después del UP/neutro, la siguiente pulsación debe navegar/activar una acción real. Repetir alternando touch y mando, con recomposición al pasar a Siguiente control/Continuar. Comprobar también B fuera de captura.
+7. En Entradas detectadas, comprobar actualización de inputs y regreso utilizable. Comprobar jitter/neutro sin cambio de ayuda ni navegación, desconexión/reconexión y entrada/salida de Controles. Confirmar que Rendimiento y Juegos y BIOS mantienen su recorrido y que Controles sigue dentro del único APK.
+8. Adjuntar vídeo de primera/segunda pulsación y traza. Buscar `input-mode-request`, `entry-request`, `target-mount`, `action-focus` y `content-focus`; correlacionar con raw/key-result/motion-result. PASS exige `accepted=true`, target habilitado, `isFocused=true` y borde/acción verificables; `hasFocus=true`, ayuda de mando o rail cerrado por sí solos no bastan. Ante FAIL, registrar el primer oráculo fallido y no calificar los no ejecutados como PASS.
+9. Al terminar: `adb shell setprop log.tag.CarePadT1Focus ''`. La implementación release del logger es no-op; debug solo emite cuando esa propiedad está activa. Conservar la instrumentación hasta resolver la QA de esta candidata.

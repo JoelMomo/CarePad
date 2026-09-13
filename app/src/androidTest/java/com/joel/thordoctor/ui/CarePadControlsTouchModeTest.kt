@@ -127,6 +127,57 @@ class CarePadControlsTouchModeTest {
         assertFocusedAction(ControlsR.string.try_this_control)
     }
 
+    @Test
+    fun railReturnAndDetectedInputsKeepARealActionAnchor() {
+        installRealControls()
+        tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertFocusedAction(ControlsR.string.guided_test)
+        press(KeyEvent.KEYCODE_BUTTON_L1)
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_home)).assertIsFocused()
+        press(KeyEvent.KEYCODE_BUTTON_L1)
+        assertFocusedAction(ControlsR.string.guided_test)
+
+        tap(action(composeRule.activity.getString(ControlsR.string.detected_inputs)))
+        assertAndroidTouch()
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertFocusedAction(ControlsR.string.back)
+        press(KeyEvent.KEYCODE_BUTTON_A)
+        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.guided_test)).assertIsDisplayed()
+    }
+
+    @Test
+    fun guidedCaptureKeepsFaceAndHatGesturesUntilReleaseThenAllowsNavigation() {
+        installRealControls()
+        tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
+        tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
+        tap(action(composeRule.activity.getString(ControlsR.string.start_test)))
+        val codes = listOf(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B,
+            KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_DPAD_UP)
+        for (code in codes) {
+            tap(action(composeRule.activity.getString(ControlsR.string.try_this_control)))
+            // The product explicitly excludes the first 250 ms after arming from observation.
+            val armedAt = SystemClock.uptimeMillis()
+            composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - armedAt >= 250 }
+            if (code == KeyEvent.KEYCODE_DPAD_UP) hat(-1f)
+            key(code, KeyEvent.ACTION_DOWN)
+            // Exercise neutral before KEY_UP: the release must not activate a new action.
+            if (code == KeyEvent.KEYCODE_DPAD_UP) hat(0f)
+            key(code, KeyEvent.ACTION_UP)
+            composeRule.waitForIdle()
+            composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.control_observed)).assertIsDisplayed()
+            composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_home)).assertIsNotFocused()
+            if (code != KeyEvent.KEYCODE_DPAD_UP) {
+                tap(action(composeRule.activity.getString(ControlsR.string.next_control)))
+            }
+        }
+        // CarePad's hint already says controller; Android still entered via touch during capture.
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertFocusedAction(ControlsR.string.next_control)
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertFocusedAction(ControlsR.string.back)
+    }
+
     private fun assertFocusedAction(textRes: Int) {
         val node = action(composeRule.activity.getString(textRes))
         node.assertIsDisplayed().assertIsEnabled().assertIsFocused()
