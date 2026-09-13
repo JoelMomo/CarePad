@@ -709,7 +709,7 @@ fun ControlsInternalScreen(
     val entryFocusGeneration = controller.entryFocusGeneration
     val entryFocusRequester = remember { FocusRequester() }
     LaunchedEffect(entryFocusGeneration) {
-        if (entryFocusGeneration > 0 && controller.screen == Screen.MAIN) {
+        if (entryFocusGeneration > 0 && controller.screen == Screen.MAIN && controller.candidates.isNotEmpty()) {
             val accepted = entryFocusRequester.requestFocus()
             ControlsFocusTrace.log("entry-request") {
                 "generation=$entryFocusGeneration requester=${System.identityHashCode(entryFocusRequester)} screen=${controller.screen} accepted=$accepted inputMode=${inputModeManager.inputMode} touch=${view.isInTouchMode} candidates=${controller.candidates.size}"

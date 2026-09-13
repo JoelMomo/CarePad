@@ -23,6 +23,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
@@ -55,6 +56,8 @@ class CarePadControlsTouchModeTest {
     private var imageIndex = 0
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private lateinit var composeView: View
+    private lateinit var controlsController: ControlsInternalController
+    private var controllerAvailable = true
     private lateinit var composeInputModeManager: InputModeManager
     private var focusColor = Color.Unspecified
     private var focusOverlayColor = Color.Unspecified
@@ -82,7 +85,8 @@ class CarePadControlsTouchModeTest {
         // Focus must activate the real module action, not just set an observed-mode flag.
         press(KeyEvent.KEYCODE_BUTTON_A)
         composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.prepare_test))
-            .assertIsDisplayed()
+            .assertExists()
+        action(composeRule.activity.getString(ControlsR.string.start_test)).assertIsDisplayed()
     }
 
     @Test
@@ -94,6 +98,24 @@ class CarePadControlsTouchModeTest {
         assertFocusedAction(ControlsR.string.guided_test)
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         assertFocusedAction(ControlsR.string.detected_inputs)
+    }
+
+    @Test
+    fun controllerRemovalBeforePendingFocusEffectDoesNotUseAnUnmountedRequester() {
+        installRealControls()
+        tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
+        assertAndroidTouch()
+        composeRule.runOnUiThread {
+            val now = SystemClock.uptimeMillis()
+            composeRule.activity.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN,
+                KeyEvent.KEYCODE_DPAD_DOWN, 0, 0, DEVICE_ID, 0, 0, InputDevice.SOURCE_DPAD))
+            // Invalidate selection before the next composition/effect can grant its request.
+            controllerAvailable = false
+            controlsController.onInputDeviceRemoved(DEVICE_ID)
+        }
+        composeRule.waitForIdle()
+        key(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.ACTION_UP)
+        action(composeRule.activity.getString(ControlsR.string.guided_test)).assertIsNotEnabled()
     }
 
     @Test
@@ -254,7 +276,10 @@ class CarePadControlsTouchModeTest {
                         onRawInputHandlersChanged = composeRule.activity::updateRawInputHandlers,
                         settingsContent = { _, _, _, _ -> },
                         controlsControllerFactory = { context ->
-                            ControlsInternalController(context, { listOf(device) }, { id -> device.takeIf { id == DEVICE_ID } })
+                            ControlsInternalController(context,
+                                { if (controllerAvailable) listOf(device) else emptyList() },
+                                { id -> device.takeIf { id == DEVICE_ID && controllerAvailable } },
+                            ).also { controlsController = it }
                         },
                     )
                 }
@@ -325,10 +350,10 @@ class CarePadControlsTouchModeTest {
             kotlin.math.abs(red - expected.red) < 0.025f &&
                 kotlin.math.abs(green - expected.green) < 0.025f &&
                 kotlin.math.abs(blue - expected.blue) < 0.025f
-        // Semantics bounds include Material's minimum touch-target padding; the drawn edge
-        // is not necessarily pixel y=1. The filled button also paints its 10% focus state layer.
-        val edgePixels = (0 until pixels.height / 3).count { y ->
-            val color = pixels[pixels.width / 2, y]
+        // Material's visual semantics crop can omit the top of a border drawn around its
+        // minimum touch target. Inspect the lateral edge, visible in the archived PNGs.
+        val edgePixels = (0 until minOf(12, pixels.width / 4)).count { x ->
+            val color = pixels[x, pixels.height / 2]
             color.matches(focusColor) || color.matches(focusOverlayColor)
         }
         assertTrue("Focused action must draw a primary focus edge within its touch bounds", edgePixels >= 2)

@@ -64,6 +64,10 @@ HECHO: en [Android CI #384](https://github.com/JoelMomo/CarePad/actions/runs/347
 
 INFERENCIA: este mecanismo explica el síntoma formalmente registrado en QA-43/44/45. HIPÓTESIS PENDIENTE: que el primer dispatch de Thor llegue exactamente en ese estado/orden. No se dispone de Thor conectado y no se declara PASS físico.
 
+La revisión de las PNG de [CI #385](https://github.com/JoelMomo/CarePad/actions/runs/34755436853/artifacts/10317566398) confirma el borde lateral de Prueba guiada, Entradas detectadas y Volver con `isFocused=true`. El recorte visual de Material excluye el tramo superior del borde alrededor del área táctil; el muestreo final inspecciona el lateral visible. La activación A se acredita con existencia de la pantalla de preparación y su acción Iniciar visible: el desplazamiento para mostrar el foco puede ocultar su título superior. En ese run pasan los 14 tests anteriores y el cruce espacial real en horizontal; los otros 6 terminan en aserciones de imagen o título desplazado, por lo que todavía no se declara CI verde.
+
+La candidata también cancela una petición MAIN pendiente si desaparecen los candidatos antes del efecto: evita invocar un requester ya sin target. El test elimina el mando entre el dispatch raw y la siguiente composición; conserva las acciones deshabilitadas y no debe lanzar excepción. No añade temporizadores ni reintentos.
+
 ## Procedimiento de nueva QA física
 
 Abrir una ficha nueva, exclusiva del HEAD y artefacto cualificados en PR #50. QA-45 permanece Cerrada/FAIL. CO11 decide el gate UX/QA; C19 permanece HOLD. El resultado automatizado no autoriza merge.
