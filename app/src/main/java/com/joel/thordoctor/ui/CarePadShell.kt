@@ -84,6 +84,10 @@ import com.joel.thordoctor.modules.host.DiscoveredCarePadModule
 import com.joel.thordoctor.modules.host.ModuleManager
 import dev.carepad.module.controls.internalui.ControlsInternalController
 import dev.carepad.module.controls.internalui.ControlsInternalScreen
+import dev.carepad.module.controls.internalui.ControlsFocusTrace
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalView
 import kotlin.math.abs
 
 internal enum class CarePadDestination {
@@ -169,14 +173,17 @@ fun CarePadShellScreen(
         onThemeTouched: (AppThemeMode) -> Unit,
         themeFocusRequesters: Map<AppThemeMode, FocusRequester>,
     ) -> Unit,
+    controlsControllerFactory: (Context) -> ControlsInternalController = { ControlsInternalController(it) },
     controlsContent: @Composable (ControlsInternalController, Modifier) -> Unit = { controller, modifier ->
         ControlsInternalScreen(controller = controller, modifier = modifier)
     },
 ) {
     val context = LocalContext.current
+    val inputModeManager = LocalInputModeManager.current
+    val view = LocalView.current
     val performFeedback = rememberCozyFeedback()
     val controlsController = remember(context.applicationContext) {
-        ControlsInternalController(context.applicationContext)
+        controlsControllerFactory(context.applicationContext)
     }
     var savedDestinationName by rememberSaveable {
         mutableStateOf(CarePadDestination.HOME.name)
@@ -269,13 +276,13 @@ fun CarePadShellScreen(
     }
 
     fun requestFocusTarget(target: CarePadFocusKey) {
-        if (
-            target is CarePadFocusKey.ContentFallback &&
-            target.destination == destination &&
-            controlsOpen &&
-            controlsController.requestMainEntryFocus()
-        ) {
-            return
+        if (target is CarePadFocusKey.ContentFallback && target.destination == destination && controlsOpen) {
+            // Raw HAT/KEY recovery is consumed before Android/Compose's normal dispatch.
+            // SystemDefined actions cannot take focus until the platform leaves touch mode.
+            val accepted = inputModeManager.requestInputMode(InputMode.Keyboard)
+            ControlsFocusTrace.log("input-mode-request") { "accepted=$accepted inputMode=${inputModeManager.inputMode} touch=${view.isInTouchMode}" }
+            if (!accepted) return
+            if (controlsController.requestMainEntryFocus()) return
         }
         focusRequesterFor(target)?.requestFocus()
     }
@@ -286,12 +293,17 @@ fun CarePadShellScreen(
 
     fun settleControlsTouchRecoveryIfReady() {
         val drain = controlsTouchRecoveryDrain ?: return
-        if (controlsContentFocusObserved && touchRecoverySettled(drain)) {
+        if (touchRecoverySettled(drain)) {
             controlsTouchRecoveryDrain = null
         }
     }
 
+    fun controlsNeedsEntryFocus(): Boolean =
+        inputModeManager.inputMode == InputMode.Touch ||
+            (!controlsContentFocusObserved && focusControllerState.observedFocus !is CarePadFocusKey.Rail)
+
     fun requestControlsContentFocus() {
+        ControlsFocusTrace.log("content-request") { "inputMode=${inputModeManager.inputMode} touch=${view.isInTouchMode} carepad=${focusControllerState.modality} observed=$controlsContentFocusObserved drain=$controlsTouchRecoveryDrain" }
         requestFocusTarget(CarePadFocusKey.ContentFallback(destination))
     }
 
@@ -333,7 +345,7 @@ fun CarePadShellScreen(
         if (controlsOpen) {
             onRawInputHandlersChanged(
                 { event ->
-                    val wasTouch = focusControllerState.modality == CarePadInputMethod.TOUCH
+                    val needsEntryFocus = controlsNeedsEntryFocus()
                     var consumed = controlsController.onKeyEvent(event)
                     if (consumed) {
                         controlsTouchRecoveryDrain = null
@@ -348,15 +360,8 @@ fun CarePadShellScreen(
                             when (event.action) {
                                 AndroidKeyEvent.ACTION_DOWN -> {
                                     if (drain.keyReleased && event.repeatCount == 0) {
-                                        if (
-                                            controlsContentFocusObserved &&
-                                            touchRecoverySettled(drain)
-                                        ) {
-                                            controlsTouchRecoveryDrain = null
-                                        } else {
-                                            requestControlsContentFocus()
-                                            consumed = true
-                                        }
+                                        // A new press is not a retry for a failed focus request.
+                                        controlsTouchRecoveryDrain = null
                                     } else {
                                         controlsTouchRecoveryDrain = drain.copy(sawDpadKey = true)
                                         consumed = true
@@ -381,7 +386,7 @@ fun CarePadShellScreen(
                         isControllerSource(event.source)
                     ) {
                         dispatchFocus(CarePadFocusEvent.ControllerActivity)
-                        if (!consumed && wasTouch && controllerDirection(event.keyCode) != null) {
+                        if (!consumed && needsEntryFocus && controllerDirection(event.keyCode) != null) {
                             requestControlsContentFocus()
                             val waitsForHatNeutral = controllerKeyHasHatRange(event)
                             controlsTouchRecoveryDrain = ControlsTouchRecoveryDrain(
@@ -393,10 +398,11 @@ fun CarePadShellScreen(
                             consumed = true
                         }
                     }
+                    ControlsFocusTrace.log("shell-key") { "time=${event.eventTime} device=${event.deviceId} consumed=$consumed inputMode=${inputModeManager.inputMode} touch=${view.isInTouchMode} carepad=${focusControllerState.modality} observed=$controlsContentFocusObserved drain=$controlsTouchRecoveryDrain" }
                     consumed
                 },
                 { event ->
-                    val wasTouch = focusControllerState.modality == CarePadInputMethod.TOUCH
+                    val needsEntryFocus = controlsNeedsEntryFocus()
                     val activeHat = isActiveControllerHatMotion(event)
                     val significant = activeHat || isSignificantControllerMotion(event)
                     var consumed = controlsController.onGenericMotionEvent(event)
@@ -411,26 +417,23 @@ fun CarePadShellScreen(
                         val drain = controlsTouchRecoveryDrain
                         if (
                             drain != null &&
-                            drain.waitsForHatNeutral &&
                             event.deviceId == drain.deviceId &&
                             event.actionMasked == MotionEvent.ACTION_MOVE &&
                             isControllerSource(event.source)
                         ) {
-                            if (isControllerHatNeutral(event)) {
+                            if (isControllerHatNeutral(event) && drain.waitsForHatNeutral) {
                                 controlsTouchRecoveryDrain = drain.copy(hatNeutral = true)
                                 settleControlsTouchRecoveryIfReady()
-                            } else if (
-                                activeHat &&
-                                drain.hatNeutral &&
-                                !controlsContentFocusObserved
-                            ) {
-                                requestControlsContentFocus()
+                                consumed = true
+                            } else if (activeHat) {
+                                // KEY may precede HAT even when its source exposes no ranges.
+                                controlsTouchRecoveryDrain = drain.copy(waitsForHatNeutral = true, hatNeutral = false)
+                                consumed = true
                             }
-                            consumed = true
                         }
                     }
 
-                    if (!consumed && wasTouch && activeHat) {
+                    if (!consumed && needsEntryFocus && activeHat) {
                         requestControlsContentFocus()
                         controlsTouchRecoveryDrain = ControlsTouchRecoveryDrain(
                             deviceId = event.deviceId,
@@ -440,6 +443,7 @@ fun CarePadShellScreen(
                         )
                         consumed = true
                     }
+                    ControlsFocusTrace.log("shell-motion") { "time=${event.eventTime} device=${event.deviceId} consumed=$consumed inputMode=${inputModeManager.inputMode} touch=${view.isInTouchMode} carepad=${focusControllerState.modality} observed=$controlsContentFocusObserved drain=$controlsTouchRecoveryDrain" }
                     consumed
                 },
             )
@@ -769,13 +773,14 @@ fun CarePadShellScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .focusRequester(controlsContentFocusRequester)
-                                    .focusGroup()
                                     .onFocusChanged { state ->
                                         controlsContentFocusObserved = state.hasFocus
                                         if (state.hasFocus) {
-                                            settleControlsTouchRecoveryIfReady()
+                                            dispatchFocus(CarePadFocusEvent.FocusObserved(CarePadFocusKey.ContentFallback(destination)))
                                         }
-                                    },
+                                        ControlsFocusTrace.log("content-focus") { "isFocused=${state.isFocused} hasFocus=${state.hasFocus}" }
+                                    }
+                                    .focusGroup(),
                             ) {
                                 controlsContent(
                                     controlsController,

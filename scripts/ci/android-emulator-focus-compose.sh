@@ -8,6 +8,8 @@ PERFORMANCE_PACKAGE="dev.carepad.module.performance"
 PERFORMANCE_FIXTURE_INSTALLED=false
 
 cleanup_performance_fixture() {
+  adb logcat -d -s CarePadT1Focus:D '*:S' | tee "${RUNNER_TEMP:-/tmp}/carepad-t1-focus-trace.log" || true
+  adb shell setprop log.tag.CarePadT1Focus '' || true
   if [[ "$PERFORMANCE_FIXTURE_INSTALLED" == true ]]; then
     adb uninstall "$PERFORMANCE_PACKAGE" >/dev/null 2>&1 || true
   fi
@@ -38,10 +40,11 @@ if [[ -n "$MODULE_APK" ]]; then
   PERFORMANCE_FIXTURE_INSTALLED=true
 fi
 adb install -r "$TEST_APK"
+adb shell setprop log.tag.CarePadT1Focus DEBUG
 
 RESULT_FILE="${RUNNER_TEMP:-/tmp}/carepad-focus-compose-result.txt"
 adb shell am instrument -w -r \
-  -e class com.joel.thordoctor.ui.CarePadFocusIntegrationTest,com.joel.thordoctor.ui.CarePadInternalControlsIntegrationTest,com.joel.thordoctor.ui.CarePadControlsRealDispatchTest \
+  -e class com.joel.thordoctor.ui.CarePadFocusIntegrationTest,com.joel.thordoctor.ui.CarePadInternalControlsIntegrationTest,com.joel.thordoctor.ui.CarePadControlsRealDispatchTest,com.joel.thordoctor.ui.CarePadControlsTouchModeTest \
   dev.carepad.test/androidx.test.runner.AndroidJUnitRunner \
   | tee "$RESULT_FILE"
 

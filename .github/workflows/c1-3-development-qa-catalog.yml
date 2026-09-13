@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - feature/single-apk-t1-controls-internal
   workflow_dispatch:
 
 jobs:
