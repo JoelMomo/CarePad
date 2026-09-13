@@ -93,7 +93,9 @@ class CarePadControlsTouchModeTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.prepare_test))
             .assertExists()
-        action(composeRule.activity.getString(ControlsR.string.start_test)).assertIsDisplayed()
+        action(composeRule.activity.getString(ControlsR.string.start_test)).assertIsEnabled()
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertAnyInternalActionFocused(ControlsR.string.back, ControlsR.string.start_test)
     }
 
     @Test
@@ -135,7 +137,8 @@ class CarePadControlsTouchModeTest {
             listOf("hat", "down", "neutral", "up"),
         )
         for (order in orders) {
-            tap(composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.app_name)))
+            // Touch passive content near the actions, including after the previous scroll.
+            tap(composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.guided_test_description)))
             assertAndroidTouch()
             for (event in order) when (event) {
                 "hat" -> hat(1f)
@@ -182,7 +185,9 @@ class CarePadControlsTouchModeTest {
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         assertFocusedAction(ControlsR.string.back)
         press(KeyEvent.KEYCODE_BUTTON_A)
-        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.guided_test)).assertIsDisplayed()
+        action(composeRule.activity.getString(ControlsR.string.guided_test)).assertIsEnabled()
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertFocusedAction(ControlsR.string.guided_test)
     }
 
     @Test
@@ -306,15 +311,20 @@ class CarePadControlsTouchModeTest {
         composeRule.waitForIdle()
         // Make the real target visible before injecting screen coordinates (also in landscape).
         node.performScrollTo().assertIsDisplayed()
-        val center = node.fetchSemanticsNode().boundsInRoot.center
-        val location = IntArray(2)
-        composeRule.runOnUiThread { composeView.getLocationOnScreen(location) }
+        val target = node.fetchSemanticsNode()
+        val visibleBounds = target.boundsInRoot
+        assertTrue("Touch target must have nonempty clipped bounds: $visibleBounds", !visibleBounds.isEmpty)
+        val centerOnScreen = target.positionOnScreen - target.positionInRoot + visibleBounds.center
+        val window = android.graphics.Rect()
+        composeRule.runOnUiThread { composeView.getWindowVisibleDisplayFrame(window) }
+        assertTrue("Touch point $centerOnScreen must be inside the app window $window",
+            window.contains(centerOnScreen.x.toInt(), centerOnScreen.y.toInt()))
         // An Android touch event, not a semantics performClick or a direct onClick invocation.
         val downTime = SystemClock.uptimeMillis()
         for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
             val event = MotionEvent.obtain(
                 downTime, SystemClock.uptimeMillis(), action,
-                center.x + location[0], center.y + location[1], 0,
+                centerOnScreen.x, centerOnScreen.y, 0,
             ).apply { source = InputDevice.SOURCE_TOUCHSCREEN }
             instrumentation.sendPointerSync(event)
             event.recycle()
