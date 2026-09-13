@@ -54,6 +54,7 @@ class CarePadControlsTouchModeTest {
     @get:Rule val composeRule = createAndroidComposeRule<MainActivity>()
     @get:Rule val testName = TestName()
     private var imageIndex = 0
+    private val keyDownTimes = mutableMapOf<Int, Long>()
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private lateinit var composeView: View
     private lateinit var controlsController: ControlsInternalController
@@ -83,7 +84,13 @@ class CarePadControlsTouchModeTest {
             .assertIsNotFocused()
 
         // Focus must activate the real module action, not just set an observed-mode flag.
-        press(KeyEvent.KEYCODE_BUTTON_A)
+        key(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.ACTION_DOWN)
+        key(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.ACTION_UP, flags = KeyEvent.FLAG_CANCELED)
+        assertFocusedAction(ControlsR.string.guided_test)
+        key(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.ACTION_DOWN)
+        key(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.ACTION_DOWN, repeat = 1)
+        key(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.ACTION_UP)
+        composeRule.waitForIdle()
         composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.prepare_test))
             .assertExists()
         action(composeRule.activity.getString(ControlsR.string.start_test)).assertIsDisplayed()
@@ -293,13 +300,16 @@ class CarePadControlsTouchModeTest {
     )
 
     private fun tap(node: SemanticsNodeInteraction) {
+        // Clear the old controller anchor before scrolling; its bring-into-view work must
+        // not move the target after screen coordinates have been measured.
+        instrumentation.setInTouchMode(true)
+        composeRule.waitForIdle()
         // Make the real target visible before injecting screen coordinates (also in landscape).
         node.performScrollTo().assertIsDisplayed()
         val center = node.fetchSemanticsNode().boundsInRoot.center
         val location = IntArray(2)
         composeRule.runOnUiThread { composeView.getLocationOnScreen(location) }
         // An Android touch event, not a semantics performClick or a direct onClick invocation.
-        instrumentation.setInTouchMode(true)
         val downTime = SystemClock.uptimeMillis()
         for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
             val event = MotionEvent.obtain(
@@ -328,10 +338,12 @@ class CarePadControlsTouchModeTest {
         event.recycle()
     }
 
-    private fun key(code: Int, action: Int) {
+    private fun key(code: Int, action: Int, repeat: Int = 0, flags: Int = 0) {
         val now = SystemClock.uptimeMillis()
-        val event = KeyEvent(now, now, action, code, 0, 0, DEVICE_ID, 0, 0, InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD)
+        if (action == KeyEvent.ACTION_DOWN && repeat == 0) keyDownTimes[code] = now
+        val event = KeyEvent(keyDownTimes[code] ?: now, now, action, code, repeat, 0, DEVICE_ID, 0, flags, InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD)
         composeRule.runOnUiThread { composeRule.activity.dispatchKeyEvent(event) }
+        if (action == KeyEvent.ACTION_UP) keyDownTimes.remove(code)
     }
 
     private fun press(code: Int) {

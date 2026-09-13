@@ -61,6 +61,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalView
@@ -1265,6 +1266,33 @@ private fun GuidedButtons(
 }
 
 @Composable
+private fun Modifier.controlsPrimaryKey(enabled: Boolean, activate: () -> Unit): Modifier {
+    var pressed by remember(enabled) { mutableStateOf(false) }
+    return onFocusChanged { if (!it.isFocused) pressed = false }
+        .onKeyEvent { event ->
+            val native = event.nativeKeyEvent
+            if (!enabled || native.keyCode != KeyEvent.KEYCODE_BUTTON_A || !isControllerSource(native.source)) {
+                false
+            } else when (native.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (native.repeatCount == 0) pressed = true
+                    true
+                }
+                KeyEvent.ACTION_UP -> {
+                    val shouldActivate = pressed && !native.isCanceled
+                    pressed = false
+                    if (shouldActivate) {
+                        ControlsFocusTrace.log("action-activate") { "time=${native.eventTime} device=${native.deviceId} source=${native.source} key=${native.keyCode}" }
+                        activate()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+}
+
+@Composable
 private fun FocusButton(
     text: String,
     enabled: Boolean,
@@ -1284,6 +1312,7 @@ private fun FocusButton(
         onClick = { feedback(); action() },
         modifier = Modifier
             .fillMaxWidth()
+            .controlsPrimaryKey(enabled) { feedback(); action() }
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged {
                 focused = it.isFocused
@@ -1314,6 +1343,7 @@ private fun FocusOutlinedButton(
         onClick = { feedback(); action() },
         modifier = Modifier
             .fillMaxWidth()
+            .controlsPrimaryKey(enabled) { feedback(); action() }
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged {
                 focused = it.isFocused
