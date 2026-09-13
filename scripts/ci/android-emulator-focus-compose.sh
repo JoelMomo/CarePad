@@ -9,6 +9,10 @@ PERFORMANCE_FIXTURE_INSTALLED=false
 
 cleanup_performance_fixture() {
   adb logcat -d -s CarePadT1Focus:D '*:S' | tee "${RUNNER_TEMP:-/tmp}/carepad-t1-focus-trace.log" || true
+  mkdir -p "${RUNNER_TEMP:-/tmp}/carepad-t1-screenshots"
+  for snapshot in $(adb shell run-as dev.carepad ls cache | tr -d '\r' | grep '^t1-focus-.*\.png$'); do
+    adb exec-out run-as dev.carepad cat "cache/$snapshot" > "${RUNNER_TEMP:-/tmp}/carepad-t1-screenshots/$snapshot" || true
+  done
   adb shell setprop log.tag.CarePadT1Focus '' || true
   if [[ "$PERFORMANCE_FIXTURE_INSTALLED" == true ]]; then
     adb uninstall "$PERFORMANCE_PACKAGE" >/dev/null 2>&1 || true

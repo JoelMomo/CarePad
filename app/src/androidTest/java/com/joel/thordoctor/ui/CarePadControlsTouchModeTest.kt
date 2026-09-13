@@ -1,5 +1,7 @@
 package com.joel.thordoctor.ui
 
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -10,6 +12,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -25,6 +29,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.platform.app.InstrumentationRegistry
 import com.joel.thordoctor.MainActivity
 import com.joel.thordoctor.R
@@ -39,15 +44,20 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TestName
+import java.io.File
 import dev.carepad.module.controls.internalui.R as ControlsR
 
 /** Only the device catalogue is controlled; the Activity, shell, Controls UI and targets are real. */
 class CarePadControlsTouchModeTest {
     @get:Rule val composeRule = createAndroidComposeRule<MainActivity>()
+    @get:Rule val testName = TestName()
+    private var imageIndex = 0
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private lateinit var composeView: View
     private lateinit var composeInputModeManager: InputModeManager
     private var focusColor = Color.Unspecified
+    private var focusOverlayColor = Color.Unspecified
 
     @Test
     fun firstHatKeyGestureAfterAndroidTouchFocusesVisibleUsableControlsAction() {
@@ -147,6 +157,29 @@ class CarePadControlsTouchModeTest {
     }
 
     @Test
+    fun landscapeTouchRecoveryKeepsNaturalSpatialRailCrossing() {
+        composeRule.runOnUiThread {
+            composeRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+        composeRule.waitUntil(10_000) {
+            composeRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        }
+        installRealControls()
+        tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
+        assertAndroidTouch()
+        hat(1f)
+        key(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.ACTION_DOWN)
+        key(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.ACTION_UP)
+        hat(0f)
+        composeRule.waitForIdle()
+        assertFocusedAction(ControlsR.string.guided_test)
+        press(KeyEvent.KEYCODE_DPAD_LEFT)
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_home)).assertIsFocused()
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertFocusedAction(ControlsR.string.guided_test)
+    }
+
+    @Test
     fun guidedCaptureKeepsFaceAndHatGesturesUntilReleaseThenAllowsNavigation() {
         installRealControls()
         tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
@@ -210,9 +243,11 @@ class CarePadControlsTouchModeTest {
                     val inputModeManager = LocalInputModeManager.current
                     composeView = LocalView.current
                     val primary = MaterialTheme.colorScheme.primary
+                    val onPrimary = MaterialTheme.colorScheme.onPrimary
                     SideEffect {
                         composeInputModeManager = inputModeManager
                         focusColor = primary
+                        focusOverlayColor = lerp(primary, onPrimary, 0.1f)
                     }
                     CarePadShellScreen(
                         onThemeModeChange = {},
@@ -233,6 +268,8 @@ class CarePadControlsTouchModeTest {
     )
 
     private fun tap(node: SemanticsNodeInteraction) {
+        // Make the real target visible before injecting screen coordinates (also in landscape).
+        node.performScrollTo().assertIsDisplayed()
         val center = node.fetchSemanticsNode().boundsInRoot.center
         val location = IntArray(2)
         composeRule.runOnUiThread { composeView.getLocationOnScreen(location) }
@@ -279,12 +316,22 @@ class CarePadControlsTouchModeTest {
     }
 
     private fun assertVisibleBorder(node: SemanticsNodeInteraction) {
-        val pixels = node.captureToImage().toPixelMap()
-        val top = pixels[pixels.width / 2, 1]
-        assertTrue("Focused action must draw its primary border: $top vs $focusColor",
-            kotlin.math.abs(top.red - focusColor.red) < 0.06f &&
-                kotlin.math.abs(top.green - focusColor.green) < 0.06f &&
-                kotlin.math.abs(top.blue - focusColor.blue) < 0.06f)
+        val capture = node.captureToImage()
+        File(instrumentation.targetContext.cacheDir, "t1-focus-${testName.methodName}-${imageIndex++}.png").outputStream().use {
+            capture.asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        val pixels = capture.toPixelMap()
+        fun Color.matches(expected: Color) =
+            kotlin.math.abs(red - expected.red) < 0.025f &&
+                kotlin.math.abs(green - expected.green) < 0.025f &&
+                kotlin.math.abs(blue - expected.blue) < 0.025f
+        // Semantics bounds include Material's minimum touch-target padding; the drawn edge
+        // is not necessarily pixel y=1. The filled button also paints its 10% focus state layer.
+        val edgePixels = (0 until pixels.height / 3).count { y ->
+            val color = pixels[pixels.width / 2, y]
+            color.matches(focusColor) || color.matches(focusOverlayColor)
+        }
+        assertTrue("Focused action must draw a primary focus edge within its touch bounds", edgePixels >= 2)
     }
 
     private companion object { const val DEVICE_ID = 77 }

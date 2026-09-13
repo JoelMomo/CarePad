@@ -50,8 +50,6 @@ El oráculo exige botón habilitado/visible, `isFocused`, píxel del borde de fo
 
 La ejecución [Android CI #382](https://github.com/JoelMomo/CarePad/actions/runs/34742700193) en `95820cda9d1bc5d4153ccd61c94dbbc241994c08` pasó los 14 tests previos y falló la precondición del nuevo test: este conservaba una lectura de modalidad en `SideEffect`, sin suscribirse a sus cambios. No se presenta ese fallo como reproducción causal. `5e2deec595cce733b2b0b24865f7b6a9f66866f5` corrige la medición consultando el manager actual; no cambia producción.
 
-## Nueva QA física requerida
-
 ## Evidencia causal antes de corregir
 
 HECHO: [Android CI #383](https://github.com/JoelMomo/CarePad/actions/runs/34743188737), HEAD `5e2deec595cce733b2b0b24865f7b6a9f66866f5`, ejecuta 18 tests: los 14 previos pasan y los 4 de touch real fallan por ausencia de foco. Builds y JVM pasan. El job `103686831196` contiene, para el gesto HAT→KEY→UP→neutro, `t=96634 content-request inputMode=Touch touch=true carepad=CONTROLLER observed=false`; `t=96642 entry-request generation=1 requester=159925388 screen=MAIN accepted=false inputMode=Touch touch=true candidates=1`. El target está montado y habilitado antes del evento. Al acabar UP y neutro, el drenaje sigue presente porque exige foco observado.
@@ -59,6 +57,10 @@ HECHO: [Android CI #383](https://github.com/JoelMomo/CarePad/actions/runs/347431
 La divergencia automatizada está situada: los fixtures previos llegan al bridge en `Keyboard/touch=false`; la UI real después de touch llega en `Touch/touch=true`. En Compose 1.10.4 (fuentes de las dependencias resueltas en caché), Clickable usa `Focusability.SystemDefined`, que rechaza foco en Touch. `focusGroup` no es una acción (`Focusability.Never`); cambiarlo por un requester de botón no elimina esa precondición. El Boolean de agenda de `requestMainEntryFocus` tampoco acredita la concesión posterior del foco.
 
 CORRECCIÓN EN CUALIFICACIÓN: solicitar la modalidad de entrada de Android/Compose antes del foco interno; decidir recuperación desde modalidad real y ancla observada; liberar el drenaje por finalización del gesto, sin esperar foco ni convertir nuevas pulsaciones en reintentos; reconocer HAT cuando sigue a KEY; observar el grupo antes de su focus target y actualizar el foco de contenido para el retorno desde rail.
+
+Cuando no hay acción habilitada, el fallback debe devolver su resultado y no iniciar drenaje si falla. Se cambia expresamente el antiguo test sin mando seleccionado: exigir consumo sin ninguna acción era un oráculo incorrecto; ahora exige que DOWN/UP y una segunda dirección queden disponibles. El nuevo test con mando y UI reales conserva las exigencias de foco/borde/activación. La regresión en horizontal añade cruce espacial por izquierda/derecha, además del atajo L1.
+
+HECHO: en [Android CI #384](https://github.com/JoelMomo/CarePad/actions/runs/34743573688), `3dd939f2d4631da22f800273a4d15e2de513f1ca`, la misma ruta cambia a `input-mode-request accepted=true inputMode=Keyboard touch=false`, seguida de acción real `isFocused=true` y `entry-request accepted=true`. Se obtiene foco también en preparación guiada. El run no se califica PASS: fallaron precondiciones de fixtures que dejaban el rail enfocado con performClick, el muestreo de un único píxel y un tap fuera de pantalla. Los fixtures de recuperación ahora entran explícitamente en modo táctil; los taps reales hacen visible su target mediante scroll antes de inyectar; el oráculo visual busca el borde dentro del área táctil de Material y contempla su state layer de foco del 10%, conservando isFocused/habilitado/activación. Las capturas PNG quedan junto a resultados y trazas en `CarePad-focus-evidence` para revisión independiente.
 
 INFERENCIA: este mecanismo explica el síntoma formalmente registrado en QA-43/44/45. HIPÓTESIS PENDIENTE: que el primer dispatch de Thor llegue exactamente en ese estado/orden. No se dispone de Thor conectado y no se declara PASS físico.
 

@@ -490,6 +490,7 @@ jobs:
           path: |
             ${{ runner.temp }}/carepad-focus-compose-result.txt
             ${{ runner.temp }}/carepad-t1-focus-trace.log
+            ${{ runner.temp }}/carepad-t1-screenshots/*.png
           if-no-files-found: ignore
           retention-days: 7
 

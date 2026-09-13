@@ -22,6 +22,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
+import androidx.test.platform.app.InstrumentationRegistry
 import com.joel.thordoctor.AppThemeMode
 import com.joel.thordoctor.MainActivity
 import com.joel.thordoctor.R
@@ -66,6 +67,7 @@ class CarePadControlsRealDispatchTest {
             matcher = hasClickAction() and hasAnyDescendant(hasText(controls)),
             useUnmergedTree = true,
         ).performClick()
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(true)
         composeRule.waitForIdle()
 
         composeRule.runOnUiThread {
