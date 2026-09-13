@@ -94,6 +94,7 @@ class CarePadControlsTouchModeTest {
         composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.prepare_test))
             .assertExists()
         action(composeRule.activity.getString(ControlsR.string.start_test)).assertIsEnabled()
+        assertAnyInternalActionFocused(ControlsR.string.back, ControlsR.string.start_test)
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         assertAnyInternalActionFocused(ControlsR.string.back, ControlsR.string.start_test)
     }
@@ -185,9 +186,9 @@ class CarePadControlsTouchModeTest {
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         assertFocusedAction(ControlsR.string.back)
         press(KeyEvent.KEYCODE_BUTTON_A)
-        action(composeRule.activity.getString(ControlsR.string.guided_test)).assertIsEnabled()
-        press(KeyEvent.KEYCODE_DPAD_DOWN)
         assertFocusedAction(ControlsR.string.guided_test)
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertFocusedAction(ControlsR.string.detected_inputs)
     }
 
     @Test

@@ -20,6 +20,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -62,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalView
@@ -709,6 +711,22 @@ fun ControlsInternalScreen(
     val view = LocalView.current
     val entryFocusGeneration = controller.entryFocusGeneration
     val entryFocusRequester = remember { FocusRequester() }
+    val contentFocusRequester = remember { FocusRequester() }
+    var contentFocused by remember { mutableStateOf(false) }
+    // Capture ownership before applyChanges detaches the old action. Restoring after the
+    // new surface mounts prevents Compose's default initial focus from escaping to the rail.
+    val ownedFocusBeforeChange = contentFocused
+    LaunchedEffect(controller.screen, controller.guidedStage, controller.digitalTargetIndex) {
+        if (ownedFocusBeforeChange && !contentFocused && inputModeManager.inputMode == InputMode.Keyboard &&
+            !controller.attemptArmed && !controller.showLeaveDialog && controller.candidates.isNotEmpty()
+        ) {
+            val target = if (controller.screen == Screen.MAIN) entryFocusRequester else contentFocusRequester
+            val accepted = target.requestFocus()
+            ControlsFocusTrace.log("surface-focus-restore") {
+                "screen=${controller.screen} stage=${controller.guidedStage} requester=${System.identityHashCode(target)} accepted=$accepted inputMode=${inputModeManager.inputMode} touch=${view.isInTouchMode}"
+            }
+        }
+    }
     LaunchedEffect(entryFocusGeneration) {
         if (entryFocusGeneration > 0 && controller.screen == Screen.MAIN && controller.candidates.isNotEmpty()) {
             val accepted = entryFocusRequester.requestFocus()
@@ -740,7 +758,11 @@ fun ControlsInternalScreen(
         )
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize()
+        .focusRequester(contentFocusRequester)
+        .onFocusChanged { contentFocused = it.hasFocus }
+        .focusGroup()
+    ) {
         BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)

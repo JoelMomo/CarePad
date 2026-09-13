@@ -723,6 +723,7 @@ fun CarePadShellScreen(
         focusRequesters = railFocusRequesters,
         onFocusChanged = { focusedDestination, focused ->
             val railFocus = CarePadFocusKey.Rail(focusedDestination)
+            ControlsFocusTrace.log("rail-focus") { "destination=$focusedDestination isFocused=$focused" }
             if (focused) {
                 dispatchFocus(CarePadFocusEvent.FocusObserved(railFocus))
             } else if (focusControllerState.observedFocus == railFocus) {
