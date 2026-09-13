@@ -11,6 +11,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -45,7 +46,7 @@ class CarePadControlsTouchModeTest {
     @get:Rule val composeRule = createAndroidComposeRule<MainActivity>()
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private lateinit var composeView: View
-    private var composeInputMode = InputMode.Keyboard
+    private lateinit var composeInputModeManager: InputModeManager
     private var focusColor = Color.Unspecified
 
     @Test
@@ -74,6 +75,75 @@ class CarePadControlsTouchModeTest {
             .assertIsDisplayed()
     }
 
+    @Test
+    fun firstKeyAfterAndroidTouchHasFocusAndSecondPressNavigatesImmediately() {
+        installRealControls()
+        tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
+        assertAndroidTouch()
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertFocusedAction(ControlsR.string.guided_test)
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertFocusedAction(ControlsR.string.detected_inputs)
+    }
+
+    @Test
+    fun hatKeyReleaseOrdersDoNotLeaveDrainForTheNextPress() {
+        installRealControls()
+        tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
+        val orders = listOf(
+            listOf("hat", "down", "up", "neutral"),
+            listOf("down", "hat", "up", "neutral"),
+            listOf("hat", "down", "neutral", "up"),
+        )
+        for (order in orders) {
+            tap(composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.app_name)))
+            assertAndroidTouch()
+            for (event in order) when (event) {
+                "hat" -> hat(1f)
+                "neutral" -> hat(0f)
+                "down" -> key(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.ACTION_DOWN)
+                "up" -> key(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.ACTION_UP)
+            }
+            composeRule.waitForIdle()
+            assertFocusedAction(ControlsR.string.guided_test)
+            press(KeyEvent.KEYCODE_DPAD_DOWN)
+            assertFocusedAction(ControlsR.string.detected_inputs)
+        }
+    }
+
+    @Test
+    fun replacedScreenTargetsCanAcquireFocusAfterTheFirstDpad() {
+        installRealControls()
+        tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
+        tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
+        assertAndroidTouch()
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertAnyInternalActionFocused(ControlsR.string.back, ControlsR.string.start_test)
+
+        // Touch replaces the preparation actions with the real digital-test actions.
+        tap(action(composeRule.activity.getString(ControlsR.string.start_test)))
+        assertAndroidTouch()
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertFocusedAction(ControlsR.string.try_this_control)
+    }
+
+    private fun assertFocusedAction(textRes: Int) {
+        val node = action(composeRule.activity.getString(textRes))
+        node.assertIsDisplayed().assertIsEnabled().assertIsFocused()
+        assertVisibleBorder(node)
+        composeRule.runOnUiThread { assertFalse("Android touch mode must have ended", composeView.isInTouchMode) }
+        assertEquals(InputMode.Keyboard, composeInputModeManager.inputMode)
+    }
+
+    private fun assertAnyInternalActionFocused(vararg textRes: Int) {
+        val focused = textRes.map { action(composeRule.activity.getString(it)) }.filter {
+            it.fetchSemanticsNode().config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Focused) { false }
+        }
+        assertEquals("Exactly one real internal action must be focused", 1, focused.size)
+        focused.single().assertIsDisplayed().assertIsEnabled()
+        assertVisibleBorder(focused.single())
+    }
+
     private fun installRealControls() {
         val sources = Sources(gamepad = true, joystick = true, dpad = true)
         val device = DeviceInfo(
@@ -90,7 +160,7 @@ class CarePadControlsTouchModeTest {
                     composeView = LocalView.current
                     val primary = MaterialTheme.colorScheme.primary
                     SideEffect {
-                        composeInputMode = inputModeManager.inputMode
+                        composeInputModeManager = inputModeManager
                         focusColor = primary
                     }
                     CarePadShellScreen(
@@ -131,7 +201,9 @@ class CarePadControlsTouchModeTest {
 
     private fun assertAndroidTouch() {
         composeRule.runOnUiThread { assertTrue("Android must really be in touch mode", composeView.isInTouchMode) }
-        assertEquals("Compose must see Android touch mode", InputMode.Touch, composeInputMode)
+        composeRule.runOnUiThread {
+            assertEquals("Compose must see Android touch mode", InputMode.Touch, composeInputModeManager.inputMode)
+        }
     }
 
     private fun hat(y: Float) {
