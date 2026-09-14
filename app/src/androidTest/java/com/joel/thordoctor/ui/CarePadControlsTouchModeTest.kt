@@ -346,6 +346,9 @@ class CarePadControlsTouchModeTest {
             assertFalse("No motion may cause this capture-entry observation", "stage=motion-result" in entryTrace)
             assertFalse("Rail must never gain focus BEFORE the first stick movement:\n$entryTrace",
                 entryTrace.lineSequence().any { "stage=rail-focus" in it && "isFocused=true" in it })
+            // Initial focus may return to Back in CI but to HOME on Thor; neither may own this handoff.
+            assertFalse("Content must retain focus while arming, before any stick movement:\n$entryTrace",
+                entryTrace.lineSequence().any { "stage=content-focus" in it && "hasFocus=false" in it })
             composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_home)).assertIsNotFocused()
             assertFocusedAction(ControlsR.string.back)
 
