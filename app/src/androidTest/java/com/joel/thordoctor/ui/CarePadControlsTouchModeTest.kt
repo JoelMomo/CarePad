@@ -3,6 +3,8 @@ package com.joel.thordoctor.ui
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.os.SystemClock
+import android.os.ParcelFileDescriptor
+import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -215,6 +217,50 @@ class CarePadControlsTouchModeTest {
         composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_home)).assertIsFocused()
         press(KeyEvent.KEYCODE_DPAD_RIGHT)
         assertFocusedAction(ControlsR.string.guided_test)
+    }
+
+    @Test
+    fun focusedTryActionEntersCaptureWithoutGivingFocusToRail() {
+        installRealControls()
+        tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
+        tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
+        tap(action(composeRule.activity.getString(ControlsR.string.start_test)))
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertFocusedAction(ControlsR.string.try_this_control)
+
+        // Observe every rail focus callback, including a transient escape hidden by a retry.
+        assertTrue("CI must enable the existing focus trace", Log.isLoggable("CarePadT1Focus", Log.DEBUG))
+        val marker = "qa46-capture-${SystemClock.uptimeMillis()}"
+        Log.d("CarePadT1Focus", "$marker-start")
+        press(KeyEvent.KEYCODE_BUTTON_A)
+        val armedAt = SystemClock.uptimeMillis()
+        action(composeRule.activity.getString(ControlsR.string.try_this_control)).assertIsNotEnabled()
+        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.listening_for_attempt)).assertExists()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_home)).assertIsNotFocused()
+        assertFocusedAction(ControlsR.string.back)
+
+        // B is captured, even though the retained internal action is Back.
+        press(KeyEvent.KEYCODE_BUTTON_B)
+        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.listening_for_attempt)).assertExists()
+        composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - armedAt >= 250 }
+        press(KeyEvent.KEYCODE_BUTTON_A)
+        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.control_observed)).assertExists()
+        action(composeRule.activity.getString(ControlsR.string.next_control)).assertIsEnabled()
+        assertFocusedAction(ControlsR.string.back)
+        Log.d("CarePadT1Focus", "$marker-end")
+
+        val logs = ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(
+            "logcat -d -v brief -s CarePadT1Focus:D '*:S'",
+        )).bufferedReader().use { it.readText() }
+        assertTrue("Capture trace start must be present", logs.contains("$marker-start"))
+        assertTrue("Capture trace end must be present", logs.contains("$marker-end"))
+        val captureTrace = logs.substringAfter("$marker-start").substringBefore("$marker-end")
+        assertFalse("Rail must never receive focus during capture entry/release:\n$captureTrace",
+            captureTrace.lineSequence().any { "stage=rail-focus" in it && "isFocused=true" in it })
+        assertEquals("Only the first A activates an action; the second is captured", 1,
+            Regex("stage=action-activate").findAll(captureTrace).count())
+        press(KeyEvent.KEYCODE_DPAD_UP)
+        assertFocusedAction(ControlsR.string.next_control)
     }
 
     @Test
