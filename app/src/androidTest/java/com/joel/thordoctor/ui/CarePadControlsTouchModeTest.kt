@@ -318,8 +318,14 @@ class CarePadControlsTouchModeTest {
 
         assertTrue("CI must enable the existing focus trace", Log.isLoggable("CarePadT1Focus", Log.DEBUG))
         for (left in listOf(true, false)) {
-            tap(action(composeRule.activity.getString(ControlsR.string.stick_is_still)))
-            press(KeyEvent.KEYCODE_DPAD_DOWN)
+            // QA-47 entered LEFT_MOVE by A with restored content focus, not by touch recovery.
+            if (composeInputModeManager.inputMode == InputMode.Touch) press(KeyEvent.KEYCODE_DPAD_DOWN)
+            assertAnyInternalActionFocused(ControlsR.string.back, ControlsR.string.stick_is_still)
+            val backFocused = action(composeRule.activity.getString(ControlsR.string.back))
+                .fetchSemanticsNode().config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Focused) { false }
+            if (backFocused) press(KeyEvent.KEYCODE_DPAD_RIGHT)
+            assertFocusedAction(ControlsR.string.stick_is_still)
+            press(KeyEvent.KEYCODE_BUTTON_A)
             assertFocusedAction(ControlsR.string.try_stick_movement)
             val marker = "qa47-stick-left=$left-${SystemClock.uptimeMillis()}"
             Log.d("CarePadT1Focus", "$marker-start")
