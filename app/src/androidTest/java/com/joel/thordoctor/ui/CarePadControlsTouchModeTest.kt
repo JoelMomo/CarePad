@@ -295,6 +295,72 @@ class CarePadControlsTouchModeTest {
         assertFocusedAction(ControlsR.string.back)
     }
 
+    @Test
+    fun focusedStickTryEntersCaptureBeforeAnyMotionWithoutGivingFocusToRail() {
+        installRealControls()
+        tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
+        tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
+        tap(action(composeRule.activity.getString(ControlsR.string.start_test)))
+        // Reach the stick through the real digital sequence, without setting controller state.
+        val digitalCodes = listOf(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B,
+            KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT)
+        for ((index, code) in digitalCodes.withIndex()) {
+            tap(action(composeRule.activity.getString(ControlsR.string.try_this_control)))
+            val armedAt = SystemClock.uptimeMillis()
+            composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - armedAt >= 250 }
+            press(code)
+            hat(0f) // Finish the advertised HAT drain after the digital KEY release.
+            composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.control_observed)).assertExists()
+            tap(action(composeRule.activity.getString(if (index == digitalCodes.lastIndex)
+                ControlsR.string.continue_label else ControlsR.string.next_control)))
+        }
+
+        assertTrue("CI must enable the existing focus trace", Log.isLoggable("CarePadT1Focus", Log.DEBUG))
+        for (left in listOf(true, false)) {
+            tap(action(composeRule.activity.getString(ControlsR.string.stick_is_still)))
+            press(KeyEvent.KEYCODE_DPAD_DOWN)
+            assertFocusedAction(ControlsR.string.try_stick_movement)
+            val marker = "qa47-stick-left=$left-${SystemClock.uptimeMillis()}"
+            Log.d("CarePadT1Focus", "$marker-start")
+            press(KeyEvent.KEYCODE_BUTTON_A)
+            val armedAt = SystemClock.uptimeMillis()
+            action(composeRule.activity.getString(ControlsR.string.try_stick_movement)).assertIsNotEnabled()
+            composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.listening_for_attempt)).assertExists()
+            Log.d("CarePadT1Focus", "$marker-before-first-motion")
+
+            val logs = ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(
+                "logcat -d -v brief -s CarePadT1Focus:D '*:S'",
+            )).bufferedReader().use { it.readText() }
+            assertTrue("Capture entry trace start must be present", logs.contains("$marker-start"))
+            assertTrue("Pre-motion boundary must be present", logs.contains("$marker-before-first-motion"))
+            val entryTrace = logs.substringAfter("$marker-start").substringBefore("$marker-before-first-motion")
+            assertEquals("A must activate the focused stick action exactly once", 1,
+                Regex("stage=action-activate").findAll(entryTrace).count())
+            assertFalse("No motion may cause this capture-entry observation", "stage=motion-result" in entryTrace)
+            assertFalse("Rail must never gain focus BEFORE the first stick movement:\n$entryTrace",
+                entryTrace.lineSequence().any { "stage=rail-focus" in it && "isFocused=true" in it })
+            composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_home)).assertIsNotFocused()
+            assertFocusedAction(ControlsR.string.back)
+
+            press(KeyEvent.KEYCODE_BUTTON_B)
+            press(KeyEvent.KEYCODE_BUTTON_A)
+            composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.listening_for_attempt)).assertExists()
+            composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - armedAt >= 250 }
+            stick(left, 1f, 0f)
+            composeRule.waitForIdle()
+            composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.stick_observed)).assertExists()
+            press(KeyEvent.KEYCODE_DPAD_DOWN) // Held stick still owns capture; no parallel navigation.
+            assertFocusedAction(ControlsR.string.back)
+            stick(left, 0f, 0f)
+            composeRule.waitForIdle()
+            press(KeyEvent.KEYCODE_DPAD_UP)
+            assertFocusedAction(ControlsR.string.continue_label)
+            press(KeyEvent.KEYCODE_BUTTON_A)
+        }
+        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.test_finished)).assertExists()
+    }
+
     private fun assertFocusedAction(textRes: Int) {
         val node = action(composeRule.activity.getString(textRes))
         node.assertIsDisplayed().assertIsEnabled().assertIsFocused()
@@ -394,6 +460,19 @@ class CarePadControlsTouchModeTest {
         val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0 })
         val coordinates = arrayOf(MotionEvent.PointerCoords().apply { setAxisValue(MotionEvent.AXIS_HAT_Y, y) })
         val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_MOVE, 1, properties, coordinates, 0, 0, 1f, 1f, DEVICE_ID, 0, InputDevice.SOURCE_JOYSTICK, 0)
+        composeRule.runOnUiThread { composeRule.activity.dispatchGenericMotionEvent(event) }
+        event.recycle()
+    }
+
+    private fun stick(left: Boolean, x: Float, y: Float) {
+        val now = SystemClock.uptimeMillis()
+        val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0 })
+        val coordinates = arrayOf(MotionEvent.PointerCoords().apply {
+            setAxisValue(if (left) MotionEvent.AXIS_X else MotionEvent.AXIS_Z, x)
+            setAxisValue(if (left) MotionEvent.AXIS_Y else MotionEvent.AXIS_RZ, y)
+        })
+        val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_MOVE, 1, properties, coordinates,
+            0, 0, 1f, 1f, DEVICE_ID, 0, InputDevice.SOURCE_JOYSTICK, 0)
         composeRule.runOnUiThread { composeRule.activity.dispatchGenericMotionEvent(event) }
         event.recycle()
     }
