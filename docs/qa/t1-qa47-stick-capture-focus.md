@@ -40,6 +40,8 @@ La corrección añade un FocusRequester al Atrás ya montado/habilitado de `Stic
 
 La ruta digital permanece intacta. El cambio de producción se limita a 15 inserciones y 2 eliminaciones en `StickMove`, sin reintentos, temporizadores, cambios de captura ni refactor de foco. Los A/B y movimientos durante captura siguen perteneciendo al puente raw; touch conserva su ruta. Se requiere CI completa verde y un nuevo artefacto antes de declarar candidata técnica.
 
+La primera cualificación del código corregido (`83b562ae…`, Android #396 / C1.3 #90) se detuvo en setup-android, antes de compilar: `Failed to find package 'tools'`. Para ejecutar los gates se fija `packages: platform-tools` en las cuatro inicializaciones SDK de esos dos workflows; las instalaciones explícitas posteriores de plataforma, build tools y emulador se conservan. Es el parámetro [documentado por setup-android v3](https://github.com/android-actions/setup-android/tree/v3#additional-packages), cuyo valor por defecto incluye el paquete tools no disponible. Este ajuste de infraestructura no modifica el producto ni elimina gates.
+
 ## Límites de la candidata
 
 La observación O1 y las observaciones UX secundarias de QA-47 (ancla en Atrás, dirección para continuar y resaltado del D-pad) permanecen registradas fuera de esta corrección. El criterio de observación del recorrido, captura raw, drenaje HAT/KEY, restauraciones generales y rail siguen fuera del cambio. La firma QA estable sigue siendo un follow-up separado: el reset autorizado para QA-47 no constituye autorización de reset para una QA futura.

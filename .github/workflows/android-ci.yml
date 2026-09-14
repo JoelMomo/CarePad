@@ -25,6 +25,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install Android 16 SDK
         run: sdkmanager "platforms;android-36"
@@ -54,6 +56,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install Android 16 SDK
         run: sdkmanager "platforms;android-36"
@@ -332,6 +336,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Configure AVD home
         run: |
