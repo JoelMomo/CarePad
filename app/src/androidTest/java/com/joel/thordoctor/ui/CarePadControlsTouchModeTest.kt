@@ -297,6 +297,13 @@ class CarePadControlsTouchModeTest {
 
     @Test
     fun focusedStickTryEntersCaptureBeforeAnyMotionWithoutGivingFocusToRail() {
+        // Settle the preceding landscape test's configuration before installing the device catalogue.
+        composeRule.runOnUiThread {
+            composeRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+        composeRule.waitUntil(10_000) {
+            composeRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        }
         installRealControls()
         tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
         tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
