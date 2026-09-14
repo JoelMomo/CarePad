@@ -1061,6 +1061,8 @@ private fun StickMove(
 ) {
     val resolution = controller.stickResolution(left) ?: Resolution.INCONCLUSIVE
     val outcome = controller.stickOutcome(left)
+    val inputModeManager = LocalInputModeManager.current
+    val backFocusRequester = remember { FocusRequester() }
     SectionCard(stringResource(if (left) R.string.left_stick else R.string.right_stick)) {
         Text(stringResource(if (left) R.string.left_move_instruction else R.string.right_move_instruction))
         ControllerDiagram(
@@ -1080,12 +1082,23 @@ private fun StickMove(
             }
         )
         if (resolution == Resolution.STANDARD && outcome == null) {
-            FocusButton(stringResource(R.string.try_stick_movement), !controller.attemptArmed, feedback, action = controller::startAttempt)
+            FocusButton(stringResource(R.string.try_stick_movement), !controller.attemptArmed, feedback, action = {
+                if (inputModeManager.inputMode == InputMode.Keyboard) {
+                    // Preserve content focus before arming disables the focused movement action.
+                    // The same mounted Back action survives capture and the observed outcome.
+                    val accepted = backFocusRequester.requestFocus()
+                    ControlsFocusTrace.log("capture-entry-focus") {
+                        "control=${if (left) "LEFT_STICK" else "RIGHT_STICK"} requester=${System.identityHashCode(backFocusRequester)} accepted=$accepted inputMode=${inputModeManager.inputMode}"
+                    }
+                }
+                controller.startAttempt()
+            })
             FocusOutlinedButton(stringResource(R.string.tried_not_detected), controller.attemptCanFail, feedback, action = controller::markCurrentNotDetected)
         } else {
             FocusButton(stringResource(R.string.continue_label), true, feedback, action = { controller.continueFromStickMove(left) })
         }
-        FocusOutlinedButton(stringResource(R.string.back), true, feedback, action = { controller.handleBack() })
+        FocusOutlinedButton(stringResource(R.string.back), true, feedback,
+            focusRequester = backFocusRequester, action = { controller.handleBack() })
     }
 }
 
