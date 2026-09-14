@@ -985,6 +985,8 @@ private fun Preparation(controller: ControlsInternalController, device: DeviceIn
 private fun DigitalStep(controller: ControlsInternalController, device: DeviceInfo, feedback: () -> Unit) {
     val target = digitalTargets[controller.digitalTargetIndex]
     val outcome = controller.digitalOutcome()
+    val inputModeManager = LocalInputModeManager.current
+    val backFocusRequester = remember { FocusRequester() }
     SectionCard(stringResource(R.string.buttons_and_dpad)) {
         Supporting(stringResource(R.string.control_counter, controller.digitalTargetIndex + 1, digitalTargets.size))
         Text(stringResource(R.string.digital_target_instruction, stringResource(target.nameRes)))
@@ -1000,7 +1002,17 @@ private fun DigitalStep(controller: ControlsInternalController, device: DeviceIn
             }
         )
         if (outcome == null) {
-            FocusButton(stringResource(R.string.try_this_control), !controller.attemptArmed, feedback, action = controller::startAttempt)
+            FocusButton(stringResource(R.string.try_this_control), !controller.attemptArmed, feedback, action = {
+                if (inputModeManager.inputMode == InputMode.Keyboard) {
+                    // Hand focus to the mounted local action before arming disables this button.
+                    // Captured controller input still belongs to the raw bridge, including B.
+                    val accepted = backFocusRequester.requestFocus()
+                    ControlsFocusTrace.log("capture-entry-focus") {
+                        "requester=${System.identityHashCode(backFocusRequester)} accepted=$accepted inputMode=${inputModeManager.inputMode}"
+                    }
+                }
+                controller.startAttempt()
+            })
             FocusOutlinedButton(stringResource(R.string.tried_not_detected), controller.attemptCanFail, feedback, action = controller::markCurrentNotDetected)
         } else {
             FocusButton(
@@ -1010,7 +1022,8 @@ private fun DigitalStep(controller: ControlsInternalController, device: DeviceIn
                 action = controller::continueDigital,
             )
         }
-        FocusOutlinedButton(stringResource(R.string.back), true, feedback, action = { controller.handleBack() })
+        FocusOutlinedButton(stringResource(R.string.back), true, feedback,
+            focusRequester = backFocusRequester, action = { controller.handleBack() })
     }
 }
 

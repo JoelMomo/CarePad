@@ -19,3 +19,11 @@ HECHO de código: `DigitalStep` deshabilita el botón activo con `enabled = !att
 Los 22 tests previos se conservan: primera/segunda dirección tras touch, HAT/KEY, A válido/cancelado/repetido, transiciones, rail espacial/L1, targets retirados y captura por touch. La nueva prueba utiliza el mismo tiempo de exclusión de 250 ms del producto; no se añade ningún temporizador de producción.
 
 La nueva candidata requiere CI relevante verde sobre un HEAD nuevo y un nuevo artefacto. El resultado físico de QA-46 no se reetiqueta ni se hereda como PASS completo. CO11 decidirá la siguiente QA, exclusiva del nuevo HEAD/APK.
+
+## Corrección acotada
+
+Solo se modifica la acción digital Probar este control. Antes de `startAttempt()` y solo en Keyboard, se transfiere el foco sincrónicamente al botón Atrás ya montado/habilitado de ese paso. Después se arma captura y Probar queda deshabilitado. Así la invalidación del botón ya no invalida el target enfocado ni provoca el foco inicial del rail. No se espera a una recomposición para devolver foco que ya escapó.
+
+La captura raw sigue consumiendo A/B del mando seleccionado; el nuevo test verifica que Atrás no se activa con B capturado ni con el A observado. El touch no solicita esa transferencia. No cambia el shell, el drenaje, el manejo general de A, la restauración de pantallas ya validada ni los tiempos de captura. No se modifica main ni PR #49.
+
+Para la siguiente QA que decida CO11: usar exclusivamente el HEAD/APK nuevos cualificados; comprobar foco visible en Probar → A → captura activa con ancla interna, sin expansión ni foco en Inicio. Correlacionar `action-activate`, `capture-entry-focus accepted=true`, `action-focus` y `rail-focus`; no debe aparecer `rail-focus ... isFocused=true` como efecto de armar. Probar B durante captura, A observado, UP y siguiente dirección. Repetir las comprobaciones parciales de QA-46 sobre la nueva candidata, sin reabrir QA-46. La traza debug se conserva opt-in y release no registra detalles.
