@@ -20,6 +20,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -61,7 +62,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -127,10 +131,16 @@ private sealed interface GuidedCaptureDrain {
 }
 
 /** Raw Android input bridge used only while the internal Controls surface is visible. */
-class ControlsInternalController(context: Context) : InputManager.InputDeviceListener {
+class ControlsInternalController(
+    context: Context,
+    candidateDevices: (() -> List<DeviceInfo>)? = null,
+    deviceById: ((Int) -> DeviceInfo?)? = null,
+) : InputManager.InputDeviceListener {
     private val appContext = context.applicationContext
     private val inputManager = appContext.getSystemService(InputManager::class.java)
     private val deviceCatalog = AndroidDeviceCatalog(inputManager)
+    private val candidateDevices = candidateDevices ?: deviceCatalog::candidates
+    private val deviceById = deviceById ?: deviceCatalog::byId
     private val handler = Handler(Looper.getMainLooper())
 
     private var started = false
@@ -461,7 +471,7 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
     }
 
     private fun syncSelection() {
-        val updated = deviceCatalog.candidates()
+        val updated = candidateDevices()
         val current = selectedDeviceId
         selectedDeviceId = when {
             current != null && updated.any { it.deviceId == current } -> current
@@ -472,7 +482,7 @@ class ControlsInternalController(context: Context) : InputManager.InputDeviceLis
         revision++
     }
 
-    private fun freshSelectedDevice(): DeviceInfo? = selectedDeviceId?.let(deviceCatalog::byId)
+    private fun freshSelectedDevice(): DeviceInfo? = selectedDeviceId?.let(deviceById)
 
     private fun noteControllerActivity(deviceId: Int) {
         if (screen != Screen.MAIN || candidates.none { it.deviceId == deviceId }) return
@@ -697,14 +707,34 @@ fun ControlsInternalScreen(
         onDispose { controller.stop() }
     }
     controller.revision
+    val inputModeManager = LocalInputModeManager.current
+    val view = LocalView.current
     val entryFocusGeneration = controller.entryFocusGeneration
     val entryFocusRequester = remember { FocusRequester() }
-    LaunchedEffect(entryFocusGeneration) {
-        if (entryFocusGeneration > 0 && controller.screen == Screen.MAIN) {
-            entryFocusRequester.requestFocus()
+    val contentFocusRequester = remember { FocusRequester() }
+    var contentFocused by remember { mutableStateOf(false) }
+    // Capture ownership before applyChanges detaches the old action. Restoring after the
+    // new surface mounts prevents Compose's default initial focus from escaping to the rail.
+    val ownedFocusBeforeChange = contentFocused
+    LaunchedEffect(controller.screen, controller.guidedStage, controller.digitalTargetIndex) {
+        if (ownedFocusBeforeChange && !contentFocused && inputModeManager.inputMode == InputMode.Keyboard &&
+            !controller.attemptArmed && !controller.showLeaveDialog && controller.candidates.isNotEmpty()
+        ) {
+            val target = if (controller.screen == Screen.MAIN) entryFocusRequester else contentFocusRequester
+            val accepted = target.requestFocus()
+            ControlsFocusTrace.log("surface-focus-restore") {
+                "screen=${controller.screen} stage=${controller.guidedStage} requester=${System.identityHashCode(target)} accepted=$accepted inputMode=${inputModeManager.inputMode} touch=${view.isInTouchMode}"
+            }
         }
     }
-    val view = LocalView.current
+    LaunchedEffect(entryFocusGeneration) {
+        if (entryFocusGeneration > 0 && controller.screen == Screen.MAIN && controller.candidates.isNotEmpty()) {
+            val accepted = entryFocusRequester.requestFocus()
+            ControlsFocusTrace.log("entry-request") {
+                "generation=$entryFocusGeneration requester=${System.identityHashCode(entryFocusRequester)} screen=${controller.screen} accepted=$accepted inputMode=${inputModeManager.inputMode} touch=${view.isInTouchMode} candidates=${controller.candidates.size}"
+            }
+        }
+    }
     val feedback = {
         view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         view.playSoundEffect(SoundEffectConstants.CLICK)
@@ -728,7 +758,11 @@ fun ControlsInternalScreen(
         )
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize()
+        .focusRequester(contentFocusRequester)
+        .onFocusChanged { contentFocused = it.hasFocus }
+        .focusGroup()
+    ) {
         BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
@@ -951,6 +985,8 @@ private fun Preparation(controller: ControlsInternalController, device: DeviceIn
 private fun DigitalStep(controller: ControlsInternalController, device: DeviceInfo, feedback: () -> Unit) {
     val target = digitalTargets[controller.digitalTargetIndex]
     val outcome = controller.digitalOutcome()
+    val inputModeManager = LocalInputModeManager.current
+    val backFocusRequester = remember { FocusRequester() }
     SectionCard(stringResource(R.string.buttons_and_dpad)) {
         Supporting(stringResource(R.string.control_counter, controller.digitalTargetIndex + 1, digitalTargets.size))
         Text(stringResource(R.string.digital_target_instruction, stringResource(target.nameRes)))
@@ -966,7 +1002,17 @@ private fun DigitalStep(controller: ControlsInternalController, device: DeviceIn
             }
         )
         if (outcome == null) {
-            FocusButton(stringResource(R.string.try_this_control), !controller.attemptArmed, feedback, action = controller::startAttempt)
+            FocusButton(stringResource(R.string.try_this_control), !controller.attemptArmed, feedback, action = {
+                if (inputModeManager.inputMode == InputMode.Keyboard) {
+                    // Hand focus to the mounted local action before arming disables this button.
+                    // Captured controller input still belongs to the raw bridge, including B.
+                    val accepted = backFocusRequester.requestFocus()
+                    ControlsFocusTrace.log("capture-entry-focus") {
+                        "requester=${System.identityHashCode(backFocusRequester)} accepted=$accepted inputMode=${inputModeManager.inputMode}"
+                    }
+                }
+                controller.startAttempt()
+            })
             FocusOutlinedButton(stringResource(R.string.tried_not_detected), controller.attemptCanFail, feedback, action = controller::markCurrentNotDetected)
         } else {
             FocusButton(
@@ -976,7 +1022,8 @@ private fun DigitalStep(controller: ControlsInternalController, device: DeviceIn
                 action = controller::continueDigital,
             )
         }
-        FocusOutlinedButton(stringResource(R.string.back), true, feedback, action = { controller.handleBack() })
+        FocusOutlinedButton(stringResource(R.string.back), true, feedback,
+            focusRequester = backFocusRequester, action = { controller.handleBack() })
     }
 }
 
@@ -1014,6 +1061,8 @@ private fun StickMove(
 ) {
     val resolution = controller.stickResolution(left) ?: Resolution.INCONCLUSIVE
     val outcome = controller.stickOutcome(left)
+    val inputModeManager = LocalInputModeManager.current
+    val backFocusRequester = remember { FocusRequester() }
     SectionCard(stringResource(if (left) R.string.left_stick else R.string.right_stick)) {
         Text(stringResource(if (left) R.string.left_move_instruction else R.string.right_move_instruction))
         ControllerDiagram(
@@ -1033,12 +1082,23 @@ private fun StickMove(
             }
         )
         if (resolution == Resolution.STANDARD && outcome == null) {
-            FocusButton(stringResource(R.string.try_stick_movement), !controller.attemptArmed, feedback, action = controller::startAttempt)
+            FocusButton(stringResource(R.string.try_stick_movement), !controller.attemptArmed, feedback, action = {
+                if (inputModeManager.inputMode == InputMode.Keyboard) {
+                    // Preserve content focus before arming disables the focused movement action.
+                    // The same mounted Back action survives capture and the observed outcome.
+                    val accepted = backFocusRequester.requestFocus()
+                    ControlsFocusTrace.log("capture-entry-focus") {
+                        "control=${if (left) "LEFT_STICK" else "RIGHT_STICK"} requester=${System.identityHashCode(backFocusRequester)} accepted=$accepted inputMode=${inputModeManager.inputMode}"
+                    }
+                }
+                controller.startAttempt()
+            })
             FocusOutlinedButton(stringResource(R.string.tried_not_detected), controller.attemptCanFail, feedback, action = controller::markCurrentNotDetected)
         } else {
             FocusButton(stringResource(R.string.continue_label), true, feedback, action = { controller.continueFromStickMove(left) })
         }
-        FocusOutlinedButton(stringResource(R.string.back), true, feedback, action = { controller.handleBack() })
+        FocusOutlinedButton(stringResource(R.string.back), true, feedback,
+            focusRequester = backFocusRequester, action = { controller.handleBack() })
     }
 }
 
@@ -1254,6 +1314,33 @@ private fun GuidedButtons(
 }
 
 @Composable
+private fun Modifier.controlsPrimaryKey(enabled: Boolean, activate: () -> Unit): Modifier {
+    var pressed by remember(enabled) { mutableStateOf(false) }
+    return onFocusChanged { if (!it.isFocused) pressed = false }
+        .onKeyEvent { event ->
+            val native = event.nativeKeyEvent
+            if (!enabled || native.keyCode != KeyEvent.KEYCODE_BUTTON_A || !isControllerSource(native.source)) {
+                false
+            } else when (native.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (native.repeatCount == 0) pressed = true
+                    true
+                }
+                KeyEvent.ACTION_UP -> {
+                    val shouldActivate = pressed && !native.isCanceled
+                    pressed = false
+                    if (shouldActivate) {
+                        ControlsFocusTrace.log("action-activate") { "time=${native.eventTime} device=${native.deviceId} source=${native.source} key=${native.keyCode}" }
+                        activate()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+}
+
+@Composable
 private fun FocusButton(
     text: String,
     enabled: Boolean,
@@ -1263,13 +1350,22 @@ private fun FocusButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(16.dp)
+    val target = remember { Any() }
+    DisposableEffect(enabled, focusRequester) {
+        ControlsFocusTrace.log("target-mount") { "target=${System.identityHashCode(target)} requester=${focusRequester?.let(System::identityHashCode)} enabled=$enabled" }
+        onDispose { ControlsFocusTrace.log("target-unmount") { "target=${System.identityHashCode(target)}" } }
+    }
     Button(
         enabled = enabled,
         onClick = { feedback(); action() },
         modifier = Modifier
             .fillMaxWidth()
+            .controlsPrimaryKey(enabled) { feedback(); action() }
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                ControlsFocusTrace.log("action-focus") { "target=${System.identityHashCode(target)} isFocused=${it.isFocused} hasFocus=${it.hasFocus} indicator=$focused enabled=$enabled" }
+            }
             .then(if (focused) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, shape) else Modifier),
         shape = shape,
     ) { Text(text) }
@@ -1285,13 +1381,22 @@ private fun FocusOutlinedButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(16.dp)
+    val target = remember { Any() }
+    DisposableEffect(enabled, focusRequester) {
+        ControlsFocusTrace.log("target-mount") { "target=${System.identityHashCode(target)} requester=${focusRequester?.let(System::identityHashCode)} enabled=$enabled" }
+        onDispose { ControlsFocusTrace.log("target-unmount") { "target=${System.identityHashCode(target)}" } }
+    }
     OutlinedButton(
         enabled = enabled,
         onClick = { feedback(); action() },
         modifier = Modifier
             .fillMaxWidth()
+            .controlsPrimaryKey(enabled) { feedback(); action() }
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                ControlsFocusTrace.log("action-focus") { "target=${System.identityHashCode(target)} isFocused=${it.isFocused} hasFocus=${it.hasFocus} indicator=$focused enabled=$enabled" }
+            }
             .then(if (focused) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, shape) else Modifier),
         shape = shape,
     ) { Text(text) }

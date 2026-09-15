@@ -18,6 +18,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.joel.thordoctor.AppThemeMode
 import com.joel.thordoctor.R
 import dev.carepad.module.controls.internalui.R as ControlsR
@@ -70,7 +71,7 @@ class CarePadInternalControlsIntegrationTest {
     }
 
     @Test
-    fun firstDpadAfterTouchInsideControlsIsConsumedBeforeSpatialNavigation() {
+    fun missingEnabledControlsActionDoesNotConsumeDirectionsIndefinitely() {
         val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
         val controls = composeRule.activity.getString(R.string.carepad_module_controls)
         val touchHint = composeRule.activity.getString(R.string.carepad_hint_touch_navigation)
@@ -99,7 +100,9 @@ class CarePadInternalControlsIntegrationTest {
         val down = controllerKeyEvent(KeyEvent.KEYCODE_DPAD_DOWN, InputDevice.SOURCE_DPAD)
 
         composeRule.runOnUiThread {
-            check(checkNotNull(rawKeyHandler).invoke(down))
+            check(!checkNotNull(rawKeyHandler).invoke(down))
+            check(!checkNotNull(rawKeyHandler).invoke(controllerKeyEvent(KeyEvent.KEYCODE_DPAD_DOWN, InputDevice.SOURCE_DPAD, KeyEvent.ACTION_UP)))
+            check(!checkNotNull(rawKeyHandler).invoke(controllerKeyEvent(KeyEvent.KEYCODE_DPAD_DOWN, InputDevice.SOURCE_DPAD)))
         }
         composeRule.waitForIdle()
 
@@ -150,6 +153,10 @@ class CarePadInternalControlsIntegrationTest {
             KeyEvent.ACTION_UP,
         )
         val hatNeutral = controllerHatMotion()
+
+        // performClick alone leaves Android in keyboard mode with the old rail focus.
+        InstrumentationRegistry.getInstrumentation().setInTouchMode(true)
+        composeRule.waitForIdle()
 
         composeRule.runOnUiThread {
             check(checkNotNull(rawMotionHandler).invoke(hatDown))
@@ -204,7 +211,7 @@ class CarePadInternalControlsIntegrationTest {
             check(
                 checkNotNull(rawKeyHandler).invoke(
                     controllerKeyEvent(KeyEvent.KEYCODE_DPAD_DOWN, InputDevice.SOURCE_DPAD)
-                )
+                ).not()
             )
         }
         composeRule.waitForIdle()

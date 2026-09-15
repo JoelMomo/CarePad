@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.joel.thordoctor.ui.CarePadSettingsScreen
 import com.joel.thordoctor.ui.CarePadShellScreen
 import com.joel.thordoctor.ui.theme.ThorDoctorTheme
+import dev.carepad.module.controls.internalui.ControlsFocusTrace
 
 class MainActivity : ComponentActivity() {
     private var rawKeyHandler: ((KeyEvent) -> Boolean)? = null
@@ -44,11 +45,25 @@ class MainActivity : ComponentActivity() {
         rawMotionHandler = motionHandler
     }
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
-        if (rawKeyHandler?.invoke(event) == true) true else super.dispatchKeyEvent(event)
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        ControlsFocusTrace.log("raw-key") {
+            "time=${event.eventTime} down=${event.downTime} device=${event.deviceId} source=${event.source} action=${event.action} key=${event.keyCode} repeat=${event.repeatCount} touch=${window.decorView.isInTouchMode}"
+        }
+        val rawConsumed = rawKeyHandler?.invoke(event) == true
+        val consumed = rawConsumed || super.dispatchKeyEvent(event)
+        ControlsFocusTrace.log("key-result") { "time=${event.eventTime} device=${event.deviceId} handler=${if (rawConsumed) "controls-raw" else "android-compose"} consumed=$consumed touch=${window.decorView.isInTouchMode}" }
+        return consumed
+    }
 
-    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean =
-        if (rawMotionHandler?.invoke(event) == true) true else super.dispatchGenericMotionEvent(event)
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        ControlsFocusTrace.log("raw-motion") {
+            "time=${event.eventTime} device=${event.deviceId} source=${event.source} action=${event.actionMasked} hatX=${event.getAxisValue(MotionEvent.AXIS_HAT_X)} hatY=${event.getAxisValue(MotionEvent.AXIS_HAT_Y)} touch=${window.decorView.isInTouchMode}"
+        }
+        val rawConsumed = rawMotionHandler?.invoke(event) == true
+        val consumed = rawConsumed || super.dispatchGenericMotionEvent(event)
+        ControlsFocusTrace.log("motion-result") { "time=${event.eventTime} device=${event.deviceId} handler=${if (rawConsumed) "controls-raw" else "android-compose"} consumed=$consumed touch=${window.decorView.isInTouchMode}" }
+        return consumed
+    }
 
     override fun onDestroy() {
         rawKeyHandler = null
