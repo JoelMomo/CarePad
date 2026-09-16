@@ -201,14 +201,6 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-      - name: Upload Controls input lab APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: CarePad-controls-input-lab-debug
-          path: test-fixtures/controls-input-lab/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 3
-
       - name: Build update module lab APK
         run: ./gradlew :module-lab:clean :module-lab:assembleDebug -PcarepadModuleLabVersionCode=2 -PcarepadModuleLabVersionName=0.2-lab --stacktrace
 
