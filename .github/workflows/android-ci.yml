@@ -539,6 +539,7 @@ jobs:
 
       - name: Generate qa-target.json
         env:
+          CAREPAD_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           CAREPAD_DEBUG_ARTIFACT_ID: ${{ needs.build.outputs.carepad_debug_artifact_id }}
           CAREPAD_DEBUG_ARTIFACT_URL: ${{ needs.build.outputs.carepad_debug_artifact_url }}
           CAREPAD_DEBUG_ARTIFACT_DIGEST: ${{ needs.build.outputs.carepad_debug_artifact_digest }}
@@ -589,7 +590,7 @@ jobs:
           manifest = {
               "schema": 1,
               "repository": os.environ["GITHUB_REPOSITORY"],
-              "headSha": os.environ["GITHUB_SHA"],
+              "headSha": os.environ["CAREPAD_HEAD_SHA"],
               "runId": int(os.environ["GITHUB_RUN_ID"]),
               "runNumber": int(os.environ["GITHUB_RUN_NUMBER"]),
               "workflow": os.environ["GITHUB_WORKFLOW"],
