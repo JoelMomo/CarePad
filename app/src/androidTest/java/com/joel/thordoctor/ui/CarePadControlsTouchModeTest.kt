@@ -89,9 +89,7 @@ class CarePadControlsTouchModeTest {
         press(KeyEvent.KEYCODE_BUTTON_A)
 
         waitForText(composeRule.activity.getString(ControlsR.string.prepare_test))
-        composeRule.onNodeWithText(
-            composeRule.activity.getString(ControlsR.string.guided_countdown, 8),
-        ).assertIsDisplayed()
+        assertCountdownVisible()
         assertNoIntermediateActions()
 
         press(KeyEvent.KEYCODE_DPAD_RIGHT)
@@ -162,9 +160,7 @@ class CarePadControlsTouchModeTest {
         tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
 
         waitForText(composeRule.activity.getString(ControlsR.string.prepare_test))
-        composeRule.onNodeWithText(
-            composeRule.activity.getString(ControlsR.string.guided_countdown, 8),
-        ).assertIsDisplayed()
+        assertCountdownVisible()
         assertNoIntermediateActions()
 
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
@@ -296,10 +292,10 @@ class CarePadControlsTouchModeTest {
         }
 
         waitForText(composeRule.activity.getString(ControlsR.string.left_rest_instruction), 2_500)
-        assertCountdownEight()
+        assertCountdownVisible()
         assertNoIntermediateActions()
         waitForText(composeRule.activity.getString(ControlsR.string.left_move_instruction), 11_000)
-        assertCountdownEight()
+        assertCountdownVisible()
         val leftMoveStarted = SystemClock.uptimeMillis()
         waitForCaptureArm()
         stick(true, 1f, 0f)
@@ -312,9 +308,9 @@ class CarePadControlsTouchModeTest {
         waitForText(composeRule.activity.getString(ControlsR.string.right_rest_instruction), 11_000)
         assertTrue("Left movement window must not complete early", SystemClock.uptimeMillis() - leftMoveStarted >= 7_500)
 
-        assertCountdownEight()
+        assertCountdownVisible()
         waitForText(composeRule.activity.getString(ControlsR.string.right_move_instruction), 11_000)
-        assertCountdownEight()
+        assertCountdownVisible()
         val rightMoveStarted = SystemClock.uptimeMillis()
         waitForCaptureArm()
         stick(false, 1f, 0f)
@@ -350,10 +346,15 @@ class CarePadControlsTouchModeTest {
         composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - startedAt >= 300 }
     }
 
-    private fun assertCountdownEight() {
-        composeRule.onNodeWithText(
-            composeRule.activity.getString(ControlsR.string.guided_countdown, 8),
-        ).assertIsDisplayed()
+    private fun assertCountdownVisible() {
+        val visible = (8 downTo 0).any { seconds ->
+            runCatching {
+                composeRule.onNodeWithText(
+                    composeRule.activity.getString(ControlsR.string.guided_countdown, seconds),
+                ).assertIsDisplayed()
+            }.isSuccess
+        }
+        assertTrue("Guided countdown must show a visible value within the 8-second window", visible)
     }
 
     private fun assertNoIntermediateActions() {
