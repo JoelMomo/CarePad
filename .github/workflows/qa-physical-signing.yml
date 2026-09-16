@@ -25,7 +25,6 @@ jobs:
   sign-physical-qa:
     if: >-
       ${{
-        vars.CAREPAD_QA_SIGNING_ENABLED == 'true' &&
         (
           (
             github.event_name == 'workflow_run' &&
@@ -43,7 +42,21 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Resolve QA signing activation
+        id: activation
+        env:
+          CAREPAD_QA_SIGNING_ENABLED: ${{ vars.CAREPAD_QA_SIGNING_ENABLED }}
+        run: |
+          set -euo pipefail
+          if [ "${CAREPAD_QA_SIGNING_ENABLED:-}" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "QA signing disabled; no physical QA artifacts will be produced."
+          fi
+
       - name: Resolve validated Android CI source
+        if: ${{ steps.activation.outputs.enabled == 'true' }}
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
@@ -112,6 +125,7 @@ jobs:
           PY
 
       - name: Download source artifacts without checking out candidate code
+        if: ${{ steps.activation.outputs.enabled == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
           DEBUG_ARTIFACT_ID: ${{ steps.source.outputs.debug_id }}
@@ -148,6 +162,7 @@ jobs:
           PY
 
       - name: Verify source manifest, APK identity, and hashes
+        if: ${{ steps.activation.outputs.enabled == 'true' }}
         env:
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_run_id }}
           SOURCE_HEAD_SHA: ${{ steps.source.outputs.source_head_sha }}
@@ -221,6 +236,7 @@ jobs:
           PY
 
       - name: Sign physical QA APKs with isolated QA identity
+        if: ${{ steps.activation.outputs.enabled == 'true' }}
         id: signing
         env:
           CAREPAD_QA_KEYSTORE_B64: ${{ secrets.CAREPAD_QA_KEYSTORE_B64 }}
@@ -284,6 +300,7 @@ jobs:
           echo "certificate_sha256=$DEBUG_CERT" >> "$GITHUB_OUTPUT"
 
       - name: Upload physical QA debug APK
+        if: ${{ steps.activation.outputs.enabled == 'true' }}
         id: upload_qa_debug
         uses: actions/upload-artifact@v4
         with:
@@ -293,6 +310,7 @@ jobs:
           retention-days: 7
 
       - name: Upload physical QA focus androidTest APK
+        if: ${{ steps.activation.outputs.enabled == 'true' }}
         id: upload_qa_focus
         uses: actions/upload-artifact@v4
         with:
@@ -302,6 +320,7 @@ jobs:
           retention-days: 7
 
       - name: Generate signed physical QA target manifest
+        if: ${{ steps.activation.outputs.enabled == 'true' }}
         env:
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_run_id }}
           SOURCE_RUN_NUMBER: ${{ steps.source.outputs.source_run_number }}
@@ -381,6 +400,7 @@ jobs:
           PY
 
       - name: Upload signed physical QA target manifest
+        if: ${{ steps.activation.outputs.enabled == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: CarePad-qa-target
