@@ -286,7 +286,7 @@ jobs:
             local output actual expected
             output="$("$APKSIGNER" verify --verbose --print-certs "$apk")"
             printf '%s\n' "$output" >&2
-            actual="$(printf '%s\n' "$output" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
+            actual="$(printf '%s\n' "$output" | sed -n 's/^.*certificate SHA-256 digest: //p' | head -n 1)"
             [ -n "$actual" ] || { echo "Could not read signer SHA-256 from $apk" >&2; exit 1; }
             actual="$(normalize_fingerprint "$actual")"
             expected="$(normalize_fingerprint "$CAREPAD_QA_CERT_SHA256")"
