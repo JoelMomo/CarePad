@@ -1,0 +1,389 @@
+name: QA Physical Signing
+
+on:
+  workflow_run:
+    workflows:
+      - Android CI
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Successful Android CI run ID to sign for physical QA
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: qa-physical-signing-${{ github.event.workflow_run.id || inputs.source_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  sign-physical-qa:
+    if: >-
+      ${{
+        vars.CAREPAD_QA_SIGNING_ENABLED == 'true' &&
+        (
+          (
+            github.event_name == 'workflow_run' &&
+            github.event.workflow_run.conclusion == 'success' &&
+            github.event.workflow_run.head_repository.full_name == github.repository
+          ) ||
+          (
+            github.event_name == 'workflow_dispatch' &&
+            github.ref == 'refs/heads/main'
+          )
+        )
+      }}
+    runs-on: ubuntu-latest
+    environment: qa-signing
+    timeout-minutes: 10
+
+    steps:
+      - name: Resolve validated Android CI source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo "Invalid source run ID" >&2; exit 1; }
+
+          mkdir -p source/debug source/focus-androidTest source/manifest signed/debug signed/focus-androidTest
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > source/run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" > source/artifacts.json
+
+          SOURCE_HEAD_SHA="$(python3 -c 'import json; print(json.load(open("source/run.json", encoding="utf-8"))["head_sha"])')"
+          TRUSTED_WORKFLOW_SHA="$(gh api "repos/$GITHUB_REPOSITORY/contents/.github/workflows/android-ci.yml?ref=$GITHUB_SHA" --jq .sha)"
+          SOURCE_WORKFLOW_SHA="$(gh api "repos/$GITHUB_REPOSITORY/contents/.github/workflows/android-ci.yml?ref=$SOURCE_HEAD_SHA" --jq .sha)"
+          [ "$TRUSTED_WORKFLOW_SHA" = "$SOURCE_WORKFLOW_SHA" ] || {
+            echo "Source Android CI workflow differs from trusted default-branch definition" >&2
+            exit 1
+          }
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          run_id = int(os.environ["SOURCE_RUN_ID"])
+          run = json.loads(Path("source/run.json").read_text(encoding="utf-8"))
+          payload = json.loads(Path("source/artifacts.json").read_text(encoding="utf-8"))
+
+          assert run["id"] == run_id, (run["id"], run_id)
+          assert run["repository"]["full_name"] == repo, run["repository"]["full_name"]
+          assert run["name"] == "Android CI", run["name"]
+          assert run["path"] == ".github/workflows/android-ci.yml", run["path"]
+          assert run["status"] == "completed", run["status"]
+          assert run["conclusion"] == "success", run["conclusion"]
+          assert run["event"] in {"pull_request", "push"}, run["event"]
+          head_repo = (run.get("head_repository") or {}).get("full_name")
+          assert head_repo == repo, head_repo
+
+          artifacts = payload.get("artifacts", [])
+
+          def exact(name, max_size):
+              matches = [a for a in artifacts if a.get("name") == name and not a.get("expired")]
+              if len(matches) != 1:
+                  raise AssertionError(f"Expected one live {name} artifact, found {len(matches)}")
+              item = matches[0]
+              assert int(item.get("size_in_bytes", 0)) <= max_size, (name, item.get("size_in_bytes"))
+              return item
+
+          debug = exact("CarePad-debug", 200 * 1024 * 1024)
+          focus = exact("CarePad-focus-androidTest-debug", 200 * 1024 * 1024)
+          manifest = exact("CarePad-qa-target", 1024 * 1024)
+
+          outputs = {
+              "source_head_sha": run["head_sha"],
+              "source_run_number": str(run["run_number"]),
+              "source_event": run["event"],
+              "debug_id": str(debug["id"]),
+              "focus_id": str(focus["id"]),
+              "manifest_id": str(manifest["id"]),
+          }
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              for key, value in outputs.items():
+                  handle.write(f"{key}={value}\n")
+          PY
+
+      - name: Download source artifacts without checking out candidate code
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEBUG_ARTIFACT_ID: ${{ steps.source.outputs.debug_id }}
+          FOCUS_ARTIFACT_ID: ${{ steps.source.outputs.focus_id }}
+          MANIFEST_ARTIFACT_ID: ${{ steps.source.outputs.manifest_id }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$DEBUG_ARTIFACT_ID/zip" > source/debug.zip
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$FOCUS_ARTIFACT_ID/zip" > source/focus.zip
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$MANIFEST_ARTIFACT_ID/zip" > source/manifest.zip
+
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          def extract_one(zip_path, output_path, suffix):
+              with ZipFile(zip_path) as archive:
+                  files = [item for item in archive.infolist() if not item.is_dir()]
+                  matches = [item for item in files if item.filename.endswith(suffix)]
+                  if len(files) != 1 or len(matches) != 1:
+                      raise AssertionError(f"Unexpected artifact contents in {zip_path}: {[x.filename for x in files]}")
+                  item = matches[0]
+                  if item.file_size > 200 * 1024 * 1024:
+                      raise AssertionError(f"Artifact entry too large: {item.file_size}")
+                  target = Path(output_path)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  with archive.open(item) as source, target.open("wb") as destination:
+                      while chunk := source.read(1024 * 1024):
+                          destination.write(chunk)
+
+          extract_one("source/debug.zip", "source/debug/app-debug.apk", ".apk")
+          extract_one("source/focus.zip", "source/focus-androidTest/app-debug-androidTest.apk", ".apk")
+          extract_one("source/manifest.zip", "source/manifest/qa-target.json", "qa-target.json")
+          PY
+
+      - name: Verify source manifest, APK identity, and hashes
+        env:
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_run_id }}
+          SOURCE_HEAD_SHA: ${{ steps.source.outputs.source_head_sha }}
+          SOURCE_RUN_NUMBER: ${{ steps.source.outputs.source_run_number }}
+          SOURCE_EVENT: ${{ steps.source.outputs.source_event }}
+          DEBUG_ARTIFACT_ID: ${{ steps.source.outputs.debug_id }}
+          FOCUS_ARTIFACT_ID: ${{ steps.source.outputs.focus_id }}
+        run: |
+          set -euo pipefail
+
+          APKANALYZER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name apkanalyzer -print -quit)"
+          [ -n "$APKANALYZER" ] && [ -x "$APKANALYZER" ] || { echo "apkanalyzer not found" >&2; exit 1; }
+          "$APKANALYZER" manifest print source/debug/app-debug.apk > source/debug/manifest.xml
+          "$APKANALYZER" manifest print source/focus-androidTest/app-debug-androidTest.apk > source/focus-androidTest/manifest.xml
+
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          ANDROID = "{http://schemas.android.com/apk/res/android}"
+
+          def sha256(path):
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          def normalize_digest(value):
+              return str(value or "").lower().removeprefix("sha256:")
+
+          host_manifest = ET.parse("source/debug/manifest.xml").getroot()
+          test_manifest = ET.parse("source/focus-androidTest/manifest.xml").getroot()
+          instrumentation = test_manifest.find("instrumentation")
+          assert host_manifest.attrib.get("package") == "dev.carepad", host_manifest.attrib.get("package")
+          assert instrumentation is not None, "instrumentation missing"
+          assert instrumentation.attrib.get(ANDROID + "targetPackage") == "dev.carepad"
+
+          manifest = json.loads(Path("source/manifest/qa-target.json").read_text(encoding="utf-8"))
+          artifact_payload = json.loads(Path("source/artifacts.json").read_text(encoding="utf-8"))
+          metadata = {a["id"]: a for a in artifact_payload.get("artifacts", [])}
+
+          assert manifest["schema"] == 1, manifest["schema"]
+          assert manifest["repository"] == os.environ["GITHUB_REPOSITORY"]
+          assert manifest["headSha"] == os.environ["SOURCE_HEAD_SHA"]
+          assert manifest["runId"] == int(os.environ["SOURCE_RUN_ID"])
+          assert manifest["runNumber"] == int(os.environ["SOURCE_RUN_NUMBER"])
+          assert manifest["workflow"] == "Android CI", manifest["workflow"]
+          assert manifest["event"] == os.environ["SOURCE_EVENT"]
+          assert manifest["applicationId"] == "dev.carepad"
+
+          by_role = {item["role"]: item for item in manifest["artifacts"]}
+          checks = [
+              ("carepad-debug", "CarePad-debug", int(os.environ["DEBUG_ARTIFACT_ID"]), Path("source/debug/app-debug.apk")),
+              ("focus-androidTest-debug", "CarePad-focus-androidTest-debug", int(os.environ["FOCUS_ARTIFACT_ID"]), Path("source/focus-androidTest/app-debug-androidTest.apk")),
+          ]
+          for role, expected_name, artifact_id, apk in checks:
+              item = by_role[role]
+              actual_sha = sha256(apk)
+              assert item["artifactName"] == expected_name, item
+              assert item["artifactId"] == artifact_id, item
+              assert item["sha256"] == actual_sha, (item["sha256"], actual_sha)
+              expected_digest = normalize_digest(metadata[artifact_id].get("digest"))
+              if item.get("artifactDigest") and expected_digest:
+                  assert normalize_digest(item["artifactDigest"]) == expected_digest
+
+          print("Validated source workflow, qa-target.json, package identity, and APK hashes")
+          PY
+
+      - name: Sign physical QA APKs with isolated QA identity
+        id: signing
+        env:
+          CAREPAD_QA_KEYSTORE_B64: ${{ secrets.CAREPAD_QA_KEYSTORE_B64 }}
+          CAREPAD_QA_KEYSTORE_PASSWORD: ${{ secrets.CAREPAD_QA_KEYSTORE_PASSWORD }}
+          CAREPAD_QA_KEY_ALIAS: ${{ secrets.CAREPAD_QA_KEY_ALIAS }}
+          CAREPAD_QA_KEY_PASSWORD: ${{ secrets.CAREPAD_QA_KEY_PASSWORD }}
+          CAREPAD_QA_CERT_SHA256: ${{ vars.CAREPAD_QA_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+
+          for name in CAREPAD_QA_KEYSTORE_B64 CAREPAD_QA_KEYSTORE_PASSWORD CAREPAD_QA_KEY_ALIAS CAREPAD_QA_KEY_PASSWORD CAREPAD_QA_CERT_SHA256; do
+            [ -n "${!name:-}" ] || { echo "Missing required QA signing configuration: $name" >&2; exit 1; }
+          done
+
+          KEYSTORE="$RUNNER_TEMP/carepad-qa-signing.jks"
+          trap 'rm -f "$KEYSTORE"' EXIT
+          printf '%s' "$CAREPAD_QA_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
+          [ -n "$APKSIGNER" ] && [ -x "$APKSIGNER" ] || { echo "apksigner not found" >&2; exit 1; }
+
+          "$APKSIGNER" sign \
+            --ks "$KEYSTORE" \
+            --ks-key-alias "$CAREPAD_QA_KEY_ALIAS" \
+            --ks-pass env:CAREPAD_QA_KEYSTORE_PASSWORD \
+            --key-pass env:CAREPAD_QA_KEY_PASSWORD \
+            --v4-signing-enabled false \
+            --out signed/debug/app-debug.apk \
+            source/debug/app-debug.apk
+
+          "$APKSIGNER" sign \
+            --ks "$KEYSTORE" \
+            --ks-key-alias "$CAREPAD_QA_KEY_ALIAS" \
+            --ks-pass env:CAREPAD_QA_KEYSTORE_PASSWORD \
+            --key-pass env:CAREPAD_QA_KEY_PASSWORD \
+            --v4-signing-enabled false \
+            --out signed/focus-androidTest/app-debug-androidTest.apk \
+            source/focus-androidTest/app-debug-androidTest.apk
+
+          normalize_fingerprint() {
+            printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]'
+          }
+
+          verify_fingerprint() {
+            local apk="$1"
+            local output actual expected
+            output="$("$APKSIGNER" verify --verbose --print-certs "$apk")"
+            printf '%s\n' "$output" >&2
+            actual="$(printf '%s\n' "$output" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
+            [ -n "$actual" ] || { echo "Could not read signer SHA-256 from $apk" >&2; exit 1; }
+            actual="$(normalize_fingerprint "$actual")"
+            expected="$(normalize_fingerprint "$CAREPAD_QA_CERT_SHA256")"
+            [ "$actual" = "$expected" ] || { echo "Unexpected QA signing certificate for $apk" >&2; exit 1; }
+            printf '%s' "$actual"
+          }
+
+          DEBUG_CERT="$(verify_fingerprint signed/debug/app-debug.apk)"
+          FOCUS_CERT="$(verify_fingerprint signed/focus-androidTest/app-debug-androidTest.apk)"
+          [ "$DEBUG_CERT" = "$FOCUS_CERT" ]
+          echo "certificate_sha256=$DEBUG_CERT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload physical QA debug APK
+        id: upload_qa_debug
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-qa-physical-debug
+          path: signed/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload physical QA focus androidTest APK
+        id: upload_qa_focus
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-qa-physical-focus-androidTest-debug
+          path: signed/focus-androidTest/app-debug-androidTest.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Generate signed physical QA target manifest
+        env:
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_run_id }}
+          SOURCE_RUN_NUMBER: ${{ steps.source.outputs.source_run_number }}
+          SOURCE_EVENT: ${{ steps.source.outputs.source_event }}
+          SOURCE_HEAD_SHA: ${{ steps.source.outputs.source_head_sha }}
+          QA_CERT_SHA256: ${{ steps.signing.outputs.certificate_sha256 }}
+          QA_DEBUG_ARTIFACT_ID: ${{ steps.upload_qa_debug.outputs.artifact-id }}
+          QA_DEBUG_ARTIFACT_URL: ${{ steps.upload_qa_debug.outputs.artifact-url }}
+          QA_DEBUG_ARTIFACT_DIGEST: ${{ steps.upload_qa_debug.outputs.artifact-digest }}
+          QA_FOCUS_ARTIFACT_ID: ${{ steps.upload_qa_focus.outputs.artifact-id }}
+          QA_FOCUS_ARTIFACT_URL: ${{ steps.upload_qa_focus.outputs.artifact-url }}
+          QA_FOCUS_ARTIFACT_DIGEST: ${{ steps.upload_qa_focus.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          def sha256(path):
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          def artifact(role, artifact_name, path, prefix):
+              return {
+                  "role": role,
+                  "artifactName": artifact_name,
+                  "filename": path.name,
+                  "sha256": sha256(path),
+                  "artifactId": int(os.environ[f"{prefix}_ARTIFACT_ID"]),
+                  "artifactUrl": os.environ[f"{prefix}_ARTIFACT_URL"],
+                  "artifactDigest": os.environ[f"{prefix}_ARTIFACT_DIGEST"],
+                  "certificateSha256": os.environ["QA_CERT_SHA256"],
+              }
+
+          debug = Path("signed/debug/app-debug.apk")
+          focus = Path("signed/focus-androidTest/app-debug-androidTest.apk")
+          manifest = {
+              "schema": 1,
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "headSha": os.environ["SOURCE_HEAD_SHA"],
+              "runId": int(os.environ["GITHUB_RUN_ID"]),
+              "runNumber": int(os.environ["GITHUB_RUN_NUMBER"]),
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "event": os.environ["GITHUB_EVENT_NAME"],
+              "applicationId": "dev.carepad",
+              "packageName": "dev.carepad",
+              "signing": {
+                  "purpose": "physical-qa",
+                  "certificateSha256": os.environ["QA_CERT_SHA256"],
+              },
+              "source": {
+                  "workflow": "Android CI",
+                  "runId": int(os.environ["SOURCE_RUN_ID"]),
+                  "runNumber": int(os.environ["SOURCE_RUN_NUMBER"]),
+                  "event": os.environ["SOURCE_EVENT"],
+              },
+              "artifacts": [
+                  artifact("carepad-debug", "CarePad-qa-physical-debug", debug, "QA_DEBUG"),
+                  artifact(
+                      "focus-androidTest-debug",
+                      "CarePad-qa-physical-focus-androidTest-debug",
+                      focus,
+                      "QA_FOCUS",
+                  ),
+              ],
+          }
+          Path("qa-target.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(Path("qa-target.json").read_text(encoding="utf-8"))
+          PY
+
+      - name: Upload signed physical QA target manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-qa-target
+          path: qa-target.json
+          if-no-files-found: error
+          retention-days: 7
