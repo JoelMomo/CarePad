@@ -969,8 +969,8 @@ private fun Preparation(controller: ControlsInternalController, device: DeviceIn
     SectionCard(stringResource(R.string.prepare_test)) {
         Text(stringResource(R.string.prepare_test_instruction))
         Supporting(stringResource(R.string.prepare_test_note))
-        ControllerDiagram(device = device)
         GuidedCountdown(controller.countdownSeconds)
+        ControllerDiagram(device = device)
     }
 }
 
@@ -980,9 +980,9 @@ private fun DigitalStep(controller: ControlsInternalController, device: DeviceIn
     SectionCard(stringResource(R.string.buttons_and_dpad)) {
         Supporting(stringResource(R.string.control_counter, controller.digitalTargetIndex + 1, digitalTargets.size))
         Text(stringResource(R.string.digital_target_instruction, stringResource(target.nameRes)))
+        GuidedCountdown(controller.countdownSeconds)
         ControllerDiagram(device = device, highlighted = target.diagramControl)
         Supporting(stringResource(R.string.listening_for_attempt))
-        GuidedCountdown(controller.countdownSeconds)
     }
 }
 
@@ -995,12 +995,12 @@ private fun StickRest(
     SectionCard(stringResource(if (left) R.string.left_stick else R.string.right_stick)) {
         Text(stringResource(if (left) R.string.left_rest_instruction else R.string.right_rest_instruction))
         Supporting(stringResource(R.string.rest_is_observation_not_diagnosis))
+        GuidedCountdown(controller.countdownSeconds)
         ControllerDiagram(
             device = device,
             highlighted = if (left) DiagramControl.LEFT_STICK else DiagramControl.RIGHT_STICK,
             showCenterGuide = true,
         )
-        GuidedCountdown(controller.countdownSeconds)
     }
 }
 
@@ -1013,6 +1013,7 @@ private fun StickMove(
     val resolution = controller.stickResolution(left) ?: Resolution.INCONCLUSIVE
     SectionCard(stringResource(if (left) R.string.left_stick else R.string.right_stick)) {
         Text(stringResource(if (left) R.string.left_move_instruction else R.string.right_move_instruction))
+        GuidedCountdown(controller.countdownSeconds)
         ControllerDiagram(
             device = device,
             highlighted = if (left) DiagramControl.LEFT_STICK else DiagramControl.RIGHT_STICK,
@@ -1026,7 +1027,6 @@ private fun StickMove(
                 stringResource(R.string.listening_for_attempt)
             }
         )
-        GuidedCountdown(controller.countdownSeconds)
     }
 }
 
