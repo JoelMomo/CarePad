@@ -1,0 +1,111 @@
+<resources>
+    <string name="app_name">Controls</string>
+    <string name="controls_intro">Check which inputs Android receives from your controller.</string>
+
+    <string name="controller_section">Selected controller</string>
+    <string name="controller_connected">Connected</string>
+    <string name="unnamed_controller">Unnamed controller</string>
+    <string name="no_devices_friendly">We can’t see a controller yet. Connect one and it will appear as soon as Android detects it.</string>
+    <string name="choose_controller_help">Which one do you want to test? Press a button on the controller and we’ll help you find it.</string>
+    <string name="change_controller_help">Choose which controller you want to observe or test.</string>
+    <string name="activity_help">Activity only helps identify the controller; it does not change selection or move focus.</string>
+    <string name="controller_activity_option">%1$s\n• Activity detected</string>
+    <string name="controller_disconnected">It looks like this controller disconnected. Reconnect it and start a new test.</string>
+    <string name="controller_changed">The controller changed while we were observing it. Start a new test so results are not mixed.</string>
+    <string name="controller_session_invalidated">The previous test is no longer valid. Start a new one so evidence is not mixed.</string>
+
+    <string name="guided_test">Guided test</string>
+    <string name="guided_test_description">Check buttons, D-pad and sticks step by step with a simple guide.</string>
+    <string name="connect_controller_to_start">Connect a controller to start.</string>
+    <string name="choose_controller_to_start">Choose a controller to start.</string>
+    <string name="detected_inputs">Detected inputs</string>
+    <string name="detected_inputs_description">See exactly which inputs Android is receiving in real time.</string>
+    <string name="connect_controller_to_view_inputs">Connect a controller to view its inputs.</string>
+    <string name="choose_controller_to_view_inputs">Choose a controller to view its inputs.</string>
+
+    <string name="guided_breadcrumb">Controls → Guided test</string>
+    <string name="detected_breadcrumb">Controls → Detected inputs</string>
+    <string name="detected_inputs_scope_note">This screen is informational only. It does not change button assignments.</string>
+    <string name="back">Back</string>
+    <string name="continue_label">Continue</string>
+    <string name="back_to_controls">Back to Controls</string>
+
+    <string name="prepare_test">Before you start</string>
+    <string name="prepare_test_instruction">Keep the controller still for a moment and hold it normally. We’ll start a fresh test.</string>
+    <string name="prepare_test_note">Inputs used to navigate here do not count as test evidence.</string>
+    <string name="start_test">Start test</string>
+
+    <string name="buttons_and_dpad">Buttons and D-pad</string>
+    <string name="left_stick">Left stick</string>
+    <string name="right_stick">Right stick</string>
+    <string name="control_counter">Control %1$d of %2$d</string>
+    <string name="digital_target_instruction">Press the %1$s while CarePad is listening. Only that control counts for this step.</string>
+    <string name="try_this_control">Try this control</string>
+    <string name="next_control">Next control</string>
+    <string name="tried_not_detected">I tried it and it wasn’t detected</string>
+    <string name="ready_for_explicit_attempt">Start the attempt when you’re ready. We won’t mark anything missing just because no event arrived yet.</string>
+    <string name="listening_for_attempt">Listening to this attempt… Use the highlighted control now.</string>
+    <string name="attempt_not_seen_yet">We haven’t seen that control yet. If you already tried it, you can say so.</string>
+    <string name="input_seen_checking_target">Input received. Checking whether it matches the highlighted control…</string>
+    <string name="control_observed">Detected during your attempt.</string>
+    <string name="control_not_detected_after_attempt">Not detected after an explicit attempt.</string>
+
+    <string name="left_rest_instruction">Leave the left stick still and roughly centered before testing its movement.</string>
+    <string name="right_rest_instruction">Leave the right stick still and roughly centered before testing its movement.</string>
+    <string name="rest_is_observation_not_diagnosis">This step only prepares the observation; it does not diagnose drift or require a perfect center.</string>
+    <string name="stick_is_still">The stick is still</string>
+    <string name="left_move_instruction">Move the left stick in different directions and return it to center.</string>
+    <string name="right_move_instruction">Move the right stick in different directions and return it to center.</string>
+    <string name="try_stick_movement">Test movement</string>
+    <string name="stick_observed">Movement received during your attempt.</string>
+    <string name="mapping_inconclusive">We couldn’t interpret this stick reliably enough. It will be shown as Inconclusive, not as a fault.</string>
+
+    <string name="test_finished">Test complete</string>
+    <string name="summary_nothing_unusual">Test complete. We didn’t see anything unusual in what we were able to check.</string>
+    <string name="summary_review_items">The test is complete, but there are a few things worth reviewing.</string>
+    <string name="observed">Detected</string>
+    <string name="not_detected">Not detected</string>
+    <string name="inconclusive">Inconclusive</string>
+    <string name="controls_scope_note">The result only describes what Android delivered during this test; it does not by itself certify the complete physical condition of the controller.</string>
+    <string name="leave_test_title">Leave the test?</string>
+    <string name="leave_test_message">The test will remain incomplete. Evidence from this session is kept only while you stay inside this test.</string>
+    <string name="keep_testing">Keep testing</string>
+    <string name="leave_test">Leave</string>
+
+    <string name="input_column">Input</string>
+    <string name="android_label_column">Android label</string>
+    <string name="state_column">State</string>
+    <string name="input_active">Active</string>
+    <string name="input_idle">Idle</string>
+    <string name="input_value">Value %1$s</string>
+    <string name="input_active_value">Active · value %1$s</string>
+    <string name="no_signal_yet">No signal yet</string>
+    <string name="no_inputs_to_show">Android does not expose compatible inputs to show for this controller.</string>
+
+    <string name="button_a">bottom face button</string>
+    <string name="button_b">right face button</string>
+    <string name="button_x">left face button</string>
+    <string name="button_y">top face button</string>
+    <string name="button_l1">L1</string>
+    <string name="button_r1">R1</string>
+    <string name="left_stick_press">Left stick press</string>
+    <string name="right_stick_press">Right stick press</string>
+    <string name="start_button">Start</string>
+    <string name="select_button">Select</string>
+    <string name="center_button">Center button</string>
+    <string name="dpad_up">D-pad up</string>
+    <string name="dpad_down">D-pad down</string>
+    <string name="dpad_left">D-pad left</string>
+    <string name="dpad_right">D-pad right</string>
+    <string name="left_stick_x">Left stick · horizontal</string>
+    <string name="left_stick_y">Left stick · vertical</string>
+    <string name="right_stick_x">Right stick · horizontal</string>
+    <string name="right_stick_y">Right stick · vertical</string>
+    <string name="dpad_horizontal">D-pad · horizontal (HAT)</string>
+    <string name="dpad_vertical">D-pad · vertical (HAT)</string>
+
+    <string name="family_playstation">PlayStation reference</string>
+    <string name="family_xbox">Xbox reference</string>
+    <string name="family_nintendo">Nintendo / Switch reference</string>
+    <string name="family_generic">Generic controller reference</string>
+</resources>
