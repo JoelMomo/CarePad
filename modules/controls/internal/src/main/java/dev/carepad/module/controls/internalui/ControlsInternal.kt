@@ -207,6 +207,11 @@ class ControlsInternalController(
 
         val activeSession = session
         if (screen == Screen.GUIDED && activeSession != null) {
+            if (isSelectedControllerKey(event, activeSession) && event.keyCode == KeyEvent.KEYCODE_BACK) {
+                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) handleGuidedBack()
+                return true
+            }
+
             val sample = AndroidEventMapper.key(event)
             if (consumeGuidedDrainKey(event, sample, activeSession)) return true
 

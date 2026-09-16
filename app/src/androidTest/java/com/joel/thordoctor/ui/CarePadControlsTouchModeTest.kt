@@ -163,8 +163,7 @@ class CarePadControlsTouchModeTest {
         assertCountdownVisible()
         assertNoIntermediateActions()
 
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-        composeRule.waitForIdle()
+        press(KeyEvent.KEYCODE_BACK)
         action(composeRule.activity.getString(ControlsR.string.guided_test)).assertIsDisplayed().assertIsEnabled()
         assertTextAbsent(composeRule.activity.getString(ControlsR.string.prepare_test))
         assertTextAbsent(composeRule.activity.getString(ControlsR.string.leave_test_title))
