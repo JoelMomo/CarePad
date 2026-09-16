@@ -56,6 +56,7 @@ android {
 dependencies {
     implementation(project(":carepad-contracts"))
     implementation(project(":carepad-core-android"))
+    implementation(project(":controls-internal"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -70,6 +71,7 @@ dependencies {
     testImplementation(libs.junit)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(project(":controls-runtime"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
