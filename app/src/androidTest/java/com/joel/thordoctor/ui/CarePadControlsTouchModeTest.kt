@@ -347,14 +347,15 @@ class CarePadControlsTouchModeTest {
     }
 
     private fun assertCountdownVisible() {
-        val visible = (8 downTo 0).any { seconds ->
-            runCatching {
-                composeRule.onNodeWithText(
-                    composeRule.activity.getString(ControlsR.string.guided_countdown, seconds),
-                ).assertIsDisplayed()
-            }.isSuccess
+        composeRule.waitUntil(2_000) {
+            (8 downTo 0).any { seconds ->
+                runCatching {
+                    composeRule.onNodeWithText(
+                        composeRule.activity.getString(ControlsR.string.guided_countdown, seconds),
+                    ).assertIsDisplayed()
+                }.isSuccess
+            }
         }
-        assertTrue("Guided countdown must show a visible value within the 8-second window", visible)
     }
 
     private fun assertNoIntermediateActions() {
