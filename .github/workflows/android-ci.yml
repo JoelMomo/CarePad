@@ -43,6 +43,13 @@ jobs:
   build:
     needs: unit-tests
     runs-on: ubuntu-latest
+    outputs:
+      carepad_debug_artifact_id: ${{ steps.upload_carepad_debug.outputs.artifact-id }}
+      carepad_debug_artifact_url: ${{ steps.upload_carepad_debug.outputs.artifact-url }}
+      carepad_debug_artifact_digest: ${{ steps.upload_carepad_debug.outputs.artifact-digest }}
+      carepad_focus_android_test_artifact_id: ${{ steps.upload_carepad_focus_android_test.outputs.artifact-id }}
+      carepad_focus_android_test_artifact_url: ${{ steps.upload_carepad_focus_android_test.outputs.artifact-url }}
+      carepad_focus_android_test_artifact_digest: ${{ steps.upload_carepad_focus_android_test.outputs.artifact-digest }}
 
     steps:
       - name: Checkout
@@ -137,6 +144,7 @@ jobs:
           PY
 
       - name: Upload debug APK
+        id: upload_carepad_debug
         uses: actions/upload-artifact@v4
         with:
           name: CarePad-debug
@@ -145,6 +153,7 @@ jobs:
           retention-days: 7
 
       - name: Upload CarePad focus androidTest APK
+        id: upload_carepad_focus_android_test
         uses: actions/upload-artifact@v4
         with:
           name: CarePad-focus-androidTest-debug
@@ -507,4 +516,108 @@ jobs:
           name: CarePad-emulator-log
           path: ${{ runner.temp }}/carepad-emulator.log
           if-no-files-found: ignore
+          retention-days: 7
+
+  qa-target-manifest:
+    needs:
+      - build
+      - android-emulator-smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download CarePad debug APK
+        uses: actions/download-artifact@v4
+        with:
+          name: CarePad-debug
+          path: artifacts/carepad-debug
+
+      - name: Download CarePad focus androidTest APK
+        uses: actions/download-artifact@v4
+        with:
+          name: CarePad-focus-androidTest-debug
+          path: artifacts/carepad-focus-androidTest
+
+      - name: Generate qa-target.json
+        env:
+          CAREPAD_DEBUG_ARTIFACT_ID: ${{ needs.build.outputs.carepad_debug_artifact_id }}
+          CAREPAD_DEBUG_ARTIFACT_URL: ${{ needs.build.outputs.carepad_debug_artifact_url }}
+          CAREPAD_DEBUG_ARTIFACT_DIGEST: ${{ needs.build.outputs.carepad_debug_artifact_digest }}
+          CAREPAD_FOCUS_ANDROID_TEST_ARTIFACT_ID: ${{ needs.build.outputs.carepad_focus_android_test_artifact_id }}
+          CAREPAD_FOCUS_ANDROID_TEST_ARTIFACT_URL: ${{ needs.build.outputs.carepad_focus_android_test_artifact_url }}
+          CAREPAD_FOCUS_ANDROID_TEST_ARTIFACT_DIGEST: ${{ needs.build.outputs.carepad_focus_android_test_artifact_digest }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          def only_apk(directory):
+              files = sorted(Path(directory).rglob("*.apk"))
+              if len(files) != 1:
+                  raise SystemExit(f"Expected exactly one APK in {directory}, found {len(files)}: {files}")
+              return files[0]
+
+          def sha256(path):
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          def artifact(role, artifact_name, path, env_prefix):
+              item = {
+                  "role": role,
+                  "artifactName": artifact_name,
+                  "filename": path.name,
+                  "sha256": sha256(path),
+              }
+              artifact_id = os.environ.get(f"{env_prefix}_ARTIFACT_ID", "").strip()
+              artifact_url = os.environ.get(f"{env_prefix}_ARTIFACT_URL", "").strip()
+              artifact_digest = os.environ.get(f"{env_prefix}_ARTIFACT_DIGEST", "").strip()
+              if artifact_id:
+                  item["artifactId"] = int(artifact_id)
+              if artifact_url:
+                  item["artifactUrl"] = artifact_url
+              if artifact_digest:
+                  item["artifactDigest"] = artifact_digest
+              return item
+
+          carepad_apk = only_apk("artifacts/carepad-debug")
+          focus_test_apk = only_apk("artifacts/carepad-focus-androidTest")
+
+          manifest = {
+              "schema": 1,
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "headSha": os.environ["GITHUB_SHA"],
+              "runId": int(os.environ["GITHUB_RUN_ID"]),
+              "runNumber": int(os.environ["GITHUB_RUN_NUMBER"]),
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "event": os.environ["GITHUB_EVENT_NAME"],
+              "applicationId": "dev.carepad",
+              "packageName": "dev.carepad",
+              "artifacts": [
+                  artifact("carepad-debug", "CarePad-debug", carepad_apk, "CAREPAD_DEBUG"),
+                  artifact(
+                      "focus-androidTest-debug",
+                      "CarePad-focus-androidTest-debug",
+                      focus_test_apk,
+                      "CAREPAD_FOCUS_ANDROID_TEST",
+                  ),
+              ],
+          }
+
+          Path("qa-target.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(Path("qa-target.json").read_text(encoding="utf-8"))
+          PY
+
+      - name: Upload QA target manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarePad-qa-target
+          path: qa-target.json
+          if-no-files-found: error
           retention-days: 7
