@@ -118,8 +118,10 @@ class CarePadInternalControlsIntegrationTest {
         val focusTarget = "Controls HAT focus target"
         var rawKeyHandler: ((KeyEvent) -> Boolean)? = null
         var rawMotionHandler: ((MotionEvent) -> Boolean)? = null
+        lateinit var inputModeManager: androidx.compose.ui.input.InputModeManager
 
         composeRule.setContent {
+            inputModeManager = androidx.compose.ui.platform.LocalInputModeManager.current
             MaterialTheme {
                 CarePadShellScreen(
                     onThemeModeChange = { mode -> themeMode.value = mode },
@@ -154,9 +156,20 @@ class CarePadInternalControlsIntegrationTest {
         )
         val hatNeutral = controllerHatMotion()
 
-        // performClick alone leaves Android in keyboard mode with the old rail focus.
-        InstrumentationRegistry.getInstrumentation().setInTouchMode(true)
+        // Match the physical oracle: establish touch mode and wait until Compose observes it.
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.uiAutomation.adoptShellPermissionIdentity(
+            "android.permission.MODIFY_TOUCH_MODE_STATE"
+        )
+        try {
+            instrumentation.setInTouchMode(true)
+        } finally {
+            instrumentation.uiAutomation.dropShellPermissionIdentity()
+        }
         composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            check(inputModeManager.inputMode == androidx.compose.ui.input.InputMode.Touch)
+        }
 
         composeRule.runOnUiThread {
             check(checkNotNull(rawMotionHandler).invoke(hatDown))
