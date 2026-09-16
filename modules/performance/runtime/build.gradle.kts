@@ -17,6 +17,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+
+    testOptions {
+        // Log/SystemClock/ContextWrapper stubs; recovery storage is supplied by the test.
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {

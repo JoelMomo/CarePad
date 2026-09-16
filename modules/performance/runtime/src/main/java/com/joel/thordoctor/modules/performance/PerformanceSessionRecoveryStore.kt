@@ -340,7 +340,8 @@ object PerformanceSessionRecoveryStore {
             .putLong(KEY_ENDED_AT, endedAt ?: 0L)
             .putString(KEY_END_REASON, endReason)
             .putLong(KEY_BOOT_EPOCH_MS, currentBootEpochMs())
-            .apply()
+            // Persist metadata before samples: process death must not restore an older stage.
+            .commit()
     }
 
     private fun logClearRequest(context: Context, reason: String) {
