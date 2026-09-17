@@ -5,7 +5,6 @@ import com.joel.thordoctor.AppThemeMode
 internal sealed interface CarePadFocusKey {
     data class Rail(val destination: CarePadDestination) : CarePadFocusKey
     data class Module(val packageName: String) : CarePadFocusKey
-    data class Uninstall(val packageName: String) : CarePadFocusKey
     data class Theme(val mode: AppThemeMode) : CarePadFocusKey
     data class ContentFallback(val destination: CarePadDestination) : CarePadFocusKey
 }
@@ -56,8 +55,7 @@ internal fun carePadFocusKeyMatchesDestination(
     destination: CarePadDestination,
 ): Boolean = when (key) {
     is CarePadFocusKey.Rail -> true
-    is CarePadFocusKey.Module,
-    is CarePadFocusKey.Uninstall -> destination == CarePadDestination.HOME
+    is CarePadFocusKey.Module -> destination == CarePadDestination.MODULES
     is CarePadFocusKey.Theme -> destination == CarePadDestination.SETTINGS
     is CarePadFocusKey.ContentFallback -> key.destination == destination
 }
@@ -65,18 +63,14 @@ internal fun carePadFocusKeyMatchesDestination(
 internal fun carePadContentTargets(
     destination: CarePadDestination,
     visiblePackages: Collection<String>,
-    expandedPackage: String? = null,
 ): Set<CarePadFocusKey> = when (destination) {
-    CarePadDestination.HOME -> buildSet {
+    CarePadDestination.HOME -> emptySet()
+
+    CarePadDestination.MODULES -> buildSet {
         visiblePackages.forEach { packageName ->
             add(CarePadFocusKey.Module(packageName))
-            if (expandedPackage == packageName) {
-                add(CarePadFocusKey.Uninstall(packageName))
-            }
         }
     }
-
-    CarePadDestination.ADD_MODULES -> emptySet()
     CarePadDestination.SETTINGS ->
         AppThemeMode.entries.mapTo(linkedSetOf()) { CarePadFocusKey.Theme(it) }
 }
@@ -85,45 +79,38 @@ internal fun carePadContentFallback(
     destination: CarePadDestination,
     visiblePackages: Collection<String>,
 ): CarePadFocusKey = when (destination) {
-    CarePadDestination.HOME -> visiblePackages.firstOrNull()
-        ?.let(CarePadFocusKey::Module)
-        ?: CarePadFocusKey.ContentFallback(CarePadDestination.HOME)
+    CarePadDestination.HOME -> CarePadFocusKey.ContentFallback(CarePadDestination.HOME)
 
-    CarePadDestination.ADD_MODULES ->
-        CarePadFocusKey.ContentFallback(CarePadDestination.ADD_MODULES)
+    CarePadDestination.MODULES -> visiblePackages.firstOrNull()
+        ?.let(CarePadFocusKey::Module)
+        ?: CarePadFocusKey.ContentFallback(CarePadDestination.MODULES)
     CarePadDestination.SETTINGS -> CarePadFocusKey.Theme(AppThemeMode.SYSTEM)
 }
 
 internal fun carePadControllerActionTarget(
     state: CarePadFocusControllerState,
     visiblePackages: Collection<String>,
-    expandedPackage: String? = null,
 ): CarePadFocusKey? = when (val focused = state.observedFocus ?: return null) {
     is CarePadFocusKey.Rail -> focused
     is CarePadFocusKey.Module -> focused.takeIf {
-        state.selectedDestination == CarePadDestination.HOME &&
+        state.selectedDestination == CarePadDestination.MODULES &&
             it.packageName in visiblePackages
-    }
-    is CarePadFocusKey.Uninstall -> focused.takeIf {
-        state.selectedDestination == CarePadDestination.HOME &&
-            it.packageName in visiblePackages &&
-            expandedPackage == it.packageName
     }
     is CarePadFocusKey.Theme -> focused.takeIf {
         state.selectedDestination == CarePadDestination.SETTINGS
     }
-    is CarePadFocusKey.ContentFallback -> null
+    is CarePadFocusKey.ContentFallback -> focused.takeIf {
+        state.selectedDestination == CarePadDestination.HOME &&
+            focused.destination == CarePadDestination.HOME
+    }
 }
 
 internal fun carePadDetailsControllerActionAllowed(
     state: CarePadFocusControllerState,
     visiblePackages: Collection<String>,
 ): Boolean {
-    val packageName = when (val focused = state.observedFocus) {
-        is CarePadFocusKey.Module -> focused.packageName
-        is CarePadFocusKey.Uninstall -> focused.packageName
-        else -> return false
-    }
-    return state.selectedDestination == CarePadDestination.HOME &&
+    val packageName = (state.observedFocus as? CarePadFocusKey.Module)?.packageName
+        ?: return false
+    return state.selectedDestination == CarePadDestination.MODULES &&
         packageName in visiblePackages
 }

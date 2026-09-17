@@ -99,7 +99,6 @@ internal fun CarePadResponsiveNavigationScaffold(
                     onSelected = onSelected,
                 )
                 CarePadResponsiveContent(
-                    selected = selected,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight(),
@@ -109,7 +108,6 @@ internal fun CarePadResponsiveNavigationScaffold(
 
             CarePadNavigationLayout.BOTTOM_BAR -> Column(modifier = Modifier.fillMaxSize()) {
                 CarePadResponsiveContent(
-                    selected = selected,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
@@ -129,21 +127,10 @@ internal fun CarePadResponsiveNavigationScaffold(
 
 @Composable
 private fun CarePadResponsiveContent(
-    selected: CarePadDestination,
     modifier: Modifier,
     content: @Composable (Modifier) -> Unit,
 ) {
-    if (selected != CarePadDestination.ADD_MODULES) {
-        content(modifier)
-        return
-    }
-
-    // Keep the shell content mounted so its existing focus fallback remains a valid L1
-    // target. The catalog surface is opaque and becomes the visible/focusable content.
-    Box(modifier = modifier) {
-        content(Modifier.fillMaxSize())
-        CarePadAddModulesCatalogContent(Modifier.fillMaxSize())
-    }
+    content(modifier)
 }
 
 @OptIn(ExperimentalFoundationApi::class)

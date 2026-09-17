@@ -40,7 +40,7 @@ class CarePadFocusIntegrationTest {
     private lateinit var inputModeManager: InputModeManager
     private lateinit var navigationLayout: CarePadNavigationLayout
     private lateinit var navHome: String
-    private lateinit var navAddModules: String
+    private lateinit var navModules: String
     private lateinit var navSettings: String
     private lateinit var themeSystem: String
     private lateinit var themeLight: String
@@ -49,13 +49,14 @@ class CarePadFocusIntegrationTest {
     private lateinit var performanceModule: String
     private lateinit var gamesBiosModule: String
     private lateinit var controlsModule: String
-    private lateinit var yourModules: String
+    private lateinit var homeTitle: String
+    private lateinit var homeViewModules: String
 
     @Before
     fun setUp() {
         themeMode.value = AppThemeMode.SYSTEM
         navHome = composeRule.activity.getString(R.string.carepad_nav_home)
-        navAddModules = composeRule.activity.getString(R.string.carepad_nav_add_modules)
+        navModules = composeRule.activity.getString(R.string.carepad_nav_modules)
         navSettings = composeRule.activity.getString(R.string.carepad_nav_settings)
         themeSystem = composeRule.activity.getString(R.string.theme_system)
         themeLight = composeRule.activity.getString(R.string.theme_light)
@@ -64,7 +65,8 @@ class CarePadFocusIntegrationTest {
         performanceModule = composeRule.activity.getString(R.string.carepad_module_performance)
         gamesBiosModule = composeRule.activity.getString(R.string.carepad_module_games_bios)
         controlsModule = composeRule.activity.getString(R.string.carepad_module_controls)
-        yourModules = composeRule.activity.getString(R.string.carepad_your_modules)
+        homeTitle = composeRule.activity.getString(R.string.carepad_home_title)
+        homeViewModules = composeRule.activity.getString(R.string.carepad_home_view_modules)
 
         val configuration = composeRule.activity.resources.configuration
         navigationLayout = carePadNavigationLayout(
@@ -203,26 +205,49 @@ class CarePadFocusIntegrationTest {
     }
 
     @Test
-    fun homeDynamicModuleUsesNaturalSpatialCrossingForActiveLayout() {
+    fun homeShortcutIsAVisibleSpatialTargetAndOpensModules() {
         requestKeyboardInputModeForFocusSetup()
-        textNode(performanceModule).assertExists()
         navigationNode(navHome).requestFocus()
         composeRule.waitForIdle()
         navigationNode(navHome).assertIsFocused()
         navigationNode(navHome).assertIsSelected()
 
         pressNavigationToContent()
-        controllerHint().assertExists()
-        assertAnyHomeModuleFocused()
+        textNode(homeViewModules).assertIsFocused()
         navigationNode(navHome).assertIsSelected()
+
+        pressA()
+        textNode(performanceModule).assertExists()
+        navigationNode(navModules).assertIsSelected()
+    }
+
+    @Test
+    fun modulesDynamicModuleUsesNaturalSpatialCrossingForActiveLayout() {
+        requestKeyboardInputModeForFocusSetup()
+        navigationNode(navHome).requestFocus()
+        composeRule.waitForIdle()
+        navigationNode(navHome).assertIsFocused()
+        navigationNode(navHome).assertIsSelected()
+        textNode(performanceModule).assertDoesNotExist()
+
+        pressNavigationForward()
+        navigationNode(navModules).assertIsFocused()
+        pressA()
+        textNode(performanceModule).assertExists()
+        navigationNode(navModules).assertIsSelected()
+
+        pressNavigationToContent()
+        controllerHint().assertExists()
+        assertAnyModuleFocused()
+        navigationNode(navModules).assertIsSelected()
 
         pressContentToNavigation()
         assertAnyNavigationFocused()
-        navigationNode(navHome).assertIsSelected()
+        navigationNode(navModules).assertIsSelected()
 
         pressNavigationToContent()
-        assertAnyHomeModuleFocused()
-        navigationNode(navHome).assertIsSelected()
+        assertAnyModuleFocused()
+        navigationNode(navModules).assertIsSelected()
     }
 
     @Test
@@ -233,7 +258,7 @@ class CarePadFocusIntegrationTest {
         }
         composeRule.waitForIdle()
 
-        textNode(yourModules).assertExists()
+        textNode(homeTitle).assertExists()
         navigationNode(navHome).assertIsSelected()
     }
 
@@ -244,7 +269,7 @@ class CarePadFocusIntegrationTest {
         navigationNode(navHome).assertIsFocused()
 
         pressNavigationForward()
-        navigationNode(navAddModules).assertIsFocused()
+        navigationNode(navModules).assertIsFocused()
         pressNavigationForward()
         navigationNode(navSettings).assertIsFocused()
 
@@ -365,7 +390,7 @@ class CarePadFocusIntegrationTest {
         )
     }
 
-    private fun assertAnyHomeModuleFocused() {
+    private fun assertAnyModuleFocused() {
         check(
             listOf(performanceModule, gamesBiosModule, controlsModule).any { text ->
                 runCatching { textNode(text).assertIsFocused() }.isSuccess
@@ -375,7 +400,7 @@ class CarePadFocusIntegrationTest {
 
     private fun assertAnyNavigationFocused() {
         check(
-            listOf(navHome, navAddModules, navSettings).any { label ->
+            listOf(navHome, navModules, navSettings).any { label ->
                 runCatching { navigationNode(label).assertIsFocused() }.isSuccess
             }
         )

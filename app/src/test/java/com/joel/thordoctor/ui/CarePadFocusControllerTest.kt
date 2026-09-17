@@ -35,7 +35,7 @@ class CarePadFocusControllerTest {
 
     @Test
     fun observedContentFocusMustBelongToSelectedDestination() {
-        val homeModule = CarePadFocusKey.Module("dev.carepad.module.performance")
+        val modulesModule = CarePadFocusKey.Module("dev.carepad.module.performance")
         val state = settingsState()
 
         assertEquals(
@@ -48,7 +48,7 @@ class CarePadFocusControllerTest {
         assertNull(
             reduceCarePadFocus(
                 state,
-                CarePadFocusEvent.FocusObserved(homeModule),
+                CarePadFocusEvent.FocusObserved(modulesModule),
             ).observedFocus,
         )
     }
@@ -77,12 +77,12 @@ class CarePadFocusControllerTest {
     fun contentFallbackIsLocalToDestinationAndVisibleTargets() {
         val visible = listOf("dev.carepad.module.performance")
         assertEquals(
-            CarePadFocusKey.Module(visible.single()),
+            CarePadFocusKey.ContentFallback(CarePadDestination.HOME),
             carePadContentFallback(CarePadDestination.HOME, visible),
         )
         assertEquals(
-            CarePadFocusKey.ContentFallback(CarePadDestination.HOME),
-            carePadContentFallback(CarePadDestination.HOME, emptyList()),
+            CarePadFocusKey.Module(visible.single()),
+            carePadContentFallback(CarePadDestination.MODULES, visible),
         )
         assertEquals(
             system,
@@ -94,28 +94,13 @@ class CarePadFocusControllerTest {
     fun actionValidationUsesObservedPhysicalFocusWithoutZoneState() {
         val visible = listOf("dev.carepad.module.performance")
         val module = CarePadFocusKey.Module(visible.single())
-        val uninstall = CarePadFocusKey.Uninstall(visible.single())
         val moduleState = CarePadFocusControllerState(
             modality = CarePadInputMethod.CONTROLLER,
-            selectedDestination = CarePadDestination.HOME,
+            selectedDestination = CarePadDestination.MODULES,
             observedFocus = module,
         )
         assertEquals(module, carePadControllerActionTarget(moduleState, visible))
         assertTrue(carePadDetailsControllerActionAllowed(moduleState, visible))
-        assertTrue(
-            carePadDetailsControllerActionAllowed(
-                moduleState.copy(observedFocus = uninstall),
-                visible,
-            )
-        )
-        assertEquals(
-            uninstall,
-            carePadControllerActionTarget(
-                moduleState.copy(observedFocus = uninstall),
-                visible,
-                expandedPackage = visible.single(),
-            ),
-        )
     }
 
     private fun settingsState(): CarePadFocusControllerState =

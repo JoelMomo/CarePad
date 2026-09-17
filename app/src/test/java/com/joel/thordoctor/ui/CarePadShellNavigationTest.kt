@@ -37,10 +37,22 @@ class CarePadShellNavigationTest {
         assertEquals(
             listOf(
                 CarePadDestination.HOME,
-                CarePadDestination.ADD_MODULES,
+                CarePadDestination.MODULES,
                 CarePadDestination.SETTINGS,
             ),
             railItems().map { item -> item.destination },
+        )
+    }
+
+    @Test
+    fun legacyAddModulesSavedDestinationRestoresAsModules() {
+        assertEquals(
+            CarePadDestination.MODULES,
+            carePadDestinationFromSavedName("ADD_MODULES"),
+        )
+        assertEquals(
+            CarePadDestination.HOME,
+            carePadDestinationFromSavedName("UNKNOWN"),
         )
     }
 
@@ -78,21 +90,21 @@ class CarePadShellNavigationTest {
         val state = CarePadFocusControllerState(
             modality = CarePadInputMethod.CONTROLLER,
             selectedDestination = CarePadDestination.HOME,
-            observedFocus = CarePadFocusKey.Rail(CarePadDestination.ADD_MODULES),
+            observedFocus = CarePadFocusKey.Rail(CarePadDestination.MODULES),
         )
 
         assertEquals(
-            CarePadFocusKey.Rail(CarePadDestination.ADD_MODULES),
+            CarePadFocusKey.Rail(CarePadDestination.MODULES),
             carePadControllerActionTarget(state, visiblePackages),
         )
     }
 
     @Test
-    fun modulePrimaryActionRequiresHomeAndVisiblePackage() {
+    fun modulePrimaryActionRequiresModulesAndVisiblePackage() {
         val module = CarePadFocusKey.Module(modulePackage)
         val state = CarePadFocusControllerState(
             modality = CarePadInputMethod.CONTROLLER,
-            selectedDestination = CarePadDestination.HOME,
+            selectedDestination = CarePadDestination.MODULES,
             observedFocus = module,
         )
 
@@ -102,26 +114,6 @@ class CarePadShellNavigationTest {
                 state.copy(selectedDestination = CarePadDestination.SETTINGS),
                 visiblePackages,
             )
-        )
-    }
-
-    @Test
-    fun uninstallPrimaryActionRequiresOpenDetails() {
-        val uninstall = CarePadFocusKey.Uninstall(modulePackage)
-        val state = CarePadFocusControllerState(
-            modality = CarePadInputMethod.CONTROLLER,
-            selectedDestination = CarePadDestination.HOME,
-            observedFocus = uninstall,
-        )
-
-        assertNull(carePadControllerActionTarget(state, visiblePackages))
-        assertEquals(
-            uninstall,
-            carePadControllerActionTarget(
-                state,
-                visiblePackages,
-                expandedPackage = modulePackage,
-            ),
         )
     }
 
@@ -144,33 +136,37 @@ class CarePadShellNavigationTest {
     }
 
     @Test
+    fun homeShortcutFallbackIsAControllerActionTarget() {
+        val homeShortcut = CarePadFocusKey.ContentFallback(CarePadDestination.HOME)
+        val state = CarePadFocusControllerState(
+            modality = CarePadInputMethod.CONTROLLER,
+            selectedDestination = CarePadDestination.HOME,
+            observedFocus = homeShortcut,
+        )
+
+        assertEquals(homeShortcut, carePadControllerActionTarget(state, visiblePackages))
+    }
+
+    @Test
     fun fallbackFocusIsNeverAnActionTarget() {
         val state = CarePadFocusControllerState(
             modality = CarePadInputMethod.CONTROLLER,
-            selectedDestination = CarePadDestination.ADD_MODULES,
-            observedFocus = CarePadFocusKey.ContentFallback(CarePadDestination.ADD_MODULES),
+            selectedDestination = CarePadDestination.MODULES,
+            observedFocus = CarePadFocusKey.ContentFallback(CarePadDestination.MODULES),
         )
 
         assertNull(carePadControllerActionTarget(state, visiblePackages))
     }
 
     @Test
-    fun detailsActionTracksObservedModuleOrUninstallPackage() {
+    fun detailsActionTracksObservedModulePackage() {
         val moduleState = CarePadFocusControllerState(
             modality = CarePadInputMethod.CONTROLLER,
-            selectedDestination = CarePadDestination.HOME,
+            selectedDestination = CarePadDestination.MODULES,
             observedFocus = CarePadFocusKey.Module(modulePackage),
         )
 
         assertTrue(carePadDetailsControllerActionAllowed(moduleState, visiblePackages))
-        assertTrue(
-            carePadDetailsControllerActionAllowed(
-                moduleState.copy(
-                    observedFocus = CarePadFocusKey.Uninstall(modulePackage)
-                ),
-                visiblePackages,
-            )
-        )
         assertFalse(
             carePadDetailsControllerActionAllowed(
                 moduleState.copy(

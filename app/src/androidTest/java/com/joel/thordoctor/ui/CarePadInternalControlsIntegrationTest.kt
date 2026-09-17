@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -32,12 +33,12 @@ class CarePadInternalControlsIntegrationTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun controlsOpensInsideCarePadShellAndBackReturnsToYourModules() {
+    fun controlsOpensInsideCarePadShellAndBackReturnsToModules() {
         val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
         val controls = composeRule.activity.getString(R.string.carepad_module_controls)
         val guidedTest = composeRule.activity.getString(ControlsR.string.guided_test)
         val detectedInputs = composeRule.activity.getString(ControlsR.string.detected_inputs)
-        val home = composeRule.activity.getString(R.string.carepad_nav_home)
+        val modules = composeRule.activity.getString(R.string.carepad_nav_modules)
         val yourModules = composeRule.activity.getString(R.string.carepad_your_modules)
 
         composeRule.setContent {
@@ -51,15 +52,11 @@ class CarePadInternalControlsIntegrationTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNode(
-            matcher = hasClickAction() and hasAnyDescendant(hasText(controls)),
-            useUnmergedTree = true,
-        ).performClick()
-        composeRule.waitForIdle()
+        openControls(controls)
 
         actionNode(guidedTest).assertExists()
         actionNode(detectedInputs).assertExists()
-        composeRule.onNodeWithText(home).assertExists()
+        composeRule.onNodeWithText(modules).assertExists()
 
         composeRule.runOnUiThread {
             composeRule.activity.onBackPressedDispatcher.onBackPressed()
@@ -90,11 +87,7 @@ class CarePadInternalControlsIntegrationTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNode(
-            matcher = hasClickAction() and hasAnyDescendant(hasText(controls)),
-            useUnmergedTree = true,
-        ).performClick()
-        composeRule.waitForIdle()
+        openControls(controls)
 
         composeRule.onNodeWithText(touchHint).assertExists()
         val down = controllerKeyEvent(KeyEvent.KEYCODE_DPAD_DOWN, InputDevice.SOURCE_DPAD)
@@ -140,11 +133,7 @@ class CarePadInternalControlsIntegrationTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNode(
-            matcher = hasClickAction() and hasAnyDescendant(hasText(controls)),
-            useUnmergedTree = true,
-        ).performClick()
-        composeRule.waitForIdle()
+        openControls(controls)
         composeRule.onNodeWithText(touchHint).assertExists()
 
         val hatDown = controllerHatMotion(y = 1f)
@@ -198,7 +187,7 @@ class CarePadInternalControlsIntegrationTest {
     fun l1StillMovesFromControlsToRailWithoutSelectedController() {
         val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
         val controls = composeRule.activity.getString(R.string.carepad_module_controls)
-        val home = composeRule.activity.getString(R.string.carepad_nav_home)
+        val modules = composeRule.activity.getString(R.string.carepad_nav_modules)
         var rawKeyHandler: ((KeyEvent) -> Boolean)? = null
 
         composeRule.setContent {
@@ -214,11 +203,7 @@ class CarePadInternalControlsIntegrationTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNode(
-            matcher = hasClickAction() and hasAnyDescendant(hasText(controls)),
-            useUnmergedTree = true,
-        ).performClick()
-        composeRule.waitForIdle()
+        openControls(controls)
 
         composeRule.runOnUiThread {
             check(
@@ -235,7 +220,7 @@ class CarePadInternalControlsIntegrationTest {
             )
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithText(home).assertIsFocused()
+        composeRule.onNodeWithText(modules).assertIsFocused()
     }
 
     @Test
@@ -258,11 +243,7 @@ class CarePadInternalControlsIntegrationTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNode(
-            matcher = hasClickAction() and hasAnyDescendant(hasText(controls)),
-            useUnmergedTree = true,
-        ).performClick()
-        composeRule.waitForIdle()
+        openControls(controls)
 
         composeRule.onNodeWithText(touchHint).assertExists()
         val now = SystemClock.uptimeMillis()
@@ -284,6 +265,20 @@ class CarePadInternalControlsIntegrationTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText(touchHint).assertExists()
+    }
+
+    private fun openControls(controls: String) {
+        val modules = composeRule.activity.getString(R.string.carepad_nav_modules)
+        composeRule.onNode(
+            matcher = hasClickAction() and hasAnyDescendant(hasContentDescription(modules)),
+            useUnmergedTree = true,
+        ).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNode(
+            matcher = hasClickAction() and hasAnyDescendant(hasText(controls)),
+            useUnmergedTree = true,
+        ).performClick()
+        composeRule.waitForIdle()
     }
 
     private fun actionNode(text: String) = composeRule.onNode(

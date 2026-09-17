@@ -1,10 +1,15 @@
 <resources>
     <string name="carepad_nav_home">Inicio</string>
+    <string name="carepad_nav_modules">Módulos</string>
     <string name="carepad_nav_add_modules">Añadir módulos</string>
     <string name="carepad_nav_settings">Ajustes</string>
 
-    <string name="carepad_your_modules">Tus módulos</string>
-    <string name="carepad_no_installed_modules">No hay módulos instalados compatibles.</string>
+    <string name="carepad_home_title">CarePad</string>
+    <string name="carepad_home_intro">Accede a las herramientas de diagnóstico y mantenimiento desde Módulos. Usa Ajustes para la configuración global.</string>
+    <string name="carepad_home_view_modules">Ver módulos</string>
+
+    <string name="carepad_your_modules">Módulos</string>
+    <string name="carepad_no_installed_modules">No hay módulos disponibles en esta versión.</string>
     <string name="carepad_add_modules_not_connected">No hay un catálogo de módulos conectado en esta build.</string>
     <string name="carepad_add_modules_invalid_catalog">El catálogo disponible no se puede verificar. CarePad no instalará ningún módulo desde él.</string>
     <string name="carepad_add_modules_all_installed">Ya tienes instalados todos los módulos disponibles.</string>
@@ -42,8 +47,8 @@
     <string name="carepad_module_settings_delegated_unavailable">No se pudo abrir la configuración del módulo.</string>
     <string name="carepad_module_settings_apply">Aplicar</string>
 
-    <string name="carepad_hint_touch_home">Toca para abrir · Mantén pulsado para detalles</string>
+    <string name="carepad_hint_touch_modules">Toca para abrir · Mantén pulsado para detalles</string>
     <string name="carepad_hint_touch_navigation">Toca para seleccionar</string>
-    <string name="carepad_hint_controller_home">%1$s Abrir · %2$s Detalles · %3$s Atrás · %4$s Navegación</string>
+    <string name="carepad_hint_controller_modules">%1$s Abrir · %2$s Detalles · %3$s Atrás · %4$s Navegación</string>
     <string name="carepad_hint_controller_navigation">%1$s Atrás · %2$s Navegación</string>
 </resources>
