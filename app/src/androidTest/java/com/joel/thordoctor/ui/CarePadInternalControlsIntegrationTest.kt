@@ -63,7 +63,7 @@ class CarePadInternalControlsIntegrationTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText(yourModules).assertExists()
+        composeRule.onNode(hasText(yourModules) and !hasClickAction()).assertExists()
         composeRule.onNodeWithText(controls).assertExists()
     }
 
