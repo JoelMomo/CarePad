@@ -56,7 +56,7 @@ class CarePadInternalControlsIntegrationTest {
 
         actionNode(guidedTest).assertExists()
         actionNode(detectedInputs).assertExists()
-        composeRule.onNodeWithText(modules).assertExists()
+        navigationNode(modules).assertExists()
 
         composeRule.runOnUiThread {
             composeRule.activity.onBackPressedDispatcher.onBackPressed()
@@ -269,10 +269,7 @@ class CarePadInternalControlsIntegrationTest {
 
     private fun openControls(controls: String) {
         val modules = composeRule.activity.getString(R.string.carepad_nav_modules)
-        composeRule.onNode(
-            matcher = hasClickAction() and hasAnyDescendant(hasContentDescription(modules)),
-            useUnmergedTree = true,
-        ).performClick()
+        navigationNode(modules).performClick()
         composeRule.waitForIdle()
         composeRule.onNode(
             matcher = hasClickAction() and hasAnyDescendant(hasText(controls)),
@@ -280,6 +277,11 @@ class CarePadInternalControlsIntegrationTest {
         ).performClick()
         composeRule.waitForIdle()
     }
+
+    private fun navigationNode(label: String) = composeRule.onNode(
+        matcher = hasClickAction() and hasAnyDescendant(hasContentDescription(label)),
+        useUnmergedTree = true,
+    )
 
     private fun actionNode(text: String) = composeRule.onNode(
         matcher = hasClickAction() and hasAnyDescendant(hasText(text)),

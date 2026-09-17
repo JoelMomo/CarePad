@@ -431,7 +431,7 @@ class CarePadControlsTouchModeTest {
             }
         }
         composeRule.waitForIdle()
-        tap(navigation(composeRule.activity.getString(R.string.carepad_nav_modules)))
+        tap(navigation(composeRule.activity.getString(R.string.carepad_nav_modules)), scroll = false)
     }
 
     private fun navigation(label: String) = composeRule.onNode(
@@ -442,13 +442,14 @@ class CarePadControlsTouchModeTest {
         hasClickAction() and hasAnyDescendant(hasText(text)), useUnmergedTree = true,
     )
 
-    private fun tap(node: SemanticsNodeInteraction) {
+    private fun tap(node: SemanticsNodeInteraction, scroll: Boolean = true) {
         // Clear the old controller anchor before scrolling; its bring-into-view work must
         // not move the target after screen coordinates have been measured.
         instrumentation.setInTouchMode(true)
         composeRule.waitForIdle()
         // Make the real target visible before injecting screen coordinates (also in landscape).
-        node.performScrollTo().assertIsDisplayed()
+        if (scroll) node.performScrollTo()
+        node.assertIsDisplayed()
         val target = node.fetchSemanticsNode()
         val visibleBounds = target.boundsInRoot
         assertTrue("Touch target must have nonempty clipped bounds: $visibleBounds", !visibleBounds.isEmpty)
