@@ -135,6 +135,10 @@ fun CarePadSettingsScreen(
         }
 
         item {
+            CarePadModuleSettingsSections()
+        }
+
+        item {
             Text(
                 text = stringResource(R.string.more_apps_support),
                 style = MaterialTheme.typography.titleMedium,
@@ -182,9 +186,6 @@ fun CarePadSettingsScreen(
             }
         }
 
-        item {
-            CarePadModuleSettingsSections()
-        }
     }
 }
 
