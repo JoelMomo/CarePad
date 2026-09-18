@@ -45,7 +45,7 @@ class CarePadInternalControlsIntegrationTest {
                 CarePadShellScreen(
                     onThemeModeChange = { mode -> themeMode.value = mode },
                     onRawInputHandlersChanged = { _, _ -> },
-                    settingsContent = { _, _, _, _ -> },
+                    settingsContent = { _, _, _, _, _ -> },
                 )
             }
         }
@@ -84,7 +84,7 @@ class CarePadInternalControlsIntegrationTest {
                     onRawInputHandlersChanged = { keyHandler, _ ->
                         rawKeyHandler = keyHandler
                     },
-                    settingsContent = { _, _, _, _ -> },
+                    settingsContent = { _, _, _, _, _ -> },
                 )
             }
         }
@@ -129,7 +129,7 @@ class CarePadInternalControlsIntegrationTest {
                         rawKeyHandler = keyHandler
                         rawMotionHandler = motionHandler
                     },
-                    settingsContent = { _, _, _, _ -> },
+                    settingsContent = { _, _, _, _, _ -> },
                     controlsContent = { _, modifier ->
                         Button(onClick = {}, modifier = modifier) {
                             Text(focusTarget)
@@ -208,7 +208,7 @@ class CarePadInternalControlsIntegrationTest {
                     onRawInputHandlersChanged = { keyHandler, _ ->
                         rawKeyHandler = keyHandler
                     },
-                    settingsContent = { _, _, _, _ -> },
+                    settingsContent = { _, _, _, _, _ -> },
                 )
             }
         }
@@ -252,7 +252,7 @@ class CarePadInternalControlsIntegrationTest {
                     onRawInputHandlersChanged = { _, motionHandler ->
                         rawMotionHandler = motionHandler
                     },
-                    settingsContent = { _, _, _, _ -> },
+                    settingsContent = { _, _, _, _, _ -> },
                 )
             }
         }
