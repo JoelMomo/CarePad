@@ -8,7 +8,7 @@ Controller-friendly companion app for **AYN Thor** diagnostics, game and BIOS ch
 
 </div>
 
-[![Android CI](https://github.com/JoelMomo/CarePad/actions/workflows/android.yml/badge.svg)](https://github.com/JoelMomo/CarePad/actions/workflows/android.yml)
+[![Android CI](https://github.com/JoelMomo/CarePad/actions/workflows/android-ci.yml/badge.svg)](https://github.com/JoelMomo/CarePad/actions/workflows/android-ci.yml)
 
 > [!NOTE]
 > CarePad is in active development. This repository is the public source snapshot of the current app and module architecture.
