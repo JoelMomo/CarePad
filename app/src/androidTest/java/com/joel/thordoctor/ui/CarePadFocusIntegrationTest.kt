@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
@@ -205,6 +206,22 @@ class CarePadFocusIntegrationTest {
     }
 
     @Test
+    fun realTouchOnHomeFromModulesSelectsHome() {
+        tapNavigation(navModules)
+        navigationNode(navModules).assertIsSelected()
+        requestKeyboardInputModeForFocusSetup()
+        textNode(controlsModule).requestFocus()
+        composeRule.waitForIdle()
+        textNode(controlsModule).assertIsFocused()
+
+        requestTouchInputModeForPhysicalOracle()
+        tapNavigationWithAndroidTouch(navHome)
+
+        navigationNode(navHome).assertIsSelected()
+        textNode(homeTitle).assertExists()
+    }
+
+    @Test
     fun homeShortcutIsAVisibleSpatialTargetAndOpensModules() {
         requestKeyboardInputModeForFocusSetup()
         navigationNode(navHome).requestFocus()
@@ -324,6 +341,28 @@ class CarePadFocusIntegrationTest {
 
     private fun tapNavigation(label: String) {
         navigationNode(label).performTouchInput { click() }
+        composeRule.waitForIdle()
+    }
+
+    private fun tapNavigationWithAndroidTouch(label: String) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val target = navigationNode(label).fetchSemanticsNode()
+        val visibleBounds = target.boundsInRoot
+        check(!visibleBounds.isEmpty) { "Navigation touch target has empty bounds: $visibleBounds" }
+        val centerOnScreen = target.positionOnScreen - target.positionInRoot + visibleBounds.center
+        val downTime = SystemClock.uptimeMillis()
+        for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+            val event = MotionEvent.obtain(
+                downTime,
+                SystemClock.uptimeMillis(),
+                action,
+                centerOnScreen.x,
+                centerOnScreen.y,
+                0,
+            ).apply { source = InputDevice.SOURCE_TOUCHSCREEN }
+            instrumentation.sendPointerSync(event)
+            event.recycle()
+        }
         composeRule.waitForIdle()
     }
 
