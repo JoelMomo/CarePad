@@ -144,6 +144,26 @@ class CarePadShellNavigationTest {
     }
 
     @Test
+    fun supportPrimaryActionRequiresSettings() {
+        val state = CarePadFocusControllerState(
+            modality = CarePadInputMethod.CONTROLLER,
+            selectedDestination = CarePadDestination.SETTINGS,
+            observedFocus = CarePadFocusKey.Support,
+        )
+
+        assertEquals(
+            CarePadFocusKey.Support,
+            carePadControllerActionTarget(state, emptySet()),
+        )
+        assertNull(
+            carePadControllerActionTarget(
+                state.copy(selectedDestination = CarePadDestination.HOME),
+                emptySet(),
+            )
+        )
+    }
+
+    @Test
     fun fallbackFocusIsNeverAnActionTarget() {
         val state = CarePadFocusControllerState(
             modality = CarePadInputMethod.CONTROLLER,
