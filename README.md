@@ -83,6 +83,12 @@ Some internal package names and compatibility identifiers still use the earlier 
 
 A project license has **not yet been selected**; that remains an explicit product/legal decision.
 
+## Contributing
+
+Bug reports, feature ideas and focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening one.
+
+For security or privacy-sensitive reports, follow [SECURITY.md](SECURITY.md) instead of posting details publicly.
+
 <div align="center">
 
 ## Support development
