@@ -47,7 +47,7 @@ class CarePadControlsRealDispatchTest {
                     CarePadShellScreen(
                         onThemeModeChange = { mode -> themeMode.value = mode },
                         onRawInputHandlersChanged = composeRule.activity::updateRawInputHandlers,
-                        settingsContent = { _, _, _, _ -> },
+                        settingsContent = { _, _, _, _, _ -> },
                         controlsContent = { _, modifier ->
                             Column(
                                 modifier = modifier.padding(24.dp),
