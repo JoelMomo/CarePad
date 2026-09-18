@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.view.InputDevice
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.MotionEvent
@@ -171,6 +172,7 @@ fun CarePadShellScreen(
         onBack: () -> Unit,
         onThemeFocusChanged: (AppThemeMode, Boolean) -> Unit,
         onThemeTouched: (AppThemeMode) -> Unit,
+        onSupportFocusChanged: (Boolean) -> Unit,
         themeFocusRequesters: Map<AppThemeMode, FocusRequester>,
     ) -> Unit,
     controlsControllerFactory: (Context) -> ControlsInternalController = { ControlsInternalController(it) },
@@ -268,6 +270,7 @@ fun CarePadShellScreen(
         is CarePadFocusKey.Module -> moduleFocusRequesters[target.packageName]
         is CarePadFocusKey.Uninstall -> uninstallFocusRequesters[target.packageName]
         is CarePadFocusKey.Theme -> themeFocusRequesters[target.mode]
+        CarePadFocusKey.Support -> null
         is CarePadFocusKey.ContentFallback -> when {
             target.destination != destination -> null
             controlsOpen -> controlsContentFocusRequester
@@ -707,6 +710,17 @@ fun CarePadShellScreen(
                                 true
                             }
 
+                            CarePadFocusKey.Support -> {
+                                performFeedback()
+                                context.startActivity(
+                                    Intent(
+                                        Intent.ACTION_VIEW,
+                                        Uri.parse("https://joelmomo.github.io/#support"),
+                                    )
+                                )
+                                true
+                            }
+
                             is CarePadFocusKey.ContentFallback,
                             null -> false
                         }
@@ -850,6 +864,17 @@ fun CarePadShellScreen(
                             },
                             { mode ->
                                 enterTouchContent(CarePadFocusKey.Theme(mode))
+                            },
+                            { focused ->
+                                if (focused) {
+                                    dispatchFocus(
+                                        CarePadFocusEvent.FocusObserved(CarePadFocusKey.Support)
+                                    )
+                                } else if (
+                                    focusControllerState.observedFocus == CarePadFocusKey.Support
+                                ) {
+                                    dispatchFocus(CarePadFocusEvent.FocusObserved(null))
+                                }
                             },
                             themeFocusRequesters,
                         )
