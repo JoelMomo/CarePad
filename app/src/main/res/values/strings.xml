@@ -142,5 +142,7 @@
     <string name="information">Información</string>
     <string name="version">Versión</string>
     <string name="app">Aplicación</string>
+    <string name="more_apps_support">Más apps y apoyo</string>
+    <string name="more_apps_support_description">Explora mis otros proyectos o apoya el desarrollo.</string>
 
 </resources>
