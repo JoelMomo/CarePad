@@ -79,6 +79,8 @@ GitHub Actions also runs build, unit and emulator-level validation.
 
 CarePad was published as a clean public snapshot rather than by exposing the private development history. See [MIGRATION_NOTES.md](MIGRATION_NOTES.md) for what was preserved and intentionally excluded.
 
+Some internal package names and compatibility identifiers still use the earlier `DocThor` / `thordoctor` naming intentionally, so existing app data and module contracts are not broken.
+
 A project license has **not yet been selected**; that remains an explicit product/legal decision.
 
 <div align="center">
