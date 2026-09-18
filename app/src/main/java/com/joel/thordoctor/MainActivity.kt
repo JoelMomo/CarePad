@@ -125,6 +125,7 @@ private fun ThorDoctorApp(
                 _,
                 onThemeFocusChanged,
                 onThemeTouched,
+                onSupportFocusChanged,
                 themeFocusRequesters,
             ->
             CarePadSettingsScreen(
@@ -134,6 +135,7 @@ private fun ThorDoctorApp(
                     onThemeModeChange(mode)
                 },
                 onControllerThemeFocusChanged = onThemeFocusChanged,
+                onControllerSupportFocusChanged = onSupportFocusChanged,
                 controllerFocusRequesters = themeFocusRequesters,
             )
         }
