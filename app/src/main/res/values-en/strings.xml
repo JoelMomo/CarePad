@@ -142,5 +142,7 @@
     <string name="information">Information</string>
     <string name="version">Version</string>
     <string name="app">Application</string>
+    <string name="more_apps_support">More apps &amp; support</string>
+    <string name="more_apps_support_description">Explore my other projects or support development.</string>
 
 </resources>
