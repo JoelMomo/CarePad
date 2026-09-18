@@ -12,7 +12,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
-import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.SettingsBrightness
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -27,7 +26,6 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -46,11 +44,8 @@ fun CarePadSettingsScreen(
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
     onControllerThemeFocusChanged: (AppThemeMode, Boolean) -> Unit,
-    onControllerSupportFocusChanged: (Boolean) -> Unit,
     controllerFocusRequesters: Map<AppThemeMode, FocusRequester>,
 ) {
-    val uriHandler = LocalUriHandler.current
-
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -137,55 +132,6 @@ fun CarePadSettingsScreen(
         item {
             CarePadModuleSettingsSections()
         }
-
-        item {
-            Text(
-                text = stringResource(R.string.more_apps_support),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-
-        item {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusProperties { canFocus = true }
-                    .onFocusChanged { state ->
-                        onControllerSupportFocusChanged(state.isFocused)
-                    }
-                    .cozyClickable {
-                        uriHandler.openUri("https://joelmomo.github.io/#support")
-                    },
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surface,
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.OpenInNew,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.more_apps_support),
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = stringResource(R.string.more_apps_support_description),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-
     }
 }
 

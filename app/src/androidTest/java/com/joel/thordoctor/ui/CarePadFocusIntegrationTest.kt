@@ -82,7 +82,6 @@ class CarePadFocusIntegrationTest {
                             _,
                             onThemeFocusChanged,
                             onThemeTouched,
-                            onSupportFocusChanged,
                             themeFocusRequesters,
                         ->
                         CarePadSettingsScreen(
@@ -92,7 +91,6 @@ class CarePadFocusIntegrationTest {
                                 themeMode.value = mode
                             },
                             onControllerThemeFocusChanged = onThemeFocusChanged,
-                            onControllerSupportFocusChanged = onSupportFocusChanged,
                             controllerFocusRequesters = themeFocusRequesters,
                         )
                     },

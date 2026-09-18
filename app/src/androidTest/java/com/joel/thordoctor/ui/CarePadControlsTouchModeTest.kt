@@ -418,7 +418,7 @@ class CarePadControlsTouchModeTest {
                     CarePadShellScreen(
                         onThemeModeChange = {},
                         onRawInputHandlersChanged = composeRule.activity::updateRawInputHandlers,
-                        settingsContent = { _, _, _, _, _ -> },
+                        settingsContent = { _, _, _, _ -> },
                         controlsControllerFactory = { context ->
                             ControlsInternalController(context,
                                 { if (controllerAvailable) listOf(device) else emptyList() },

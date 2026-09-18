@@ -12,7 +12,6 @@ internal fun CarePadShellScreen(
         onBack: () -> Unit,
         onThemeFocusChanged: (AppThemeMode, Boolean) -> Unit,
         onThemeTouched: (AppThemeMode) -> Unit,
-        onSupportFocusChanged: (Boolean) -> Unit,
         themeFocusRequesters: Map<AppThemeMode, FocusRequester>,
     ) -> Unit,
 ) {

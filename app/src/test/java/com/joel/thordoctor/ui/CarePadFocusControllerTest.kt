@@ -74,19 +74,6 @@ class CarePadFocusControllerTest {
     }
 
     @Test
-    fun supportActionBelongsToSettings() {
-        val support = CarePadFocusKey.Support
-        val state = settingsState().copy(observedFocus = support)
-        assertEquals(support, carePadControllerActionTarget(state, emptyList()))
-        assertNull(
-            carePadControllerActionTarget(
-                state.copy(selectedDestination = CarePadDestination.HOME),
-                emptyList(),
-            )
-        )
-    }
-
-    @Test
     fun contentFallbackIsLocalToDestinationAndVisibleTargets() {
         val visible = listOf("dev.carepad.module.performance")
         assertEquals(

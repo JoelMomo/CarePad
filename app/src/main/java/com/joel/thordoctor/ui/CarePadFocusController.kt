@@ -7,7 +7,6 @@ internal sealed interface CarePadFocusKey {
     data class Module(val packageName: String) : CarePadFocusKey
     data class Uninstall(val packageName: String) : CarePadFocusKey
     data class Theme(val mode: AppThemeMode) : CarePadFocusKey
-    data object Support : CarePadFocusKey
     data class ContentFallback(val destination: CarePadDestination) : CarePadFocusKey
 }
 
@@ -60,7 +59,6 @@ internal fun carePadFocusKeyMatchesDestination(
     is CarePadFocusKey.Module,
     is CarePadFocusKey.Uninstall -> destination == CarePadDestination.HOME
     is CarePadFocusKey.Theme -> destination == CarePadDestination.SETTINGS
-    CarePadFocusKey.Support -> destination == CarePadDestination.SETTINGS
     is CarePadFocusKey.ContentFallback -> key.destination == destination
 }
 
@@ -79,10 +77,8 @@ internal fun carePadContentTargets(
     }
 
     CarePadDestination.ADD_MODULES -> emptySet()
-    CarePadDestination.SETTINGS -> buildSet {
-        AppThemeMode.entries.mapTo(this) { CarePadFocusKey.Theme(it) }
-        add(CarePadFocusKey.Support)
-    }
+    CarePadDestination.SETTINGS ->
+        AppThemeMode.entries.mapTo(linkedSetOf()) { CarePadFocusKey.Theme(it) }
 }
 
 internal fun carePadContentFallback(
@@ -114,9 +110,6 @@ internal fun carePadControllerActionTarget(
             expandedPackage == it.packageName
     }
     is CarePadFocusKey.Theme -> focused.takeIf {
-        state.selectedDestination == CarePadDestination.SETTINGS
-    }
-    CarePadFocusKey.Support -> CarePadFocusKey.Support.takeIf {
         state.selectedDestination == CarePadDestination.SETTINGS
     }
     is CarePadFocusKey.ContentFallback -> null
