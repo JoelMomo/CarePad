@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a reproducible CarePad problem.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        CarePad is in active development. Clear reproduction details are especially useful.
+  - type: input
+    id: build
+    attributes:
+      label: Build or commit
+      placeholder: Release, artifact name, or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and firmware
+      placeholder: e.g. AYN Thor · firmware .377
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - CarePad shell / navigation
+        - Performance
+        - Games & BIOS
+        - Controls
+        - Module system
+        - Settings
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: input
+    attributes:
+      label: Input method when the issue happened
+      options:
+        - Touch
+        - D-pad / controller
+        - Switched between touch and controller
+        - Not relevant
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Remove personal or sensitive information before posting.
