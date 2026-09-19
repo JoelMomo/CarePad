@@ -66,14 +66,13 @@ class CarePadControlsTouchModeTest {
     private var focusColor = Color.Unspecified
     private var focusOverlayColor = Color.Unspecified
 
+
     @Test
     fun firstHatKeyGestureAfterAndroidTouchFocusesVisibleUsableControlsAction() {
         installRealControls()
         tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
         assertAndroidTouch()
 
-        // HAT is delivered before KEY, as allowed by the recorded Thor gesture contract.
-        // Dispatching through the Activity preserves its raw bridge and Compose fallback.
         hat(1f)
         key(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.ACTION_DOWN)
         key(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.ACTION_UP)
@@ -83,26 +82,20 @@ class CarePadControlsTouchModeTest {
         val guided = action(composeRule.activity.getString(ControlsR.string.guided_test))
         guided.assertIsEnabled().assertIsDisplayed().assertIsFocused()
         assertVisibleBorder(guided)
-        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_modules))
-            .assertIsNotFocused()
+        navigation(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsNotFocused()
 
-        // Focus must activate the real module action, not just set an observed-mode flag.
         key(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.ACTION_DOWN)
         key(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.ACTION_UP, flags = KeyEvent.FLAG_CANCELED)
         assertFocusedAction(ControlsR.string.guided_test)
-        key(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.ACTION_DOWN)
-        key(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.ACTION_DOWN, repeat = 1)
-        key(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.ACTION_UP)
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.prepare_test))
-            .assertExists()
-        action(composeRule.activity.getString(ControlsR.string.start_test)).assertIsEnabled()
-        assertAnyInternalActionFocused(ControlsR.string.back, ControlsR.string.start_test)
-        // Preparation places Back and Start beside each other, above the navigation bar.
-        val backFocused = action(composeRule.activity.getString(ControlsR.string.back))
-            .fetchSemanticsNode().config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Focused) { false }
-        press(if (backFocused) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT)
-        assertFocusedAction(if (backFocused) ControlsR.string.start_test else ControlsR.string.back)
+        press(KeyEvent.KEYCODE_BUTTON_A)
+
+        waitForText(composeRule.activity.getString(ControlsR.string.prepare_test))
+        assertCountdownVisible()
+        assertNoIntermediateActions()
+
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.prepare_test)).assertIsDisplayed()
+        navigation(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsNotFocused()
     }
 
     @Test
@@ -160,20 +153,51 @@ class CarePadControlsTouchModeTest {
         }
     }
 
+
     @Test
-    fun replacedScreenTargetsCanAcquireFocusAfterTheFirstDpad() {
+    fun genericControllerDoesNotInventFaceButtonPositions() {
+        installRealControls(deviceName = "Generic USB Controller")
+        tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
+        tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
+
+        waitForDigitalTarget(ControlsR.string.dpad_up, 11_000)
+        composeRule.onNodeWithText(
+            composeRule.activity.getString(ControlsR.string.generic_face_mapping_inconclusive),
+        ).assertIsDisplayed()
+        assertTextAbsent(
+            composeRule.activity.getString(
+                ControlsR.string.digital_target_instruction,
+                composeRule.activity.getString(ControlsR.string.button_a),
+            ),
+        )
+    }
+
+    @Test
+    fun nintendoFamilyMapsBottomPhysicalButtonToAndroidButtonB() {
+        installRealControls(deviceName = "Nintendo Switch Pro Controller")
+        tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
+        tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
+
+        waitForDigitalTarget(ControlsR.string.button_a, 11_000)
+        waitForCaptureArm()
+        press(KeyEvent.KEYCODE_BUTTON_B)
+        waitForDigitalTarget(ControlsR.string.button_b)
+    }
+
+    @Test
+    fun guidedStartIsSingleActionAndBackCancelsDirectly() {
         installRealControls()
         tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
         tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
-        assertAndroidTouch()
-        press(KeyEvent.KEYCODE_DPAD_DOWN)
-        assertAnyInternalActionFocused(ControlsR.string.back, ControlsR.string.start_test)
 
-        // Touch replaces the preparation actions with the real digital-test actions.
-        tap(action(composeRule.activity.getString(ControlsR.string.start_test)))
-        assertAndroidTouch()
-        press(KeyEvent.KEYCODE_DPAD_DOWN)
-        assertFocusedAction(ControlsR.string.try_this_control)
+        waitForText(composeRule.activity.getString(ControlsR.string.prepare_test))
+        assertCountdownVisible()
+        assertNoIntermediateActions()
+
+        press(KeyEvent.KEYCODE_BACK)
+        action(composeRule.activity.getString(ControlsR.string.guided_test)).assertIsDisplayed().assertIsEnabled()
+        assertTextAbsent(composeRule.activity.getString(ControlsR.string.prepare_test))
+        assertTextAbsent(composeRule.activity.getString(ControlsR.string.leave_test_title))
     }
 
     @Test
@@ -183,7 +207,7 @@ class CarePadControlsTouchModeTest {
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         assertFocusedAction(ControlsR.string.guided_test)
         press(KeyEvent.KEYCODE_BUTTON_L1)
-        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsFocused()
+        navigation(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsFocused()
         press(KeyEvent.KEYCODE_BUTTON_L1)
         assertFocusedAction(ControlsR.string.guided_test)
 
@@ -215,90 +239,62 @@ class CarePadControlsTouchModeTest {
         composeRule.waitForIdle()
         assertFocusedAction(ControlsR.string.guided_test)
         press(KeyEvent.KEYCODE_DPAD_LEFT)
-        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsFocused()
+        navigation(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsFocused()
         press(KeyEvent.KEYCODE_DPAD_RIGHT)
         assertFocusedAction(ControlsR.string.guided_test)
     }
 
+
     @Test
-    fun focusedTryActionEntersCaptureWithoutGivingFocusToRail() {
+    fun automaticDigitalCaptureAutoAdvancesWithoutGivingFocusToRail() {
         installRealControls()
         tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
         tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
-        tap(action(composeRule.activity.getString(ControlsR.string.start_test)))
-        press(KeyEvent.KEYCODE_DPAD_DOWN)
-        assertFocusedAction(ControlsR.string.try_this_control)
+        waitForDigitalTarget(ControlsR.string.button_a, 11_000)
+        assertNoIntermediateActions()
 
-        // Observe every rail focus callback, including a transient escape hidden by a retry.
         assertTrue("CI must enable the existing focus trace", Log.isLoggable("CarePadT1Focus", Log.DEBUG))
-        val marker = "qa46-capture-${SystemClock.uptimeMillis()}"
+        val marker = "pg8-digital-${SystemClock.uptimeMillis()}"
         Log.d("CarePadT1Focus", "$marker-start")
-        press(KeyEvent.KEYCODE_BUTTON_A)
-        val armedAt = SystemClock.uptimeMillis()
-        action(composeRule.activity.getString(ControlsR.string.try_this_control)).assertIsNotEnabled()
-        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.listening_for_attempt)).assertExists()
-        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsNotFocused()
-        assertFocusedAction(ControlsR.string.back)
 
-        // B is captured, even though the retained internal action is Back.
+        waitForCaptureArm()
         press(KeyEvent.KEYCODE_BUTTON_B)
-        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.listening_for_attempt)).assertExists()
-        composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - armedAt >= 250 }
-        press(KeyEvent.KEYCODE_BUTTON_A)
-        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.control_observed)).assertExists()
-        action(composeRule.activity.getString(ControlsR.string.next_control)).assertIsEnabled()
-        assertFocusedAction(ControlsR.string.back)
+        assertDigitalTarget(ControlsR.string.button_a)
+        navigation(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsNotFocused()
+
+        val faceTargets = listOf(
+            KeyEvent.KEYCODE_BUTTON_A to ControlsR.string.button_b,
+            KeyEvent.KEYCODE_BUTTON_B to ControlsR.string.button_x,
+            KeyEvent.KEYCODE_BUTTON_X to ControlsR.string.button_y,
+            KeyEvent.KEYCODE_BUTTON_Y to ControlsR.string.dpad_up,
+        )
+        for ((code, nextTarget) in faceTargets) {
+            waitForCaptureArm()
+            press(code)
+            waitForDigitalTarget(nextTarget)
+            assertNoIntermediateActions()
+        }
+
+        waitForCaptureArm()
+        pressGuidedDigital(KeyEvent.KEYCODE_DPAD_UP)
+        waitForDigitalTarget(ControlsR.string.dpad_right)
+        navigation(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsNotFocused()
         Log.d("CarePadT1Focus", "$marker-end")
 
         val logs = ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(
             "logcat -d -v brief -s CarePadT1Focus:D '*:S'",
         )).bufferedReader().use { it.readText() }
-        assertTrue("Capture trace start must be present", logs.contains("$marker-start"))
-        assertTrue("Capture trace end must be present", logs.contains("$marker-end"))
         val captureTrace = logs.substringAfter("$marker-start").substringBefore("$marker-end")
-        assertFalse("Rail must never receive focus during capture entry/release:\n$captureTrace",
+        assertFalse("Rail must never receive focus during continuous capture:\n$captureTrace",
             captureTrace.lineSequence().any { "stage=rail-focus" in it && "isFocused=true" in it })
-        assertEquals("Only the first A activates an action; the second is captured", 1,
+        assertEquals("Captured inputs must not activate UI actions", 0,
             Regex("stage=action-activate").findAll(captureTrace).count())
-        press(KeyEvent.KEYCODE_DPAD_UP)
-        assertFocusedAction(ControlsR.string.next_control)
     }
 
-    @Test
-    fun guidedCaptureKeepsFaceAndHatGesturesUntilReleaseThenAllowsNavigation() {
-        installRealControls()
-        tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
-        tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
-        tap(action(composeRule.activity.getString(ControlsR.string.start_test)))
-        val codes = listOf(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B,
-            KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_DPAD_UP)
-        for (code in codes) {
-            tap(action(composeRule.activity.getString(ControlsR.string.try_this_control)))
-            // The product explicitly excludes the first 250 ms after arming from observation.
-            val armedAt = SystemClock.uptimeMillis()
-            composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - armedAt >= 250 }
-            if (code == KeyEvent.KEYCODE_DPAD_UP) hat(-1f)
-            key(code, KeyEvent.ACTION_DOWN)
-            // Exercise neutral before KEY_UP: the release must not activate a new action.
-            if (code == KeyEvent.KEYCODE_DPAD_UP) hat(0f)
-            key(code, KeyEvent.ACTION_UP)
-            composeRule.waitForIdle()
-            composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.control_observed)).assertIsDisplayed()
-            composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsNotFocused()
-            if (code != KeyEvent.KEYCODE_DPAD_UP) {
-                tap(action(composeRule.activity.getString(ControlsR.string.next_control)))
-            }
-        }
-        // CarePad's hint already says controller; Android still entered via touch during capture.
-        press(KeyEvent.KEYCODE_DPAD_DOWN)
-        assertFocusedAction(ControlsR.string.next_control)
-        press(KeyEvent.KEYCODE_DPAD_DOWN)
-        assertFocusedAction(ControlsR.string.back)
-    }
+
 
     @Test
-    fun focusedStickTryEntersCaptureBeforeAnyMotionWithoutGivingFocusToRail() {
-        // Settle the preceding landscape test's configuration before installing the device catalogue.
+    fun stickWindowsRunForFullCountdownAndSummaryOpensAutomatically() {
         composeRule.runOnUiThread {
             composeRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
@@ -308,76 +304,130 @@ class CarePadControlsTouchModeTest {
         installRealControls()
         tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
         tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
-        tap(action(composeRule.activity.getString(ControlsR.string.start_test)))
-        // Reach the stick through the real digital sequence, without setting controller state.
-        val digitalCodes = listOf(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B,
-            KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_DPAD_UP,
-            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT)
-        for ((index, code) in digitalCodes.withIndex()) {
-            tap(action(composeRule.activity.getString(ControlsR.string.try_this_control)))
-            val armedAt = SystemClock.uptimeMillis()
-            composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - armedAt >= 250 }
-            press(code)
-            hat(0f) // Finish the advertised HAT drain after the digital KEY release.
-            composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.control_observed)).assertExists()
-            tap(action(composeRule.activity.getString(if (index == digitalCodes.lastIndex)
-                ControlsR.string.continue_label else ControlsR.string.next_control)))
+
+        val digitalTargets = listOf(
+            KeyEvent.KEYCODE_BUTTON_A to ControlsR.string.button_a,
+            KeyEvent.KEYCODE_BUTTON_B to ControlsR.string.button_b,
+            KeyEvent.KEYCODE_BUTTON_X to ControlsR.string.button_x,
+            KeyEvent.KEYCODE_BUTTON_Y to ControlsR.string.button_y,
+            KeyEvent.KEYCODE_DPAD_UP to ControlsR.string.dpad_up,
+            KeyEvent.KEYCODE_DPAD_RIGHT to ControlsR.string.dpad_right,
+            KeyEvent.KEYCODE_DPAD_DOWN to ControlsR.string.dpad_down,
+            KeyEvent.KEYCODE_DPAD_LEFT to ControlsR.string.dpad_left,
+        )
+        for ((index, target) in digitalTargets.withIndex()) {
+            waitForDigitalTarget(target.second, if (index == 0) 11_000 else 2_500)
+            waitForCaptureArm()
+            pressGuidedDigital(target.first)
         }
 
-        assertTrue("CI must enable the existing focus trace", Log.isLoggable("CarePadT1Focus", Log.DEBUG))
-        for (left in listOf(true, false)) {
-            // QA-47 entered LEFT_MOVE by A with restored content focus, not by touch recovery.
-            if (composeInputModeManager.inputMode == InputMode.Touch) press(KeyEvent.KEYCODE_DPAD_DOWN)
-            assertAnyInternalActionFocused(ControlsR.string.back, ControlsR.string.stick_is_still)
-            val backFocused = action(composeRule.activity.getString(ControlsR.string.back))
-                .fetchSemanticsNode().config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Focused) { false }
-            if (backFocused) press(KeyEvent.KEYCODE_DPAD_RIGHT)
-            assertFocusedAction(ControlsR.string.stick_is_still)
-            press(KeyEvent.KEYCODE_BUTTON_A)
-            assertFocusedAction(ControlsR.string.try_stick_movement)
-            val marker = "qa47-stick-left=$left-${SystemClock.uptimeMillis()}"
-            Log.d("CarePadT1Focus", "$marker-start")
-            press(KeyEvent.KEYCODE_BUTTON_A)
-            val armedAt = SystemClock.uptimeMillis()
-            action(composeRule.activity.getString(ControlsR.string.try_stick_movement)).assertIsNotEnabled()
-            composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.listening_for_attempt)).assertExists()
-            Log.d("CarePadT1Focus", "$marker-before-first-motion")
+        waitForText(composeRule.activity.getString(ControlsR.string.left_rest_instruction), 2_500)
+        assertCountdownVisible()
+        assertNoIntermediateActions()
+        waitForText(composeRule.activity.getString(ControlsR.string.left_move_instruction), 11_000)
+        assertCountdownVisible()
+        val leftMoveStarted = SystemClock.uptimeMillis()
+        waitForCaptureArm()
+        stick(true, 1f, 0f)
+        val leftObservedAt = SystemClock.uptimeMillis()
+        composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - leftObservedAt >= 500 }
+        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.left_move_instruction)).assertIsDisplayed()
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        navigation(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsNotFocused()
+        stick(true, 0f, 0f)
+        waitForText(composeRule.activity.getString(ControlsR.string.right_rest_instruction), 11_000)
+        assertTrue("Left movement window must not complete early", SystemClock.uptimeMillis() - leftMoveStarted >= 7_500)
 
-            val logs = ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(
-                "logcat -d -v brief -s CarePadT1Focus:D '*:S'",
-            )).bufferedReader().use { it.readText() }
-            assertTrue("Capture entry trace start must be present", logs.contains("$marker-start"))
-            assertTrue("Pre-motion boundary must be present", logs.contains("$marker-before-first-motion"))
-            val entryTrace = logs.substringAfter("$marker-start").substringBefore("$marker-before-first-motion")
-            assertEquals("A must activate the focused stick action exactly once", 1,
-                Regex("stage=action-activate").findAll(entryTrace).count())
-            assertFalse("No motion may cause this capture-entry observation", "stage=motion-result" in entryTrace)
-            assertFalse("Rail must never gain focus BEFORE the first stick movement:\n$entryTrace",
-                entryTrace.lineSequence().any { "stage=rail-focus" in it && "isFocused=true" in it })
-            // Initial focus may return to Back in CI but to the Modules rail item on hardware; neither may own this handoff.
-            assertFalse("Content must retain focus while arming, before any stick movement:\n$entryTrace",
-                entryTrace.lineSequence().any { "stage=content-focus" in it && "hasFocus=false" in it })
-            composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsNotFocused()
-            assertFocusedAction(ControlsR.string.back)
-
-            press(KeyEvent.KEYCODE_BUTTON_B)
-            press(KeyEvent.KEYCODE_BUTTON_A)
-            composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.listening_for_attempt)).assertExists()
-            composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - armedAt >= 250 }
-            stick(left, 1f, 0f)
-            composeRule.waitForIdle()
-            composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.stick_observed)).assertExists()
-            press(KeyEvent.KEYCODE_DPAD_DOWN) // Held stick still owns capture; no parallel navigation.
-            assertFocusedAction(ControlsR.string.back)
-            stick(left, 0f, 0f)
-            composeRule.waitForIdle()
-            press(KeyEvent.KEYCODE_DPAD_UP)
-            assertFocusedAction(ControlsR.string.continue_label)
-            press(KeyEvent.KEYCODE_BUTTON_A)
-        }
-        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.test_finished)).assertExists()
+        assertCountdownVisible()
+        waitForText(composeRule.activity.getString(ControlsR.string.right_move_instruction), 11_000)
+        assertCountdownVisible()
+        val rightMoveStarted = SystemClock.uptimeMillis()
+        waitForCaptureArm()
+        stick(false, 1f, 0f)
+        val rightObservedAt = SystemClock.uptimeMillis()
+        composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - rightObservedAt >= 500 }
+        composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.right_move_instruction)).assertIsDisplayed()
+        stick(false, 0f, 0f)
+        waitForText(composeRule.activity.getString(ControlsR.string.test_finished), 11_000)
+        assertTrue("Right movement window must not complete early", SystemClock.uptimeMillis() - rightMoveStarted >= 7_500)
+        assertNoIntermediateActions()
     }
 
+    private fun waitForText(text: String, timeoutMillis: Long = 2_500L) {
+        composeRule.waitUntil(timeoutMillis) {
+            runCatching { composeRule.onNodeWithText(text).fetchSemanticsNode() }.isSuccess
+        }
+    }
+
+    private fun waitForDigitalTarget(buttonNameRes: Int, timeoutMillis: Long = 2_500L) {
+        val buttonName = composeRule.activity.getString(buttonNameRes)
+        waitForText(composeRule.activity.getString(ControlsR.string.digital_target_instruction, buttonName), timeoutMillis)
+    }
+
+    private fun assertDigitalTarget(buttonNameRes: Int) {
+        val buttonName = composeRule.activity.getString(buttonNameRes)
+        composeRule.onNodeWithText(
+            composeRule.activity.getString(ControlsR.string.digital_target_instruction, buttonName),
+        ).assertIsDisplayed()
+    }
+
+    private fun waitForCaptureArm() {
+        val startedAt = SystemClock.uptimeMillis()
+        composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - startedAt >= 300 }
+    }
+
+    private fun assertCountdownVisible() {
+        composeRule.waitUntil(2_000) {
+            (8 downTo 0).any { seconds ->
+                runCatching {
+                    composeRule.onNodeWithText(
+                        composeRule.activity.getString(ControlsR.string.guided_countdown, seconds),
+                    ).assertIsDisplayed()
+                }.isSuccess
+            }
+        }
+    }
+
+    private fun assertNoIntermediateActions() {
+        listOf(
+            ControlsR.string.start_test,
+            ControlsR.string.try_this_control,
+            ControlsR.string.next_control,
+            ControlsR.string.continue_label,
+            ControlsR.string.tried_not_detected,
+            ControlsR.string.stick_is_still,
+            ControlsR.string.try_stick_movement,
+        ).forEach { assertActionAbsent(it) }
+    }
+
+    private fun assertActionAbsent(textRes: Int) {
+        val text = composeRule.activity.getString(textRes)
+        assertTrue("Unexpected action is present: $text", runCatching { action(text).fetchSemanticsNode() }.isFailure)
+    }
+
+    private fun assertTextAbsent(text: String) {
+        assertTrue("Unexpected text is present: $text", runCatching {
+            composeRule.onNodeWithText(text).fetchSemanticsNode()
+        }.isFailure)
+    }
+
+    private fun pressGuidedDigital(code: Int) {
+        when (code) {
+            KeyEvent.KEYCODE_DPAD_UP -> dpadGesture(code, 0f, -1f)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> dpadGesture(code, 1f, 0f)
+            KeyEvent.KEYCODE_DPAD_DOWN -> dpadGesture(code, 0f, 1f)
+            KeyEvent.KEYCODE_DPAD_LEFT -> dpadGesture(code, -1f, 0f)
+            else -> press(code)
+        }
+    }
+
+    private fun dpadGesture(code: Int, x: Float, y: Float) {
+        hat(x, y)
+        key(code, KeyEvent.ACTION_DOWN)
+        key(code, KeyEvent.ACTION_UP)
+        hat(0f, 0f)
+        composeRule.waitForIdle()
+    }
     private fun assertFocusedAction(textRes: Int) {
         val node = action(composeRule.activity.getString(textRes))
         node.assertIsDisplayed().assertIsEnabled().assertIsFocused()
@@ -395,10 +445,10 @@ class CarePadControlsTouchModeTest {
         assertVisibleBorder(focused.single())
     }
 
-    private fun installRealControls() {
+    private fun installRealControls(deviceName: String = "Xbox test controller") {
         val sources = Sources(gamepad = true, joystick = true, dpad = true)
         val device = DeviceInfo(
-            DEVICE_ID, "t1-test-device", 1, 1, "T1 test controller", 1,
+            DEVICE_ID, "t1-test-device", 1, 1, deviceName, 1,
             false, true, sources, Button.entries.toSet(),
             listOf(Axes.X, Axes.Y, Axes.Z, Axes.RZ, Axes.HAT_X, Axes.HAT_Y).map {
                 RangeInfo(it, sources, -1f, 1f, if (it in listOf(Axes.HAT_X, Axes.HAT_Y)) 0f else 0.1f)
@@ -478,10 +528,15 @@ class CarePadControlsTouchModeTest {
         }
     }
 
-    private fun hat(y: Float) {
+    private fun hat(y: Float) = hat(0f, y)
+
+    private fun hat(x: Float, y: Float) {
         val now = SystemClock.uptimeMillis()
         val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0 })
-        val coordinates = arrayOf(MotionEvent.PointerCoords().apply { setAxisValue(MotionEvent.AXIS_HAT_Y, y) })
+        val coordinates = arrayOf(MotionEvent.PointerCoords().apply {
+            setAxisValue(MotionEvent.AXIS_HAT_X, x)
+            setAxisValue(MotionEvent.AXIS_HAT_Y, y)
+        })
         val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_MOVE, 1, properties, coordinates, 0, 0, 1f, 1f, DEVICE_ID, 0, InputDevice.SOURCE_JOYSTICK, 0)
         composeRule.runOnUiThread { composeRule.activity.dispatchGenericMotionEvent(event) }
         event.recycle()
