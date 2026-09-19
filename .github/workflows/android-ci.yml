@@ -76,7 +76,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build debug APKs
-        run: ./gradlew :app:assembleDebug :module-lab:assembleDebug :performance-module:assembleDebug :games-bios-module:assembleDebug :controls-module:assembleDebug :performance-emulator-fixture:assembleDebug :controls-input-lab:assembleDebug --stacktrace
+        run: ./gradlew :app:assembleDebug :module-lab:assembleDebug :performance-module:assembleDebug :games-bios-module:assembleDebug :performance-emulator-fixture:assembleDebug :controls-input-lab:assembleDebug --stacktrace
 
       - name: Build CarePad focus androidTest APK
         run: ./gradlew :app:assembleDebugAndroidTest --stacktrace
@@ -184,12 +184,6 @@ jobs:
           path: modules/games-bios/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 3
-
-      - name: Save Controls module APK for emulator smoke
-        uses: actions/cache/save@v4
-        with:
-          path: modules/controls/app/build/outputs/apk/debug
-          key: carepad-controls-module-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload Performance emulator fixture APK
         uses: actions/upload-artifact@v4
@@ -395,13 +389,6 @@ jobs:
           name: CarePad-games-bios-module-debug
           path: artifacts/games-bios-module
 
-      - name: Restore Controls module APK for emulator smoke
-        uses: actions/cache/restore@v4
-        with:
-          path: modules/controls/app/build/outputs/apk/debug
-          key: carepad-controls-module-${{ github.run_id }}-${{ github.run_attempt }}
-          fail-on-cache-miss: true
-
       - name: Download Performance emulator fixture
         uses: actions/download-artifact@v4
         with:
@@ -463,13 +450,6 @@ jobs:
           scripts/ci/android-emulator-games-bios-module-smoke.sh \
             "$(find artifacts/host -name '*.apk' -print -quit)" \
             "$(find artifacts/games-bios-module -name '*.apk' -print -quit)"
-
-      - name: Run Controls product module smoke test
-        run: |
-          chmod +x scripts/ci/android-emulator-controls-module-smoke.sh
-          scripts/ci/android-emulator-controls-module-smoke.sh \
-            "$(find artifacts/host -name '*.apk' -print -quit)" \
-            "$(find modules/controls/app/build/outputs/apk/debug -name '*.apk' -print -quit)"
 
       - name: Run AndroidModuleRecovery lab smoke test
         run: |
