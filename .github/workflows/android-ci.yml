@@ -317,14 +317,6 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-      - name: Upload parallel CarePad lab focus androidTest APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: CarePad-focus-androidTest-lab-debug
-          path: app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-          if-no-files-found: error
-          retention-days: 3
-
   # Generic Android regression coverage plus lab-only recovery execution.
   android-emulator-smoke:
     needs: build
