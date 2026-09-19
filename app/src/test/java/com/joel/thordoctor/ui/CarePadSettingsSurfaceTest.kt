@@ -23,11 +23,11 @@ class CarePadSettingsSurfaceTest {
     }
 
     @Test
-    fun shellGlobalDestinationsRemainHomeAddModulesAndSettings() {
+    fun shellGlobalDestinationsRemainHomeModulesAndSettings() {
         assertEquals(
             listOf(
                 CarePadDestination.HOME,
-                CarePadDestination.ADD_MODULES,
+                CarePadDestination.MODULES,
                 CarePadDestination.SETTINGS,
             ),
             CarePadDestination.entries,

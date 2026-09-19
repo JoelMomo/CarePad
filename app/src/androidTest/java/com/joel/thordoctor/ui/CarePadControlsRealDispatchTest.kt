@@ -17,6 +17,7 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -37,7 +38,7 @@ class CarePadControlsRealDispatchTest {
     fun firstAndSecondDpadAfterTouchStayInsideControlsThroughRealDispatch() {
         val themeMode = mutableStateOf(AppThemeMode.SYSTEM)
         val controls = composeRule.activity.getString(R.string.carepad_module_controls)
-        val home = composeRule.activity.getString(R.string.carepad_nav_home)
+        val modules = composeRule.activity.getString(R.string.carepad_nav_modules)
         val firstAction = "Controls focus fixture first"
         val secondAction = "Controls focus fixture second"
 
@@ -64,6 +65,11 @@ class CarePadControlsRealDispatchTest {
         composeRule.waitForIdle()
 
         composeRule.onNode(
+            matcher = hasClickAction() and hasAnyDescendant(hasContentDescription(modules)),
+            useUnmergedTree = true,
+        ).performClick()
+        composeRule.waitForIdle()
+        composeRule.onNode(
             matcher = hasClickAction() and hasAnyDescendant(hasText(controls)),
             useUnmergedTree = true,
         ).performClick()
@@ -77,7 +83,7 @@ class CarePadControlsRealDispatchTest {
         composeRule.waitForIdle()
 
         actionNode(firstAction).assertIsFocused()
-        composeRule.onNodeWithText(home).assertIsNotFocused()
+        composeRule.onNodeWithText(modules).assertIsNotFocused()
 
         composeRule.runOnUiThread {
             composeRule.activity.dispatchKeyEvent(controllerKeyEvent(KeyEvent.ACTION_DOWN))
@@ -86,7 +92,7 @@ class CarePadControlsRealDispatchTest {
         composeRule.waitForIdle()
 
         actionNode(secondAction).assertIsFocused()
-        composeRule.onNodeWithText(home).assertIsNotFocused()
+        composeRule.onNodeWithText(modules).assertIsNotFocused()
     }
 
     private fun actionNode(text: String) = composeRule.onNode(

@@ -35,8 +35,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -99,7 +97,6 @@ internal fun CarePadResponsiveNavigationScaffold(
                     onSelected = onSelected,
                 )
                 CarePadResponsiveContent(
-                    selected = selected,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight(),
@@ -109,7 +106,6 @@ internal fun CarePadResponsiveNavigationScaffold(
 
             CarePadNavigationLayout.BOTTOM_BAR -> Column(modifier = Modifier.fillMaxSize()) {
                 CarePadResponsiveContent(
-                    selected = selected,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
@@ -129,21 +125,10 @@ internal fun CarePadResponsiveNavigationScaffold(
 
 @Composable
 private fun CarePadResponsiveContent(
-    selected: CarePadDestination,
     modifier: Modifier,
     content: @Composable (Modifier) -> Unit,
 ) {
-    if (selected != CarePadDestination.ADD_MODULES) {
-        content(modifier)
-        return
-    }
-
-    // Keep the shell content mounted so its existing focus fallback remains a valid L1
-    // target. The catalog surface is opaque and becomes the visible/focusable content.
-    Box(modifier = modifier) {
-        content(Modifier.fillMaxSize())
-        CarePadAddModulesCatalogContent(Modifier.fillMaxSize())
-    }
+    content(modifier)
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -189,7 +174,10 @@ internal fun CarePadZonedNavigationRail(
                 ) {
                     NavigationRailItem(
                         selected = carePadRailItemSelected(selected, item.destination),
-                        onClick = { onSelected(item.destination) },
+                        onClick = {
+                            onTouchFeedback()
+                            onSelected(item.destination)
+                        },
                         icon = {
                             Icon(
                                 imageVector = item.icon,
@@ -204,7 +192,6 @@ internal fun CarePadZonedNavigationRail(
                         alwaysShowLabel = expanded,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .navigationTouchFeedback(onTouchFeedback)
                             .focusProperties { canFocus = true }
                             .focusRequester(focusRequesters.getValue(item.destination))
                             .onFocusChanged { state ->
@@ -236,7 +223,10 @@ private fun CarePadNavigationBar(
         railItems().forEach { item ->
             NavigationBarItem(
                 selected = carePadRailItemSelected(selected, item.destination),
-                onClick = { onSelected(item.destination) },
+                onClick = {
+                    onTouchFeedback()
+                    onSelected(item.destination)
+                },
                 icon = {
                     Icon(
                         imageVector = item.icon,
@@ -247,29 +237,12 @@ private fun CarePadNavigationBar(
                 alwaysShowLabel = true,
                 modifier = Modifier
                     .weight(1f)
-                    .navigationTouchFeedback(onTouchFeedback)
                     .focusProperties { canFocus = true }
                     .focusRequester(focusRequesters.getValue(item.destination))
                     .onFocusChanged { state ->
                         onFocusChanged(item.destination, state.isFocused)
                     },
             )
-        }
-    }
-}
-
-private fun Modifier.navigationTouchFeedback(
-    onFeedback: () -> Unit,
-): Modifier = pointerInput(onFeedback) {
-    awaitPointerEventScope {
-        while (true) {
-            val event = awaitPointerEvent(PointerEventPass.Initial)
-            if (event.changes.any { change ->
-                    change.pressed && !change.previousPressed
-                }
-            ) {
-                onFeedback()
-            }
         }
     }
 }

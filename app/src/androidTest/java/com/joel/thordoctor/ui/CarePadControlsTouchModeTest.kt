@@ -29,6 +29,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -82,7 +83,7 @@ class CarePadControlsTouchModeTest {
         val guided = action(composeRule.activity.getString(ControlsR.string.guided_test))
         guided.assertIsEnabled().assertIsDisplayed().assertIsFocused()
         assertVisibleBorder(guided)
-        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_home))
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_modules))
             .assertIsNotFocused()
 
         // Focus must activate the real module action, not just set an observed-mode flag.
@@ -182,7 +183,7 @@ class CarePadControlsTouchModeTest {
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         assertFocusedAction(ControlsR.string.guided_test)
         press(KeyEvent.KEYCODE_BUTTON_L1)
-        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_home)).assertIsFocused()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsFocused()
         press(KeyEvent.KEYCODE_BUTTON_L1)
         assertFocusedAction(ControlsR.string.guided_test)
 
@@ -214,7 +215,7 @@ class CarePadControlsTouchModeTest {
         composeRule.waitForIdle()
         assertFocusedAction(ControlsR.string.guided_test)
         press(KeyEvent.KEYCODE_DPAD_LEFT)
-        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_home)).assertIsFocused()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsFocused()
         press(KeyEvent.KEYCODE_DPAD_RIGHT)
         assertFocusedAction(ControlsR.string.guided_test)
     }
@@ -236,7 +237,7 @@ class CarePadControlsTouchModeTest {
         val armedAt = SystemClock.uptimeMillis()
         action(composeRule.activity.getString(ControlsR.string.try_this_control)).assertIsNotEnabled()
         composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.listening_for_attempt)).assertExists()
-        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_home)).assertIsNotFocused()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsNotFocused()
         assertFocusedAction(ControlsR.string.back)
 
         // B is captured, even though the retained internal action is Back.
@@ -283,7 +284,7 @@ class CarePadControlsTouchModeTest {
             key(code, KeyEvent.ACTION_UP)
             composeRule.waitForIdle()
             composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.control_observed)).assertIsDisplayed()
-            composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_home)).assertIsNotFocused()
+            composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsNotFocused()
             if (code != KeyEvent.KEYCODE_DPAD_UP) {
                 tap(action(composeRule.activity.getString(ControlsR.string.next_control)))
             }
@@ -353,10 +354,10 @@ class CarePadControlsTouchModeTest {
             assertFalse("No motion may cause this capture-entry observation", "stage=motion-result" in entryTrace)
             assertFalse("Rail must never gain focus BEFORE the first stick movement:\n$entryTrace",
                 entryTrace.lineSequence().any { "stage=rail-focus" in it && "isFocused=true" in it })
-            // Initial focus may return to Back in CI but to HOME on Thor; neither may own this handoff.
+            // Initial focus may return to Back in CI but to the Modules rail item on hardware; neither may own this handoff.
             assertFalse("Content must retain focus while arming, before any stick movement:\n$entryTrace",
                 entryTrace.lineSequence().any { "stage=content-focus" in it && "hasFocus=false" in it })
-            composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_home)).assertIsNotFocused()
+            composeRule.onNodeWithText(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsNotFocused()
             assertFocusedAction(ControlsR.string.back)
 
             press(KeyEvent.KEYCODE_BUTTON_B)
@@ -430,19 +431,25 @@ class CarePadControlsTouchModeTest {
             }
         }
         composeRule.waitForIdle()
+        tap(navigation(composeRule.activity.getString(R.string.carepad_nav_modules)), scroll = false)
     }
+
+    private fun navigation(label: String) = composeRule.onNode(
+        hasClickAction() and hasAnyDescendant(hasContentDescription(label)), useUnmergedTree = true,
+    )
 
     private fun action(text: String) = composeRule.onNode(
         hasClickAction() and hasAnyDescendant(hasText(text)), useUnmergedTree = true,
     )
 
-    private fun tap(node: SemanticsNodeInteraction) {
+    private fun tap(node: SemanticsNodeInteraction, scroll: Boolean = true) {
         // Clear the old controller anchor before scrolling; its bring-into-view work must
         // not move the target after screen coordinates have been measured.
         instrumentation.setInTouchMode(true)
         composeRule.waitForIdle()
         // Make the real target visible before injecting screen coordinates (also in landscape).
-        node.performScrollTo().assertIsDisplayed()
+        if (scroll) node.performScrollTo()
+        node.assertIsDisplayed()
         val target = node.fetchSemanticsNode()
         val visibleBounds = target.boundsInRoot
         assertTrue("Touch target must have nonempty clipped bounds: $visibleBounds", !visibleBounds.isEmpty)
