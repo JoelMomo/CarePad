@@ -21,6 +21,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -113,6 +114,36 @@ private val digitalTargets = listOf(
     DigitalTarget(ControlButton.DPAD_LEFT, R.string.dpad_left, DiagramControl.DPAD_LEFT),
 )
 
+private fun expectedAndroidButton(device: DeviceInfo, target: DigitalTarget): ControlButton? =
+    when (target.diagramControl) {
+        DiagramControl.FACE_BOTTOM -> when (familyFor(device)) {
+            ControllerFamily.NINTENDO -> ControlButton.B
+            ControllerFamily.GENERIC -> null
+            else -> ControlButton.A
+        }
+        DiagramControl.FACE_RIGHT -> when (familyFor(device)) {
+            ControllerFamily.NINTENDO -> ControlButton.A
+            ControllerFamily.GENERIC -> null
+            else -> ControlButton.B
+        }
+        DiagramControl.FACE_LEFT -> when (familyFor(device)) {
+            ControllerFamily.NINTENDO -> ControlButton.Y
+            ControllerFamily.GENERIC -> null
+            else -> ControlButton.X
+        }
+        DiagramControl.FACE_TOP -> when (familyFor(device)) {
+            ControllerFamily.NINTENDO -> ControlButton.X
+            ControllerFamily.GENERIC -> null
+            else -> ControlButton.Y
+        }
+        DiagramControl.DPAD_UP,
+        DiagramControl.DPAD_RIGHT,
+        DiagramControl.DPAD_DOWN,
+        DiagramControl.DPAD_LEFT -> target.button
+        DiagramControl.LEFT_STICK,
+        DiagramControl.RIGHT_STICK -> null
+    }
+
 private val dpadButtons = setOf(
     ControlButton.DPAD_UP,
     ControlButton.DPAD_DOWN,
@@ -126,8 +157,6 @@ private sealed interface GuidedCaptureDrain {
         val waitsForHatNeutral: Boolean,
         var keyReleased: Boolean = false,
     ) : GuidedCaptureDrain
-
-    data class Stick(val left: Boolean) : GuidedCaptureDrain
 }
 
 /** Raw Android input bridge used only while the internal Controls surface is visible. */
@@ -149,6 +178,7 @@ class ControlsInternalController(
     private var attemptReadyAt = 0L
     private var attemptBaselineTrajectoryCount = 0
     private var attemptGeneration = 0L
+    private var digitalObservationPending = false
     private var activityGeneration = 0L
     private var detectedRefreshGeneration = 0L
     private var guidedCaptureDrain: GuidedCaptureDrain? = null
@@ -165,7 +195,7 @@ class ControlsInternalController(
         private set
     internal var attemptArmed by mutableStateOf(false)
         private set
-    internal var attemptCanFail by mutableStateOf(false)
+    internal var countdownSeconds by mutableIntStateOf(0)
         private set
     internal var showLeaveDialog by mutableStateOf(false)
         private set
@@ -207,6 +237,11 @@ class ControlsInternalController(
 
         val activeSession = session
         if (screen == Screen.GUIDED && activeSession != null) {
+            if (isSelectedControllerKey(event, activeSession) && event.keyCode == KeyEvent.KEYCODE_BACK) {
+                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) handleGuidedBack()
+                return true
+            }
+
             val sample = AndroidEventMapper.key(event)
             if (consumeGuidedDrainKey(event, sample, activeSession)) return true
 
@@ -330,15 +365,16 @@ class ControlsInternalController(
     }
 
     internal fun startGuidedTest() {
-        if (freshSelectedDevice() == null) return
+        val device = freshSelectedDevice() ?: return
         session?.interrupt()
-        session = null
+        session = ControlsSession(device)
         digitalOutcomes.clear()
         stickOutcomes.clear()
         digitalTargetIndex = 0
         guidedStage = GuidedStage.PREPARE
         screen = Screen.GUIDED
         revision++
+        startGuidedWindow()
     }
 
     internal fun startDetectedInputs() {
@@ -349,74 +385,127 @@ class ControlsInternalController(
         revision++
     }
 
-    internal fun beginGuidedSequence() {
-        val device = freshSelectedDevice() ?: return
-        session?.interrupt()
-        session = ControlsSession(device)
-        guidedStage = GuidedStage.DIGITAL
-        digitalTargetIndex = 0
-        revision++
-    }
-
-    internal fun continueDigital() {
-        guidedCaptureDrain = null
-        if (digitalTargetIndex < digitalTargets.lastIndex) {
-            digitalTargetIndex++
-        } else {
-            guidedStage = GuidedStage.LEFT_REST
-        }
-        revision++
-    }
-
-    internal fun continueFromStickRest(left: Boolean) {
+    private fun startGuidedWindow() {
         val activeSession = session ?: return
+        if (activeSession.state == SessionState.INVALIDATED || guidedStage == GuidedStage.SUMMARY) return
+        skipPhysicallyAmbiguousDigitalTargets(activeSession)
+        clearAttemptWindow()
+        digitalObservationPending = false
+        attemptArmed = true
+        countdownSeconds = GUIDED_WINDOW_SECONDS
+        attemptReadyAt = SystemClock.uptimeMillis() + ATTEMPT_ARM_DELAY_MS
+        attemptBaselineTrajectoryCount = currentTrajectoryCount(activeSession)
+        val generation = ++attemptGeneration
+        revision++
+        scheduleCountdownTick(generation, GUIDED_WINDOW_SECONDS - 1)
+    }
+
+    private fun scheduleCountdownTick(generation: Long, nextSecond: Int) {
+        handler.postDelayed({
+            if (screen != Screen.GUIDED || !attemptArmed || generation != attemptGeneration) return@postDelayed
+            countdownSeconds = nextSecond.coerceAtLeast(0)
+            revision++
+            if (nextSecond > 0) {
+                scheduleCountdownTick(generation, nextSecond - 1)
+            } else {
+                handler.postDelayed({
+                    if (screen == Screen.GUIDED && attemptArmed && generation == attemptGeneration) {
+                        finishGuidedWindowByTimeout()
+                    }
+                }, COUNTDOWN_ZERO_HOLD_MS)
+            }
+        }, 1_000L)
+    }
+
+    private fun finishGuidedWindowByTimeout() {
+        val activeSession = session ?: return
+        when (guidedStage) {
+            GuidedStage.PREPARE -> advanceTo(GuidedStage.DIGITAL)
+            GuidedStage.DIGITAL -> {
+                val target = digitalTargets[digitalTargetIndex]
+                digitalOutcomes[target.button] = when {
+                    digitalObservationPending -> Outcome.INCONCLUSIVE
+                    canInterpretDigitalTarget(activeSession, target) -> Outcome.NOT_DETECTED
+                    else -> Outcome.INCONCLUSIVE
+                }
+                advanceDigitalTarget()
+            }
+            GuidedStage.LEFT_REST -> finishStickRest(activeSession, left = true)
+            GuidedStage.RIGHT_REST -> finishStickRest(activeSession, left = false)
+            GuidedStage.LEFT_MOVE -> finishStickMove(activeSession, left = true)
+            GuidedStage.RIGHT_MOVE -> finishStickMove(activeSession, left = false)
+            GuidedStage.SUMMARY -> Unit
+        }
+    }
+
+    private fun finishStickRest(activeSession: ControlsSession, left: Boolean) {
         val control = if (left) DiagramControl.LEFT_STICK else DiagramControl.RIGHT_STICK
         val resolution = if (left) activeSession.mapping.left.state else activeSession.mapping.right.state
         if (resolution != Resolution.STANDARD && stickOutcomes[control] == null) {
             stickOutcomes[control] = Outcome.INCONCLUSIVE
         }
-        guidedStage = if (left) GuidedStage.LEFT_MOVE else GuidedStage.RIGHT_MOVE
-        revision++
+        advanceTo(if (left) GuidedStage.LEFT_MOVE else GuidedStage.RIGHT_MOVE)
     }
 
-    internal fun continueFromStickMove(left: Boolean) {
-        guidedCaptureDrain = null
-        guidedStage = if (left) GuidedStage.RIGHT_REST else GuidedStage.SUMMARY
-        revision++
-    }
-
-    internal fun startAttempt() {
-        val activeSession = session ?: return
-        if (activeSession.state == SessionState.INVALIDATED) return
-        cancelAttempt()
-        attemptArmed = true
-        attemptCanFail = false
-        attemptReadyAt = SystemClock.uptimeMillis() + ATTEMPT_ARM_DELAY_MS
-        attemptBaselineTrajectoryCount = currentTrajectoryCount(activeSession)
-        val generation = ++attemptGeneration
-        revision++
-        handler.postDelayed({
-            if (screen == Screen.GUIDED && attemptArmed && generation == attemptGeneration) {
-                attemptArmed = false
-                attemptCanFail = true
-                revision++
+    private fun finishStickMove(activeSession: ControlsSession, left: Boolean) {
+        val control = if (left) DiagramControl.LEFT_STICK else DiagramControl.RIGHT_STICK
+        val resolution = if (left) activeSession.mapping.left.state else activeSession.mapping.right.state
+        if (stickOutcomes[control] == null) {
+            stickOutcomes[control] = when {
+                resolution != Resolution.STANDARD -> Outcome.INCONCLUSIVE
+                currentTrajectoryCount(activeSession) > attemptBaselineTrajectoryCount -> Outcome.OBSERVED
+                else -> Outcome.NOT_DETECTED
             }
-        }, ATTEMPT_WINDOW_MS)
+        }
+        if (left) advanceTo(GuidedStage.RIGHT_REST) else advanceToSummary()
     }
 
-    internal fun markCurrentNotDetected() {
-        if (!attemptCanFail) return
-        when (guidedStage) {
-            GuidedStage.DIGITAL -> digitalOutcomes[digitalTargets[digitalTargetIndex].button] = Outcome.NOT_DETECTED
-            GuidedStage.LEFT_MOVE -> stickOutcomes[DiagramControl.LEFT_STICK] = Outcome.NOT_DETECTED
-            GuidedStage.RIGHT_MOVE -> stickOutcomes[DiagramControl.RIGHT_STICK] = Outcome.NOT_DETECTED
-            else -> return
+    private fun skipPhysicallyAmbiguousDigitalTargets(activeSession: ControlsSession) {
+        if (guidedStage != GuidedStage.DIGITAL) return
+        while (digitalTargetIndex < digitalTargets.size) {
+            val target = digitalTargets[digitalTargetIndex]
+            if (expectedAndroidButton(activeSession.device, target) != null) return
+            digitalOutcomes[target.button] = Outcome.INCONCLUSIVE
+            if (digitalTargetIndex == digitalTargets.lastIndex) return
+            digitalTargetIndex++
+            revision++
         }
-        cancelAttempt()
+    }
+
+    private fun canInterpretDigitalTarget(activeSession: ControlsSession, target: DigitalTarget): Boolean {
+        val expectedButton = expectedAndroidButton(activeSession.device, target) ?: return false
+        return expectedButton in activeSession.device.keys ||
+            (target.button in dpadButtons && activeSession.mapping.hat != null)
+    }
+
+    private fun advanceDigitalTarget() {
+        guidedCaptureDrain = null
+        digitalObservationPending = false
+        if (digitalTargetIndex < digitalTargets.lastIndex) {
+            digitalTargetIndex++
+            clearAttemptWindow()
+            revision++
+            startGuidedWindow()
+        } else {
+            advanceTo(GuidedStage.LEFT_REST)
+        }
+    }
+
+    private fun advanceTo(stage: GuidedStage) {
+        clearAttemptWindow()
+        guidedCaptureDrain = null
+        guidedStage = stage
+        revision++
+        startGuidedWindow()
+    }
+
+    private fun advanceToSummary() {
+        clearAttemptWindow()
+        guidedCaptureDrain = null
+        guidedStage = GuidedStage.SUMMARY
         revision++
     }
 
-    internal fun digitalOutcome(): Outcome? = digitalOutcomes[digitalTargets[digitalTargetIndex].button]
     internal fun stickOutcome(left: Boolean): Outcome? =
         stickOutcomes[if (left) DiagramControl.LEFT_STICK else DiagramControl.RIGHT_STICK]
 
@@ -498,57 +587,46 @@ class ControlsInternalController(
     private fun observeGuidedKey(sample: KeySample) {
         if (!attemptArmed || sample.action != KeyAction.DOWN || sample.repeatCount != 0) return
         if (guidedStage != GuidedStage.DIGITAL) return
-        if (sample.button == digitalTargets[digitalTargetIndex].button) finishAttemptObserved()
+        val activeSession = session ?: return
+        val expectedButton = expectedAndroidButton(activeSession.device, digitalTargets[digitalTargetIndex]) ?: return
+        if (sample.button == expectedButton) finishAttemptObserved()
     }
 
     private fun observeGuidedMotion() {
         if (!attemptArmed) return
         val activeSession = session ?: return
-        when (guidedStage) {
-            GuidedStage.DIGITAL -> {
-                val direction = when (digitalTargets[digitalTargetIndex].button) {
-                    ControlButton.DPAD_UP -> Direction.UP
-                    ControlButton.DPAD_RIGHT -> Direction.RIGHT
-                    ControlButton.DPAD_DOWN -> Direction.DOWN
-                    ControlButton.DPAD_LEFT -> Direction.LEFT
-                    else -> null
-                }
-                if (direction != null && direction in activeSession.dpadPath.lastOrNull()?.directions.orEmpty()) {
-                    finishAttemptObserved()
-                }
-            }
-            GuidedStage.LEFT_MOVE, GuidedStage.RIGHT_MOVE -> {
-                if (currentTrajectoryCount(activeSession) > attemptBaselineTrajectoryCount) {
-                    finishAttemptObserved()
-                }
-            }
-            else -> Unit
+        if (guidedStage != GuidedStage.DIGITAL) return
+        val direction = when (digitalTargets[digitalTargetIndex].button) {
+            ControlButton.DPAD_UP -> Direction.UP
+            ControlButton.DPAD_RIGHT -> Direction.RIGHT
+            ControlButton.DPAD_DOWN -> Direction.DOWN
+            ControlButton.DPAD_LEFT -> Direction.LEFT
+            else -> null
+        }
+        if (direction != null && direction in activeSession.dpadPath.lastOrNull()?.directions.orEmpty()) {
+            finishAttemptObserved()
         }
     }
 
     private fun finishAttemptObserved() {
-        val drain = when (guidedStage) {
-            GuidedStage.DIGITAL -> {
-                val button = digitalTargets[digitalTargetIndex].button
-                digitalOutcomes[button] = Outcome.OBSERVED
-                GuidedCaptureDrain.Digital(
-                    button = button,
-                    waitsForHatNeutral = button in dpadButtons && session?.mapping?.hat != null,
-                )
-            }
-            GuidedStage.LEFT_MOVE -> {
-                stickOutcomes[DiagramControl.LEFT_STICK] = Outcome.OBSERVED
-                GuidedCaptureDrain.Stick(left = true)
-            }
-            GuidedStage.RIGHT_MOVE -> {
-                stickOutcomes[DiagramControl.RIGHT_STICK] = Outcome.OBSERVED
-                GuidedCaptureDrain.Stick(left = false)
-            }
-            else -> return
-        }
-        guidedCaptureDrain = drain
-        clearAttemptWindow()
+        if (guidedStage != GuidedStage.DIGITAL || digitalObservationPending) return
+        val activeSession = session ?: return
+        val target = digitalTargets[digitalTargetIndex]
+        val expectedButton = expectedAndroidButton(activeSession.device, target) ?: return
+        digitalObservationPending = true
+        guidedCaptureDrain = GuidedCaptureDrain.Digital(
+            button = expectedButton,
+            waitsForHatNeutral = target.button in dpadButtons && activeSession.mapping.hat != null,
+        )
         revision++
+    }
+
+    private fun completeDigitalObservation() {
+        if (guidedStage != GuidedStage.DIGITAL || !digitalObservationPending) return
+        digitalOutcomes[digitalTargets[digitalTargetIndex].button] = Outcome.OBSERVED
+        guidedCaptureDrain = null
+        digitalObservationPending = false
+        advanceDigitalTarget()
     }
 
     private fun consumeGuidedDrainKey(
@@ -564,7 +642,7 @@ class ControlsInternalController(
                 if (sample?.button == drain.button) {
                     if (sample.action == KeyAction.UP) {
                         drain.keyReleased = true
-                        if (!drain.waitsForHatNeutral) guidedCaptureDrain = null
+                        if (!drain.waitsForHatNeutral) completeDigitalObservation()
                     }
                     true
                 } else if (
@@ -574,15 +652,12 @@ class ControlsInternalController(
                     sample.action == KeyAction.DOWN &&
                     sample.repeatCount == 0
                 ) {
-                    // A distinct mapped press is a new gesture; do not swallow it merely because
-                    // a device advertised HAT axes but failed to emit a final neutral HAT frame.
-                    guidedCaptureDrain = null
+                    completeDigitalObservation()
                     false
                 } else {
                     true
                 }
             }
-            is GuidedCaptureDrain.Stick -> true
         }
     }
 
@@ -594,15 +669,7 @@ class ControlsInternalController(
             is GuidedCaptureDrain.Digital -> {
                 if (!drain.waitsForHatNeutral) return
                 val hat = activeSession.mapping.hat ?: return
-                if (isPairAtRest(event, hat)) guidedCaptureDrain = null
-            }
-            is GuidedCaptureDrain.Stick -> {
-                val pair = if (drain.left) {
-                    activeSession.mapping.left.pair
-                } else {
-                    activeSession.mapping.right.pair
-                } ?: return
-                if (isPairAtRest(event, pair)) guidedCaptureDrain = null
+                if (isPairAtRest(event, hat)) completeDigitalObservation()
             }
             null -> Unit
         }
@@ -630,7 +697,7 @@ class ControlsInternalController(
 
     private fun clearAttemptWindow() {
         attemptArmed = false
-        attemptCanFail = false
+        countdownSeconds = 0
         attemptReadyAt = 0L
         attemptBaselineTrajectoryCount = 0
         attemptGeneration++
@@ -639,26 +706,11 @@ class ControlsInternalController(
     private fun cancelAttempt() {
         clearAttemptWindow()
         guidedCaptureDrain = null
+        digitalObservationPending = false
     }
 
     private fun handleGuidedBack() {
-        cancelAttempt()
-        when (guidedStage) {
-            GuidedStage.PREPARE -> showLeaveDialog = true
-            GuidedStage.DIGITAL -> {
-                if (digitalTargetIndex > 0) digitalTargetIndex-- else guidedStage = GuidedStage.PREPARE
-                revision++
-            }
-            GuidedStage.LEFT_REST -> {
-                guidedStage = GuidedStage.DIGITAL
-                digitalTargetIndex = digitalTargets.lastIndex
-                revision++
-            }
-            GuidedStage.LEFT_MOVE -> { guidedStage = GuidedStage.LEFT_REST; revision++ }
-            GuidedStage.RIGHT_REST -> { guidedStage = GuidedStage.LEFT_MOVE; revision++ }
-            GuidedStage.RIGHT_MOVE -> { guidedStage = GuidedStage.RIGHT_REST; revision++ }
-            GuidedStage.SUMMARY -> { guidedStage = GuidedStage.RIGHT_MOVE; revision++ }
-        }
+        exitSecondarySurface()
     }
 
     internal fun exitSecondarySurface() {
@@ -689,7 +741,8 @@ class ControlsInternalController(
 
     private companion object {
         const val ATTEMPT_ARM_DELAY_MS = 250L
-        const val ATTEMPT_WINDOW_MS = 1800L
+        const val GUIDED_WINDOW_SECONDS = 8
+        const val COUNTDOWN_ZERO_HOLD_MS = 120L
         const val LIVE_ACTIVITY_WINDOW_MS = 520L
         const val ACTIVITY_HINT_MS = 900L
         const val MAX_GUIDED_TRAJECTORY_POINTS = 96
@@ -718,7 +771,7 @@ fun ControlsInternalScreen(
     val ownedFocusBeforeChange = contentFocused
     LaunchedEffect(controller.screen, controller.guidedStage, controller.digitalTargetIndex) {
         if (ownedFocusBeforeChange && !contentFocused && inputModeManager.inputMode == InputMode.Keyboard &&
-            !controller.attemptArmed && !controller.showLeaveDialog && controller.candidates.isNotEmpty()
+            !controller.showLeaveDialog && controller.candidates.isNotEmpty()
         ) {
             val target = if (controller.screen == Screen.MAIN) entryFocusRequester else contentFocusRequester
             val accepted = target.requestFocus()
@@ -947,18 +1000,19 @@ private fun GuidedContent(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scroll)
-            .padding(24.dp),
+            .padding(24.dp)
+            .then(if (controller.guidedStage != GuidedStage.SUMMARY) Modifier.focusable() else Modifier),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(stringResource(R.string.guided_breadcrumb), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(friendlyDeviceName(device), color = MaterialTheme.colorScheme.onSurfaceVariant)
         when (controller.guidedStage) {
-            GuidedStage.PREPARE -> Preparation(controller, device, feedback)
-            GuidedStage.DIGITAL -> DigitalStep(controller, device, feedback)
-            GuidedStage.LEFT_REST -> StickRest(controller, device, true, feedback)
-            GuidedStage.LEFT_MOVE -> StickMove(controller, device, true, feedback)
-            GuidedStage.RIGHT_REST -> StickRest(controller, device, false, feedback)
-            GuidedStage.RIGHT_MOVE -> StickMove(controller, device, false, feedback)
+            GuidedStage.PREPARE -> Preparation(controller, device)
+            GuidedStage.DIGITAL -> DigitalStep(controller, device)
+            GuidedStage.LEFT_REST -> StickRest(controller, device, true)
+            GuidedStage.LEFT_MOVE -> StickMove(controller, device, true)
+            GuidedStage.RIGHT_REST -> StickRest(controller, device, false)
+            GuidedStage.RIGHT_MOVE -> StickMove(controller, device, false)
             GuidedStage.SUMMARY -> GuidedSummary(controller, device, feedback)
         }
         if (wide) Spacer(Modifier.height(4.dp))
@@ -966,64 +1020,34 @@ private fun GuidedContent(
 }
 
 @Composable
-private fun Preparation(controller: ControlsInternalController, device: DeviceInfo, feedback: () -> Unit) {
+private fun Preparation(controller: ControlsInternalController, device: DeviceInfo) {
     SectionCard(stringResource(R.string.prepare_test)) {
-        Text(stringResource(R.string.prepare_test_instruction))
+        GuidedTimedInstruction(
+            instruction = stringResource(R.string.prepare_test_instruction),
+            seconds = controller.countdownSeconds,
+        )
         Supporting(stringResource(R.string.prepare_test_note))
         ControllerDiagram(device = device)
-        GuidedButtons(
-            backText = stringResource(R.string.back),
-            primaryText = stringResource(R.string.start_test),
-            feedback = feedback,
-            back = { controller.handleBack() },
-            primary = controller::beginGuidedSequence,
-        )
     }
 }
 
 @Composable
-private fun DigitalStep(controller: ControlsInternalController, device: DeviceInfo, feedback: () -> Unit) {
+private fun DigitalStep(controller: ControlsInternalController, device: DeviceInfo) {
     val target = digitalTargets[controller.digitalTargetIndex]
-    val outcome = controller.digitalOutcome()
-    val inputModeManager = LocalInputModeManager.current
-    val backFocusRequester = remember { FocusRequester() }
     SectionCard(stringResource(R.string.buttons_and_dpad)) {
         Supporting(stringResource(R.string.control_counter, controller.digitalTargetIndex + 1, digitalTargets.size))
-        Text(stringResource(R.string.digital_target_instruction, stringResource(target.nameRes)))
-        ControllerDiagram(device = device, highlighted = target.diagramControl)
-        Supporting(
-            when {
-                controller.attemptArmed -> stringResource(R.string.listening_for_attempt)
-                controller.attemptCanFail -> stringResource(R.string.attempt_not_seen_yet)
-                outcome == Outcome.OBSERVED -> stringResource(R.string.control_observed)
-                outcome == Outcome.NOT_DETECTED -> stringResource(R.string.control_not_detected_after_attempt)
-                outcome == Outcome.INCONCLUSIVE -> stringResource(R.string.inconclusive)
-                else -> stringResource(R.string.ready_for_explicit_attempt)
-            }
+        GuidedTimedInstruction(
+            instruction = stringResource(R.string.digital_target_instruction, stringResource(target.nameRes)),
+            seconds = controller.countdownSeconds,
         )
-        if (outcome == null) {
-            FocusButton(stringResource(R.string.try_this_control), !controller.attemptArmed, feedback, action = {
-                if (inputModeManager.inputMode == InputMode.Keyboard) {
-                    // Hand focus to the mounted local action before arming disables this button.
-                    // Captured controller input still belongs to the raw bridge, including B.
-                    val accepted = backFocusRequester.requestFocus()
-                    ControlsFocusTrace.log("capture-entry-focus") {
-                        "requester=${System.identityHashCode(backFocusRequester)} accepted=$accepted inputMode=${inputModeManager.inputMode}"
-                    }
-                }
-                controller.startAttempt()
-            })
-            FocusOutlinedButton(stringResource(R.string.tried_not_detected), controller.attemptCanFail, feedback, action = controller::markCurrentNotDetected)
-        } else {
-            FocusButton(
-                stringResource(if (controller.digitalTargetIndex == digitalTargets.lastIndex) R.string.continue_label else R.string.next_control),
-                true,
-                feedback,
-                action = controller::continueDigital,
-            )
+        if (
+            familyFor(device) == ControllerFamily.GENERIC &&
+            target.diagramControl == DiagramControl.DPAD_UP
+        ) {
+            Supporting(stringResource(R.string.generic_face_mapping_inconclusive))
         }
-        FocusOutlinedButton(stringResource(R.string.back), true, feedback,
-            focusRequester = backFocusRequester, action = { controller.handleBack() })
+        ControllerDiagram(device = device, highlighted = target.diagramControl)
+        Supporting(stringResource(R.string.listening_for_attempt))
     }
 }
 
@@ -1032,22 +1056,17 @@ private fun StickRest(
     controller: ControlsInternalController,
     device: DeviceInfo,
     left: Boolean,
-    feedback: () -> Unit,
 ) {
     SectionCard(stringResource(if (left) R.string.left_stick else R.string.right_stick)) {
-        Text(stringResource(if (left) R.string.left_rest_instruction else R.string.right_rest_instruction))
+        GuidedTimedInstruction(
+            instruction = stringResource(if (left) R.string.left_rest_instruction else R.string.right_rest_instruction),
+            seconds = controller.countdownSeconds,
+        )
         Supporting(stringResource(R.string.rest_is_observation_not_diagnosis))
         ControllerDiagram(
             device = device,
             highlighted = if (left) DiagramControl.LEFT_STICK else DiagramControl.RIGHT_STICK,
             showCenterGuide = true,
-        )
-        GuidedButtons(
-            backText = stringResource(R.string.back),
-            primaryText = stringResource(R.string.stick_is_still),
-            feedback = feedback,
-            back = { controller.handleBack() },
-            primary = { controller.continueFromStickRest(left) },
         )
     }
 }
@@ -1057,14 +1076,13 @@ private fun StickMove(
     controller: ControlsInternalController,
     device: DeviceInfo,
     left: Boolean,
-    feedback: () -> Unit,
 ) {
     val resolution = controller.stickResolution(left) ?: Resolution.INCONCLUSIVE
-    val outcome = controller.stickOutcome(left)
-    val inputModeManager = LocalInputModeManager.current
-    val backFocusRequester = remember { FocusRequester() }
     SectionCard(stringResource(if (left) R.string.left_stick else R.string.right_stick)) {
-        Text(stringResource(if (left) R.string.left_move_instruction else R.string.right_move_instruction))
+        GuidedTimedInstruction(
+            instruction = stringResource(if (left) R.string.left_move_instruction else R.string.right_move_instruction),
+            seconds = controller.countdownSeconds,
+        )
         ControllerDiagram(
             device = device,
             highlighted = if (left) DiagramControl.LEFT_STICK else DiagramControl.RIGHT_STICK,
@@ -1072,33 +1090,38 @@ private fun StickMove(
             observedPath = controller.observedPath(left),
         )
         Supporting(
-            when {
-                resolution != Resolution.STANDARD -> stringResource(R.string.mapping_inconclusive)
-                controller.attemptArmed -> stringResource(R.string.listening_for_attempt)
-                controller.attemptCanFail -> stringResource(R.string.attempt_not_seen_yet)
-                outcome == Outcome.OBSERVED -> stringResource(R.string.stick_observed)
-                outcome == Outcome.NOT_DETECTED -> stringResource(R.string.control_not_detected_after_attempt)
-                else -> stringResource(R.string.ready_for_explicit_attempt)
+            if (resolution != Resolution.STANDARD) {
+                stringResource(R.string.mapping_inconclusive)
+            } else {
+                stringResource(R.string.listening_for_attempt)
             }
         )
-        if (resolution == Resolution.STANDARD && outcome == null) {
-            FocusButton(stringResource(R.string.try_stick_movement), !controller.attemptArmed, feedback, action = {
-                if (inputModeManager.inputMode == InputMode.Keyboard) {
-                    // Preserve content focus before arming disables the focused movement action.
-                    // The same mounted Back action survives capture and the observed outcome.
-                    val accepted = backFocusRequester.requestFocus()
-                    ControlsFocusTrace.log("capture-entry-focus") {
-                        "control=${if (left) "LEFT_STICK" else "RIGHT_STICK"} requester=${System.identityHashCode(backFocusRequester)} accepted=$accepted inputMode=${inputModeManager.inputMode}"
-                    }
-                }
-                controller.startAttempt()
-            })
-            FocusOutlinedButton(stringResource(R.string.tried_not_detected), controller.attemptCanFail, feedback, action = controller::markCurrentNotDetected)
-        } else {
-            FocusButton(stringResource(R.string.continue_label), true, feedback, action = { controller.continueFromStickMove(left) })
+    }
+}
+
+@Composable
+private fun GuidedTimedInstruction(instruction: String, seconds: Int) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = instruction,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Text(
+                text = stringResource(R.string.guided_countdown, seconds),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
         }
-        FocusOutlinedButton(stringResource(R.string.back), true, feedback,
-            focusRequester = backFocusRequester, action = { controller.handleBack() })
     }
 }
 

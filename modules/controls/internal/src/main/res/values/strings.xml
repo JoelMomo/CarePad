@@ -31,7 +31,7 @@
     <string name="back_to_controls">Volver a Controles</string>
 
     <string name="prepare_test">Antes de empezar</string>
-    <string name="prepare_test_instruction">Deja el mando quieto un momento y sujétalo con normalidad. Empezaremos con una prueba nueva.</string>
+    <string name="prepare_test_instruction">Deja el mando quieto y los sticks sueltos. CarePad continuará automáticamente.</string>
     <string name="prepare_test_note">Los movimientos usados para navegar hasta aquí no cuentan como evidencia de la prueba.</string>
     <string name="start_test">Empezar prueba</string>
 
@@ -39,7 +39,8 @@
     <string name="left_stick">Stick izquierdo</string>
     <string name="right_stick">Stick derecho</string>
     <string name="control_counter">Control %1$d de %2$d</string>
-    <string name="digital_target_instruction">Pulsa %1$s cuando esté escuchando. Solo ese control contará para este paso.</string>
+    <string name="guided_countdown">Cuenta atrás: %1$d s</string>
+    <string name="digital_target_instruction">Pulsa %1$s mientras esté resaltado. CarePad continuará automáticamente.</string>
     <string name="try_this_control">Probar este control</string>
     <string name="next_control">Siguiente control</string>
     <string name="tried_not_detected">Lo he intentado y no se detecta</string>
@@ -59,6 +60,7 @@
     <string name="try_stick_movement">Probar recorrido</string>
     <string name="stick_observed">Movimiento recibido durante tu intento.</string>
     <string name="mapping_inconclusive">No hemos podido interpretar este stick con suficiente seguridad. Se mostrará como No concluyente, no como avería.</string>
+    <string name="generic_face_mapping_inconclusive">No podemos asociar con seguridad los botones frontales de este mando a posiciones físicas. Esa parte queda como No concluyente.</string>
 
     <string name="test_finished">Prueba terminada</string>
     <string name="summary_nothing_unusual">Prueba terminada. No hemos visto nada raro en lo que hemos podido comprobar.</string>
