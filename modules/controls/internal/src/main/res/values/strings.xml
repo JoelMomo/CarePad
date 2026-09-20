@@ -39,7 +39,7 @@
     <string name="left_stick">Stick izquierdo</string>
     <string name="right_stick">Stick derecho</string>
     <string name="control_counter">Control %1$d de %2$d</string>
-    <string name="guided_countdown">Cuenta atrás: %1$d s</string>
+    <string name="guided_countdown">%1$d s</string>
     <string name="digital_target_instruction">Pulsa %1$s mientras esté resaltado. CarePad continuará automáticamente.</string>
     <string name="try_this_control">Probar este control</string>
     <string name="next_control">Siguiente control</string>
@@ -51,8 +51,8 @@
     <string name="control_observed">Detectado durante tu intento.</string>
     <string name="control_not_detected_after_attempt">No detectado después de un intento explícito.</string>
 
-    <string name="left_rest_instruction">Deja el stick izquierdo quieto y aproximadamente centrado antes de probar su recorrido.</string>
-    <string name="right_rest_instruction">Deja el stick derecho quieto y aproximadamente centrado antes de probar su recorrido.</string>
+    <string name="left_rest_instruction">Deja el stick izquierdo centrado.</string>
+    <string name="right_rest_instruction">Deja el stick derecho centrado.</string>
     <string name="rest_is_observation_not_diagnosis">Este paso solo prepara la observación; no diagnostica drift ni exige un centro perfecto.</string>
     <string name="stick_is_still">El stick está quieto</string>
     <string name="left_move_instruction">Mueve el stick izquierdo por distintas direcciones y vuelve al centro.</string>

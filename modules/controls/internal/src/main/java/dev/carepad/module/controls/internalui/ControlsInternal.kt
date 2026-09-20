@@ -741,7 +741,7 @@ class ControlsInternalController(
 
     private companion object {
         const val ATTEMPT_ARM_DELAY_MS = 250L
-        const val GUIDED_WINDOW_SECONDS = 8
+        const val GUIDED_WINDOW_SECONDS = 5
         const val COUNTDOWN_ZERO_HOLD_MS = 120L
         const val LIVE_ACTIVITY_WINDOW_MS = 520L
         const val ACTIVITY_HINT_MS = 900L

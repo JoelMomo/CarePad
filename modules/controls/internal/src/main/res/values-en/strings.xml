@@ -39,7 +39,7 @@
     <string name="left_stick">Left stick</string>
     <string name="right_stick">Right stick</string>
     <string name="control_counter">Control %1$d of %2$d</string>
-    <string name="guided_countdown">Countdown: %1$d s</string>
+    <string name="guided_countdown">%1$d s</string>
     <string name="digital_target_instruction">Press %1$s while it is highlighted. CarePad will continue automatically.</string>
     <string name="try_this_control">Try this control</string>
     <string name="next_control">Next control</string>
@@ -51,8 +51,8 @@
     <string name="control_observed">Detected during your attempt.</string>
     <string name="control_not_detected_after_attempt">Not detected after an explicit attempt.</string>
 
-    <string name="left_rest_instruction">Leave the left stick still and roughly centered before testing its movement.</string>
-    <string name="right_rest_instruction">Leave the right stick still and roughly centered before testing its movement.</string>
+    <string name="left_rest_instruction">Leave the left stick centered.</string>
+    <string name="right_rest_instruction">Leave the right stick centered.</string>
     <string name="rest_is_observation_not_diagnosis">This step only prepares the observation; it does not diagnose drift or require a perfect center.</string>
     <string name="stick_is_still">The stick is still</string>
     <string name="left_move_instruction">Move the left stick in different directions and return it to center.</string>

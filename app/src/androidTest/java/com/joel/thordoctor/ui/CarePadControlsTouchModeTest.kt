@@ -90,7 +90,7 @@ class CarePadControlsTouchModeTest {
         press(KeyEvent.KEYCODE_BUTTON_A)
 
         waitForText(composeRule.activity.getString(ControlsR.string.prepare_test))
-        assertCountdownVisible()
+        assertTimeRemainingVisible()
         assertNoIntermediateActions()
 
         press(KeyEvent.KEYCODE_DPAD_RIGHT)
@@ -160,7 +160,7 @@ class CarePadControlsTouchModeTest {
         tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
         tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
 
-        waitForDigitalTarget(ControlsR.string.dpad_up, 11_000)
+        waitForDigitalTarget(ControlsR.string.dpad_up, 8_000)
         composeRule.onNodeWithText(
             composeRule.activity.getString(ControlsR.string.generic_face_mapping_inconclusive),
         ).assertIsDisplayed()
@@ -178,7 +178,7 @@ class CarePadControlsTouchModeTest {
         tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
         tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
 
-        waitForDigitalTarget(ControlsR.string.button_a, 11_000)
+        waitForDigitalTarget(ControlsR.string.button_a, 8_000)
         waitForCaptureArm()
         press(KeyEvent.KEYCODE_BUTTON_B)
         waitForDigitalTarget(ControlsR.string.button_b)
@@ -191,7 +191,7 @@ class CarePadControlsTouchModeTest {
         tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
 
         waitForText(composeRule.activity.getString(ControlsR.string.prepare_test))
-        assertCountdownVisible()
+        assertTimeRemainingVisible()
         assertNoIntermediateActions()
 
         press(KeyEvent.KEYCODE_BACK)
@@ -250,7 +250,7 @@ class CarePadControlsTouchModeTest {
         installRealControls()
         tap(action(composeRule.activity.getString(R.string.carepad_module_controls)))
         tap(action(composeRule.activity.getString(ControlsR.string.guided_test)))
-        waitForDigitalTarget(ControlsR.string.button_a, 11_000)
+        waitForDigitalTarget(ControlsR.string.button_a, 8_000)
         assertNoIntermediateActions()
 
         assertTrue("CI must enable the existing focus trace", Log.isLoggable("CarePadT1Focus", Log.DEBUG))
@@ -294,7 +294,7 @@ class CarePadControlsTouchModeTest {
 
 
     @Test
-    fun stickWindowsRunForFullCountdownAndSummaryOpensAutomatically() {
+    fun stickWindowsRunForFullFiveSecondWindowAndSummaryOpensAutomatically() {
         composeRule.runOnUiThread {
             composeRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
@@ -316,16 +316,16 @@ class CarePadControlsTouchModeTest {
             KeyEvent.KEYCODE_DPAD_LEFT to ControlsR.string.dpad_left,
         )
         for ((index, target) in digitalTargets.withIndex()) {
-            waitForDigitalTarget(target.second, if (index == 0) 11_000 else 2_500)
+            waitForDigitalTarget(target.second, if (index == 0) 8_000 else 2_500)
             waitForCaptureArm()
             pressGuidedDigital(target.first)
         }
 
         waitForText(composeRule.activity.getString(ControlsR.string.left_rest_instruction), 2_500)
-        assertCountdownVisible()
+        assertTimeRemainingVisible()
         assertNoIntermediateActions()
-        waitForText(composeRule.activity.getString(ControlsR.string.left_move_instruction), 11_000)
-        assertCountdownVisible()
+        waitForText(composeRule.activity.getString(ControlsR.string.left_move_instruction), 8_000)
+        assertTimeRemainingVisible()
         val leftMoveStarted = SystemClock.uptimeMillis()
         waitForCaptureArm()
         stick(true, 1f, 0f)
@@ -335,12 +335,12 @@ class CarePadControlsTouchModeTest {
         press(KeyEvent.KEYCODE_DPAD_DOWN)
         navigation(composeRule.activity.getString(R.string.carepad_nav_modules)).assertIsNotFocused()
         stick(true, 0f, 0f)
-        waitForText(composeRule.activity.getString(ControlsR.string.right_rest_instruction), 11_000)
-        assertTrue("Left movement window must not complete early", SystemClock.uptimeMillis() - leftMoveStarted >= 7_500)
+        waitForText(composeRule.activity.getString(ControlsR.string.right_rest_instruction), 8_000)
+        assertTrue("Left movement window must not complete early", SystemClock.uptimeMillis() - leftMoveStarted >= 4_500)
 
-        assertCountdownVisible()
-        waitForText(composeRule.activity.getString(ControlsR.string.right_move_instruction), 11_000)
-        assertCountdownVisible()
+        assertTimeRemainingVisible()
+        waitForText(composeRule.activity.getString(ControlsR.string.right_move_instruction), 8_000)
+        assertTimeRemainingVisible()
         val rightMoveStarted = SystemClock.uptimeMillis()
         waitForCaptureArm()
         stick(false, 1f, 0f)
@@ -348,8 +348,8 @@ class CarePadControlsTouchModeTest {
         composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - rightObservedAt >= 500 }
         composeRule.onNodeWithText(composeRule.activity.getString(ControlsR.string.right_move_instruction)).assertIsDisplayed()
         stick(false, 0f, 0f)
-        waitForText(composeRule.activity.getString(ControlsR.string.test_finished), 11_000)
-        assertTrue("Right movement window must not complete early", SystemClock.uptimeMillis() - rightMoveStarted >= 7_500)
+        waitForText(composeRule.activity.getString(ControlsR.string.test_finished), 8_000)
+        assertTrue("Right movement window must not complete early", SystemClock.uptimeMillis() - rightMoveStarted >= 4_500)
         assertNoIntermediateActions()
     }
 
@@ -376,9 +376,17 @@ class CarePadControlsTouchModeTest {
         composeRule.waitUntil(2_000) { SystemClock.uptimeMillis() - startedAt >= 300 }
     }
 
-    private fun assertCountdownVisible() {
+    private fun assertTimeRemainingVisible() {
+        listOf("Countdown", "Cuenta atrás").forEach { forbiddenLabel ->
+            assertTrue(
+                "Technical countdown label must stay hidden: $forbiddenLabel",
+                runCatching {
+                    composeRule.onNodeWithText(forbiddenLabel, substring = true).fetchSemanticsNode()
+                }.isFailure,
+            )
+        }
         composeRule.waitUntil(2_000) {
-            (8 downTo 0).any { seconds ->
+            (5 downTo 0).any { seconds ->
                 runCatching {
                     composeRule.onNodeWithText(
                         composeRule.activity.getString(ControlsR.string.guided_countdown, seconds),
